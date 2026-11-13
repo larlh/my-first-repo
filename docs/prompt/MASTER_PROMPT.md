@@ -22,7 +22,7 @@ mismos flujos usan proveedores de mayor calidad.
 
 ## 2. Restricción central de diseño: proveedores intercambiables
 
-No hay GPU ni se pueden descargar modelos. Por eso toda capacidad de IA vive detrás de una
+No se depende de ningún servicio de pago. Por eso toda capacidad de IA vive detrás de una
 interfaz con (a) una implementación **local** que funciona offline y sin claves, y (b)
 adaptadores a servicios externos que se activan por variable de entorno.
 
@@ -30,7 +30,7 @@ adaptadores a servicios externos que se activan por variable de entorno.
 |---|---|---|
 | TTS | espeak-ng (paquete npm WASM o binario del sistema) con fonemas → visemas | ElevenLabs, OpenAI TTS |
 | Avatar parlante | Avatares 2D paramétricos dibujados en Canvas2D, boca dirigida por visemas, parpadeo, micro-movimiento | Interfaz `LipSyncProvider` para endpoint externo (vídeo fotorrealista) |
-| Avatar desde foto | Foto del usuario animada con deformación de mandíbula/boca + movimiento sutil | `LipSyncProvider` externo |
+| Avatar fotorrealista (desde foto o generado) | Motor neuronal local con modelos abiertos — ver 2b | `LipSyncProvider` externo (opcional) |
 | LLM (guiones, traducción) | Heurística determinista / plantillas, marcada claramente como "modo básico" | Anthropic Claude |
 | STT | Transcripción aportada por el usuario (SRT/VTT/texto) | OpenAI Whisper API |
 | Clonado de voz | Perfil de voz (tono/velocidad estimados → voz local parametrizada) | ElevenLabs |
@@ -38,6 +38,37 @@ adaptadores a servicios externos que se activan por variable de entorno.
 
 Regla de honestidad: la UI y la API indican siempre qué proveedor produjo un resultado y nunca
 presentan el modo básico como si fuera el de alta calidad.
+
+### 2b. Avatares fotorrealistas sin servicios de pago (requisito del propietario del producto)
+
+La aplicación **debe poder crear y animar avatares fotorrealistas sin conectar con ningún
+servicio de pago**. Esto sustituye a la fila "Avatar desde foto" de la tabla y amplía la de
+"Avatar parlante": los avatares 2D paramétricos se mantienen como estilo "instantáneo" (vista
+previa en vivo y avatar interactivo en tiempo real), y se añade un **motor neuronal local**:
+
+- `services/avatar-engine`: servicio Python (ONNX Runtime y/o PyTorch) con modelos de **código
+  abierto y pesos de descarga gratuita**, que se ejecuta en la máquina del usuario. Funciona en
+  CPU (lento pero correcto) y usa GPU si existe. Los pesos **no se versionan**: los descarga un
+  script con sumas de verificación a un directorio de caché.
+- Capacidades: (a) **generar un retrato fotorrealista** desde una descripción de texto (persona
+  sintética); (b) **preparar un avatar** desde una foto subida (detección de cara, recorte,
+  máscara para separar el fondo); (c) **animar**: retrato + audio/visemas → clip del avatar
+  hablando con labios sincronizados, parpadeo y movimiento natural de cabeza, con canal alfa o
+  máscara para componerlo sobre cualquier fondo de la escena.
+- Biblioteca de stock fotorrealista: ≥ 8 personas **sintéticas** generadas con el propio motor
+  y versionadas como imágenes.
+- Integración: implementación `local-neural` de `LipSyncProvider`; el worker la invoca en el
+  render cuando la capa de avatar es fotorrealista y compone el clip resultante con el
+  renderer. El progreso y el tiempo estimado se muestran al usuario (en CPU puede tardar
+  minutos por cada 10 s de vídeo; hay que decirlo con cifras medidas, no ocultarlo).
+- `docs/MODELS.md` registra para cada modelo: origen, tamaño, **licencia** y si permite uso
+  comercial. Se prefieren licencias permisivas; si el mejor modelo disponible es de uso no
+  comercial, se usa solo si no hay alternativa viable y se advierte de forma visible.
+- Todo vídeo fotorrealista lleva en los metadatos del MP4 la marca de contenido generado por
+  IA. Subir la foto de una persona real exige el consentimiento del apartado 5.
+
+Entorno de construcción actual: 4 núcleos, 15 GB de RAM, sin GPU; `huggingface.co` y sus CDN
+son accesibles para descargar pesos; `github.com` no lo es salvo `raw.githubusercontent.com`.
 
 ## 3. Alcance funcional
 
@@ -70,7 +101,9 @@ presentan el modo básico como si fuera el de alta calidad.
 12. Traducción de vídeo: subir vídeo → transcripción → traducción → doblaje TTS → mezcla →
     subtítulos; varios idiomas destino por trabajo.
 13. Kit de marca: logo, colores y tipografía aplicables a un vídeo.
-14. Avatar desde foto y clonado de voz, ambos con **consentimiento obligatorio** (apartado 5).
+14. Avatares fotorrealistas (apartado 2b): generados desde texto, creados desde una foto, y
+    biblioteca de stock sintética; y clonado de voz. Foto de persona real y clonado de voz
+    exigen **consentimiento obligatorio** (apartado 5).
 15. Vídeo personalizado en lote: variables `{{nombre}}` + CSV → N vídeos.
 16. Avatar interactivo: conversación en tiempo real en el navegador (texto → LLM → TTS →
     avatar con labios sincronizados usando el renderer en cliente).
