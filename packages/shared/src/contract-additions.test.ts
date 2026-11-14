@@ -281,8 +281,8 @@ describe('storage keys (additions)', () => {
     ).not.toBe(hash);
     const owned = storageKeys.avatarClipCache({ workspaceId: ws, avatarId: avt }, hash, 'clip.mp4');
     expect(owned.startsWith(storageKeys.avatarPrefix(ws, avt))).toBe(true);
-    expect(storageKeys.avatarClipCache(null, hash, 'meta.json')).toBe(
-      `cache/avatar-clips/${hash}/meta.json`,
+    expect(storageKeys.avatarClipCache(null, hash, 'clip.json')).toBe(
+      `cache/avatar-clips/${hash}/clip.json`,
     );
     expect(storageKeys.videoDraftThumb(ws, 'vid_abcdefgh12345678')).toBe(
       `ws/${ws}/videos/vid_abcdefgh12345678/draft-thumb.jpg`,

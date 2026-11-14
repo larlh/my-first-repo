@@ -10,11 +10,11 @@ import { sha256Hex } from './crypto';
  *   ws/<workspaceId>/videos/<videoId>/draft-thumb.jpg            (poster of a draft, see below)
  *   ws/<workspaceId>/templates/<templateId>/thumb.jpg            (poster of a custom template)
  *   ws/<workspaceId>/avatars/<avatarId>/image.png | mask.png | cutout.png | thumb.jpg | source.png
- *   ws/<workspaceId>/avatars/<avatarId>/clips/<sha256>/clip.mp4 | mask.mp4 | mask.png | meta.json
+ *   ws/<workspaceId>/avatars/<avatarId>/clips/<sha256>/clip.mp4 | mask.mp4 | mask.png | clip.json
  *   ws/<workspaceId>/voices/<voiceId>/sample.wav
  *   ws/<workspaceId>/translations/<jobId>/<language>/video.mp4 | subtitles.srt | subtitles.vtt
  *   cache/tts/<sha256>.wav | <sha256>.json                        (TtsCacheMetaSchema)
- *   cache/avatar-clips/<sha256>/clip.mp4 | mask.mp4 | mask.png | meta.json   (stock `real_…` only)
+ *   cache/avatar-clips/<sha256>/clip.mp4 | mask.mp4 | mask.png | clip.json   (stock `real_…` only)
  *
  * Deleting an avatar / voice / video / template deletes its whole prefix (`*Prefix` builders).
  */
@@ -66,7 +66,7 @@ export const storageKeys = {
   avatarClipCache: (
     owner: { workspaceId: string; avatarId: string } | null,
     hash: string,
-    file: 'clip.mp4' | 'mask.mp4' | 'mask.png' | 'meta.json',
+    file: 'clip.mp4' | 'mask.mp4' | 'mask.png' | 'clip.json',
   ) =>
     owner
       ? `ws/${seg(owner.workspaceId)}/avatars/${seg(owner.avatarId)}/clips/${seg(hash)}/${file}`
@@ -179,7 +179,7 @@ export interface AvatarClipCacheInput {
 
 /**
  * Content hash of a neural animation request. The render job looks up
- * `storageKeys.avatarClipCache(owner, hash, 'meta.json')` (AvatarClipCacheMetaSchema) BEFORE
+ * `storageKeys.avatarClipCache(owner, hash, 'clip.json')` (AvatarClipCacheMetaSchema) BEFORE
  * calling `lipsync.animate` — re-rendering after editing a text layer must not re-animate
  * unchanged scenes (minutes per 10 s on CPU) — and stores clip + matte + meta after it.
  */

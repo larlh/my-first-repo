@@ -330,12 +330,16 @@ export interface PreparedPortrait {
  */
 export interface PortraitProvider extends BaseProvider {
   status(): Promise<EngineStatus>;
-  generate(
-    request: PortraitGenerationRequest,
-  ): Promise<{
+  generate(request: PortraitGenerationRequest): Promise<{
     imagePath: string;
     provider: ProviderRef;
-    /** Model that drew it. */ model?: string;
+    /** Model that drew it → stored in `avatars.model` / `Avatar.model`. */
+    model?: string;
+    /**
+     * Seed of the portrait actually kept (engines may retry with derived seeds when their
+     * quality checks fail) → stored in `avatars.seed` / `Avatar.seed`. Absent = `request.seed`.
+     */
+    seed?: number;
   }>;
   prepare(request: PortraitPreparationRequest): Promise<PreparedPortrait>;
 }

@@ -175,6 +175,7 @@ def run_prepare(job: PrepareJob, ctx: JobContext | None = None) -> dict:
             ctx.progress(frac, None)
 
     step(0.02)
+    job.output_dir.mkdir(parents=True, exist_ok=True)
     bgr = decode_image(job.image_path)
     lm, source = _detect(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), job.landmarks)
     step(0.15)

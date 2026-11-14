@@ -14,9 +14,11 @@ RIG = {
     "open_ratio_max": 0.46,
     "open_ratio_rest": 0.0,
     "open_gamma": 0.85,
-    "wide": [(14, 1, -0.024), (17, 2, 0.008)],                              # lips spread
-    "narrow": [(20, 2, 0.017), (17, 2, -0.012), (14, 1, 0.015)],            # corners pulled in
-    "round": [(20, 2, 0.007), (17, 2, -0.005), (20, 1, 0.008), (19, 1, 0.005)],   # protrusion
+    "wide": [(14, 1, -0.020), (17, 2, 0.007)],                              # lips spread
+    # Rounding is deliberately mild: stronger gains purse small mouths into an unnatural pout
+    # (seen on the female test portrait); see "Known limits" in the README.
+    "narrow": [(20, 2, 0.010), (17, 2, -0.007), (14, 1, 0.009)],            # corners pulled in
+    "round": [(20, 2, 0.004), (17, 2, -0.003), (20, 1, 0.0045), (19, 1, 0.003)],  # protrusion
     "teeth": [(20, 1, -0.010)],                                             # upper lip raise
     "brow_up": [(2, 1, -0.022)],
 }
@@ -59,8 +61,11 @@ class Rig:
 
     def exp_delta(self, open_: float, width: float, round_: float, teeth: float, brow: float = 0.0) -> np.ndarray:
         d = np.zeros((21, 3), np.float32)
-        d += max(width, 0.0) * self.bases["wide"] + max(-width, 0.0) * self.bases["narrow"]
-        d += round_ * self.bases["round"]
+        d += max(width, 0.0) * self.bases["wide"]
+        # "narrow" and "round" both pull the lips into a pout and add up: they are merged into one
+        # bounded amount so that U / O (narrow AND round) do not over-purse small mouths
+        pucker = min(0.55, 0.55 * max(-width, 0.0) + 0.25 * round_)
+        d += pucker * self.bases["narrow"] + 0.3 * round_ * self.bases["round"]
         # upper teeth only show when the lips are at least slightly apart
         d += teeth * min(1.0, open_ * 4.0) * self.bases["teeth"]
         d += brow * self.bases["brow_up"]

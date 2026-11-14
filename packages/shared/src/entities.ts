@@ -475,7 +475,7 @@ export const TtsCacheMetaSchema = z.object({
 export type TtsCacheMeta = z.infer<typeof TtsCacheMetaSchema>;
 
 /**
- * Content of the `meta.json` of a cached neural avatar clip
+ * Content of the `clip.json` of a cached neural avatar clip
  * (`storageKeys.avatarClipCache`, hash from `avatarClipCacheKey`). Written by the render job
  * after `lipsync.animate`, read before calling it again.
  */

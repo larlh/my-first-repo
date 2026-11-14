@@ -86,6 +86,9 @@ export const EngineGenerateRequestSchema = z.object({
   height: z.number().int().min(256).max(1024).default(512),
   outputDir: z.string().min(1),
   clientRef: ClientRefSchema,
+  /* ---- additive, optional (engines that ignore it stay correct) ---- */
+  /** Steers the presenter template and the negative prompt; otherwise guessed from `prompt`. */
+  gender: z.enum(['female', 'male', 'neutral']).optional(),
 });
 export type EngineGenerateRequest = z.infer<typeof EngineGenerateRequestSchema>;
 
@@ -124,7 +127,21 @@ export const EngineAnimateRequestSchema = z.object({
 export type EngineAnimateRequest = z.infer<typeof EngineAnimateRequestSchema>;
 
 export const EngineJobResultSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('generate'), imagePath: z.string(), model: z.string() }),
+  z.object({
+    kind: z.literal('generate'),
+    imagePath: z.string(),
+    model: z.string(),
+    /* ---- additive, optional: provenance and automatic quality control of the portrait ---- */
+    width: z.number().int().optional(),
+    height: z.number().int().optional(),
+    /** Seed of the attempt that was kept (the engine retries with derived seeds when QC fails). */
+    seedUsed: z.number().int().optional(),
+    attempts: z.number().int().optional(),
+    /** false = no attempt passed every check; the least bad one is returned with `qcIssues`. */
+    qcPassed: z.boolean().optional(),
+    /** e.g. `mouth_open`, `head_tilted`, `not_frontal`, `pose_asymmetric`. */
+    qcIssues: z.array(z.string()).optional(),
+  }),
   z.object({
     kind: z.literal('prepare'),
     portraitPath: z.string(),

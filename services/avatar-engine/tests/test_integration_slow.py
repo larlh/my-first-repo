@@ -61,14 +61,12 @@ def rendered(tmp_path_factory):
         w.setframerate(16000)
         w.writeframes(b"".join(struct.pack("<h", int(3000 * np.sin(i / 9.0))) for i in range(int(16000 * SECONDS))))
     prep = run_prepare(PrepareJob(src / "photo.jpg", work / "prep"))
-    runs = []
-    for name in ("a", "b"):
+    runs = {}
+    for name, frames in (("a", None), ("b", 6), ("c", 6)):      # b and c are the same request twice
         out = work / f"clip_{name}"
-        out.mkdir()
-        runs.append(run_animation(AnimateJob(Path(prep["portraitPath"]), Path(prep["maskPath"]), src / "speech.wav",
-                                             out, fps=FPS, max_size=512, visemes=CUES, seed=5,
-                                             max_frames=None if name == "a" else 6)))
-    yield {"work": work, "prep": prep, "a": runs[0], "b": runs[1]}
+        runs[name] = run_animation(AnimateJob(Path(prep["portraitPath"]), Path(prep["maskPath"]), src / "speech.wav",
+                                              out, fps=FPS, max_size=512, visemes=CUES, seed=5, max_frames=frames))
+    yield {"work": work, "prep": prep, **runs}
     if old is None:
         os.environ.pop("AVATAR_ENGINE_WORK_DIR", None)
     else:
@@ -108,11 +106,18 @@ def test_clip_and_matte_are_valid(rendered):
 
 
 def test_same_seed_gives_identical_frames(rendered):
-    a, b = _read_frames(rendered["a"]["videoPath"]), _read_frames(rendered["b"]["videoPath"])
-    assert rendered["a"]["seed"] == rendered["b"]["seed"] == 5
-    # the second run rendered only the first 6 frames: they must match the first run exactly
-    # (compared after decoding; the encoder sees identical input, so the bytes are identical too)
-    assert np.array_equal(a[:6], b[:6])
+    """Same request + seed => the same frames, bit for bit (hash taken before encoding), and
+    therefore byte-identical clip and matte files."""
+    a, b, c = rendered["a"], rendered["b"], rendered["c"]
+    assert a["seed"] == b["seed"] == c["seed"] == 5
+    assert b["stats"]["framesSha256"] == c["stats"]["framesSha256"]
+    assert Path(b["videoPath"]).read_bytes() == Path(c["videoPath"]).read_bytes()
+    assert Path(b["maskPath"]).read_bytes() == Path(c["maskPath"]).read_bytes()
+    # the 6-frame clips show the same pictures as the start of the full clip (the H.264 streams
+    # differ because the encoder sees a different number of frames, hence the PSNR bound)
+    fa, fb = _read_frames(a["videoPath"])[:6].astype(np.float64), _read_frames(b["videoPath"]).astype(np.float64)
+    psnr = 10 * np.log10(255.0 ** 2 / max(np.mean((fa - fb) ** 2), 1e-9))
+    assert psnr > 38.0, f"same frames expected, PSNR {psnr:.1f} dB"
 
 
 def test_mouth_follows_the_timeline(rendered):
@@ -159,3 +164,89 @@ def test_generator_backend_is_faithful_to_f32_reference(rendered):
     mse = float(np.mean((fast.astype(np.float64) - ref.astype(np.float64)) ** 2))
     psnr = 99.0 if mse == 0 else 10 * np.log10(1.0 / mse)
     assert psnr > 45.0, f"hybrid backend deviates from the f32 reference: PSNR {psnr:.1f} dB"
+
+
+# ---------------------------------------------------------------------------------------------
+# prepare: validation messages and user landmarks
+# ---------------------------------------------------------------------------------------------
+def _prepare_error(work, name, image):
+    import cv2
+
+    from parlante_engine.core.errors import EngineError
+    from parlante_engine.prepare.service import PrepareJob, run_prepare
+
+    path = work / "in" / name
+    cv2.imwrite(str(path), image)
+    out = work / f"val_{path.stem}"
+    out.mkdir(exist_ok=True)
+    with pytest.raises(EngineError) as exc:
+        run_prepare(PrepareJob(path, out))
+    assert exc.value.code in ("UNPROCESSABLE", "UNSUPPORTED_MEDIA_TYPE", "PAYLOAD_TOO_LARGE")
+    assert len(exc.value.message) > 20 and exc.value.reason
+    return exc.value
+
+
+def test_prepare_rejects_bad_photos_with_clear_reasons(rendered):
+    import cv2
+
+    work = rendered["work"]
+    face = cv2.imread(str(FIXTURE))
+    two = np.hstack([face, face])
+    assert _prepare_error(work, "two_faces.png", two).reason == "multiple_faces"
+    landscape = np.full((512, 512, 3), 128, np.uint8)
+    landscape[::16] = 90
+    assert _prepare_error(work, "no_face.png", landscape).reason == "no_face"
+    tiny_face = np.full((600, 600, 3), 200, np.uint8)
+    small = cv2.resize(face, (150, 150), interpolation=cv2.INTER_AREA)
+    tiny_face[100:250, 225:375] = small
+    assert _prepare_error(work, "tiny_face.png", tiny_face).reason in ("face_too_small", "no_face", "face_unclear")
+    assert _prepare_error(work, "tiny_image.png", cv2.resize(face, (160, 160))).reason == "image_too_small"
+    sideways = cv2.rotate(face, cv2.ROTATE_90_CLOCKWISE)
+    assert _prepare_error(work, "sideways.png", sideways).reason in ("head_tilted", "no_face", "face_unclear",
+                                                                      "not_frontal")
+    bogus = work / "in" / "not_an_image.png"
+    bogus.write_bytes(b"GIF89a" + b"\x00" * 64)
+    from parlante_engine.core.errors import EngineError
+    from parlante_engine.prepare.service import PrepareJob, run_prepare
+    with pytest.raises(EngineError) as exc:
+        run_prepare(PrepareJob(bogus, work / "val_bogus"))
+    assert exc.value.reason == "unsupported_image" and exc.value.status == 415
+
+
+def test_prepare_straightens_a_tilted_head_and_accepts_user_landmarks(rendered):
+    import cv2
+
+    from parlante_engine.prepare.service import PrepareJob, run_prepare
+
+    work = rendered["work"]
+    face = cv2.imread(str(FIXTURE))
+    big = cv2.copyMakeBorder(face, 200, 200, 200, 200, cv2.BORDER_REFLECT_101)
+    rot = cv2.getRotationMatrix2D((456, 456), 12.0, 1.0)                 # head tilted by 12 degrees
+    tilted = cv2.warpAffine(big, rot, (912, 912), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+    path = work / "in" / "tilted.png"
+    cv2.imwrite(str(path), tilted)
+    out = work / "prep_tilted"
+    out.mkdir(exist_ok=True)
+    res = run_prepare(PrepareJob(path, out))
+    lm = res["landmarks"]
+    eye_slope = (lm["rightEye"]["y"] - lm["leftEye"]["y"]) / (lm["rightEye"]["x"] - lm["leftEye"]["x"])
+    assert abs(np.degrees(np.arctan(eye_slope))) < 3.0, "prepared portrait must be upright"
+    assert res["width"] == res["height"] and res["width"] % 2 == 0
+    assert 0.3 < lm["leftEye"]["y"] < 0.55, "eyes framed in the upper half"
+    # the same photo with the five points marked by the user (taken from the detector, in SOURCE coordinates)
+    from parlante_engine.prepare.face import get_face_landmarker
+    from parlante_engine.prepare.service import five_points
+
+    src_lm = get_face_landmarker().landmarks(cv2.cvtColor(tilted, cv2.COLOR_BGR2RGB))
+    user = five_points(src_lm, tilted.shape[1], tilted.shape[0])
+    out2 = work / "prep_user"
+    out2.mkdir(exist_ok=True)
+    res2 = run_prepare(PrepareJob(path, out2, user))
+    assert res2["landmarksSource"] == "user"
+    lm2 = res2["landmarks"]
+    for key in ("leftEye", "rightEye", "mouthLeft", "mouthRight", "chin"):      # same face, framing within 6 %
+        assert abs(lm2[key]["x"] - lm[key]["x"]) < 0.06, key
+        assert abs(lm2[key]["y"] - lm[key]["y"]) < 0.06, key
+    slope2 = (lm2["rightEye"]["y"] - lm2["leftEye"]["y"]) / (lm2["rightEye"]["x"] - lm2["leftEye"]["x"])
+    assert abs(np.degrees(np.arctan(slope2))) < 3.0
+    assert Path(res2["maskPath"]).is_file() and Path(res2["previewPath"]).is_file()

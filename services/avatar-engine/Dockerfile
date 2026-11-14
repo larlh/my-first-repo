@@ -13,7 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY parlante_engine ./parlante_engine
 COPY scripts ./scripts
 
-RUN useradd --create-home --uid 10001 engine \
+# Same uid as the `node` user of the api / worker images (1000): both sides create files in the
+# shared /data/avatar-engine volume and must be able to read and write each other's directories.
+RUN useradd --create-home --uid 1000 engine \
     && mkdir -p /data/avatar-engine /models \
     && chown -R engine:engine /data/avatar-engine /models /app
 USER engine

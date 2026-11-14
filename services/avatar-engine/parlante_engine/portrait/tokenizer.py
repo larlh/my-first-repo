@@ -52,21 +52,32 @@ class ClipTokenizer:
 
     def windows(self, text: str) -> np.ndarray:
         """int64 array [n_windows, 77]; each window is BOS + up to 75 tokens + EOS padding.
-        Windows are cut at the last comma that fits, so phrases are not split in half."""
+
+        A prompt that fits is ONE window (the case the model was trained on). A longer one is
+        split into windows of similar length, cut at commas so phrases stay whole: an almost
+        empty second window would dilute the first one in cross-attention (measured: the
+        subject's gender and clothing were ignored with a 73 + 7 token split)."""
         ids = self.ids(text)
         comma = self._tok.token_to_id(",</w>")
         body = WINDOW - 2
         chunks: list[list[int]] = []
-        while ids and len(chunks) < MAX_WINDOWS:
-            if len(ids) <= body:
-                chunks.append(ids)
+        n = min(MAX_WINDOWS, max(1, -(-len(ids) // body)))
+        while ids and len(chunks) < n:
+            remaining_windows = n - len(chunks)
+            if remaining_windows == 1:
+                chunks.append(ids[:body])
                 ids = []
                 break
-            cut = body
-            for i in range(body - 1, body - 21, -1):       # look back up to 20 tokens for a comma
-                if ids[i] == comma:
-                    cut = i + 1
-                    break
+            target = min(body, -(-len(ids) // remaining_windows))
+            cut = target
+            for delta in range(0, 16):                      # nearest comma around the target
+                for i in (target + delta, target - delta):
+                    if 0 < i <= body and i <= len(ids) and ids[i - 1] == comma:
+                        cut = i
+                        break
+                else:
+                    continue
+                break
             chunks.append(ids[:cut])
             ids = ids[cut:]
         if not chunks:

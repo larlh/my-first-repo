@@ -109,6 +109,11 @@ def run_animation(job: AnimateJob, ctx: JobContext | None = None) -> dict:
     `stats` object with the measurements of this very run."""
     t_start = time.monotonic()
     reg = get_registry()
+    peak = [perf.rss_mb()]
+
+    def sample_rss() -> None:
+        peak[0] = max(peak[0], perf.rss_mb())
+
     driver_name = choose_driver(job)
     if not reg.capability_ready("animate"):
         raise EngineError("SERVICE_UNAVAILABLE", "Animation weights are missing. Run scripts/download_models.py.",
@@ -117,6 +122,7 @@ def run_animation(job: AnimateJob, ctx: JobContext | None = None) -> dict:
         raise EngineError("SERVICE_UNAVAILABLE", "The audio-driven model is not downloaded "
                           "(run scripts/download_models.py --with-audio) and the request has no viseme timeline.",
                           "weights_missing")
+    job.output_dir.mkdir(parents=True, exist_ok=True)
     duration = wav_duration_seconds(job.audio_path)
     if duration <= 0.0:
         raise EngineError("UNPROCESSABLE", "The audio file is empty.", "audio_empty")
@@ -143,6 +149,7 @@ def run_animation(job: AnimateJob, ctx: JobContext | None = None) -> dict:
         driver = VisemeDriver(engine, avatar, job.visemes or [], duration * 1000.0, fps, seed, job.words, n_total)
     else:
         def on_stage(stage: str, frac: float) -> None:
+            sample_rss()
             if ctx:
                 base = 0.0 if stage == "features" else setup_span * 0.3
                 span = setup_span * (0.3 if stage == "features" else 0.7)
@@ -162,6 +169,7 @@ def run_animation(job: AnimateJob, ctx: JobContext | None = None) -> dict:
     writer = VideoWriter(video_path, out_w, out_h, fps)
     matte_writer = VideoWriter(matte_path, out_w, out_h, fps, gray=True, crf=18) if tracker else None
     t_setup = time.monotonic() - t_start
+    sample_rss()
     if ctx:
         ctx.set_total(n, spf_hint, base=setup_span, span=1.0 - setup_span)
     digest = hashlib.sha256()
@@ -178,6 +186,8 @@ def run_animation(job: AnimateJob, ctx: JobContext | None = None) -> dict:
             writer.write(frame)
             if matte_writer:
                 matte_writer.write(tracker.frame_matte(crop))
+            if f % 8 == 0:
+                sample_rss()
             if ctx:
                 ctx.advance(f + 1)
         writer.close()
@@ -191,13 +201,14 @@ def run_animation(job: AnimateJob, ctx: JobContext | None = None) -> dict:
     loop_s = time.monotonic() - t_loop
     spf = loop_s / n
     if n >= 5:
-        perf.record(driver_name, spf, n, {"setupSeconds": round(t_setup, 2), "fps": fps,
-                                          "backend": engine.generator.backend})
+        perf.record(driver_name, spf, n, {"setupSeconds": round(t_setup, 2), "fps": fps, "source": "job",
+                                          "backend": engine.generator.backend}, peak_rss=peak[0])
     stats = {
         "driver": driver_name, "seed": seed, "frames": n, "secondsPerFrame": round(spf, 4),
         "renderSeconds": round(loop_s, 2), "setupSeconds": round(t_setup, 2),
         "totalSeconds": round(time.monotonic() - t_start, 2), "loadAvgStart": round(load0, 2),
-        "loadAvgEnd": round(os.getloadavg()[0], 2), "peakRssMb": round(perf.peak_rss_mb(), 0),
+        "loadAvgEnd": round(os.getloadavg()[0], 2), "peakRssMb": round(peak[0], 0),
+        "processPeakRssMb": round(perf.peak_rss_mb(), 0),
         "backend": engine.generator.backend, "framesSha256": digest.hexdigest(),
     }
     log.info("animation done: %s", stats)

@@ -20,6 +20,9 @@ export default tseslint.config(
       'packages/renderer/test-output/**',
       'data/**',
       'tmp/**',
+      // Python virtualenvs / caches of services/avatar-engine ship third-party .js files.
+      '**/.venv/**',
+      '**/__pycache__/**',
     ],
   },
   js.configs.recommended,

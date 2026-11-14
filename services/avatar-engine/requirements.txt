@@ -18,3 +18,4 @@ pytest==9.2.0
 httpx==0.28.1
 
 # ---- portrait / matting (owner: motor-retratos) ----
+tokenizers==0.23.3           # CLIP BPE tokenizer of the portrait generator (no transformers, no torch)

@@ -109,6 +109,11 @@ def _record_perf(width: int, height: int, stats: dict, total_s: float, peak_rss_
             os.replace(tmp, _perf_path())
         except OSError:
             pass
+    # GET /health publishes `secondsPerPortrait`: the cost of the API's default size (512x512)
+    from parlante_engine.core import perf as core_perf
+
+    if key == "512x512" or core_perf.get_metric("secondsPerPortrait") is None:
+        core_perf.set_metric("secondsPerPortrait", round(total_s, 1))
 
 
 def _modelled_eval_seconds(width: int, height: int) -> float:
@@ -273,5 +278,4 @@ def run_generate(job: GenerateJob, ctx: JobContext | None = None) -> dict:
         "attempts": len(tried),
         "qcPassed": qc.passed,
         "qcIssues": qc.issues,
-        "landmarks": qc.landmarks5,
     }

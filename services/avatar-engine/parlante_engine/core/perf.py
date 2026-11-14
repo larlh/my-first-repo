@@ -27,7 +27,8 @@ def load() -> dict:
         return {}
 
 
-def record(driver: str, seconds_per_frame: float, frames: int, extra: dict | None = None) -> dict:
+def record(driver: str, seconds_per_frame: float, frames: int, extra: dict | None = None,
+           peak_rss: float | None = None) -> dict:
     """Blend a new measurement of `seconds_per_frame` (render loop only) into the store."""
     with _lock:
         data = load()
@@ -43,7 +44,8 @@ def record(driver: str, seconds_per_frame: float, frames: int, extra: dict | Non
             "lastFrames": frames,
             "loadAvg1": round(os.getloadavg()[0], 2),
             "measuredAt": int(time.time()),
-            "peakRssMb": round(max(peak_rss_mb(), (cur or {}).get("peakRssMb", 0)), 0),
+            # peak resident memory of the process while a job of this driver ran (sampled)
+            "peakRssMb": round(peak_rss if peak_rss is not None else (cur or {}).get("peakRssMb") or rss_mb(), 0),
         }
         if extra:
             entry.update(extra)

@@ -32,7 +32,7 @@ def run_benchmark(ctx: JobContext | None = None, frames: int = 6) -> dict:
         times.append(time.monotonic() - t)
     spf = float(np.median(times)) + 0.03                   # + measured paste / matte / encode overhead
     entry = perf.record("visemes", spf, frames, {"source": "benchmark", "backend": engine.generator.backend,
-                                                 "setupSeconds": round(load_s, 2)})
+                                                 "setupSeconds": round(load_s, 2)}, peak_rss=perf.rss_mb())
     return {"kind": "benchmark", "secondsPerFrame": round(spf, 3), "frameTimes": [round(t, 3) for t in times],
             "loadSeconds": round(load_s, 2), "loadAvg1": round(os.getloadavg()[0], 2),
             "backend": engine.generator.backend, "stored": entry}

@@ -9,14 +9,20 @@ import type { FeatureManifest } from './features';
  * `import.meta.env.DEV` check keeps them out of production bundles altogether. */
 type ManifestModule = { default?: FeatureManifest; feature?: FeatureManifest };
 
-const modules = {
-  ...import.meta.glob<ManifestModule>(['../features/*/index.{ts,tsx}', '!../features/_*/**'], {
-    eager: true,
-  }),
-  ...(import.meta.env.DEV
-    ? import.meta.glob<ManifestModule>('../features/_*/index.{ts,tsx}', { eager: true })
-    : {}),
-};
+const modules: Record<string, ManifestModule> = import.meta.glob<ManifestModule>(
+  ['../features/*/index.{ts,tsx}', '!../features/_*/**'],
+  { eager: true },
+);
+
+if (import.meta.env.DEV) {
+  // Lazy on purpose: an eager glob would be hoisted out of this branch and bundled anyway.
+  const loaders = import.meta.glob<ManifestModule>('../features/_*/index.{ts,tsx}');
+  await Promise.all(
+    Object.entries(loaders).map(async ([file, load]) => {
+      modules[file] = await load();
+    }),
+  );
+}
 
 export const registry = collectFeatures(modules, { dev: import.meta.env.DEV });
 
