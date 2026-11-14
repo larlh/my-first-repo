@@ -1,66 +1,270 @@
 {
-  "comment": "Source of the photorealistic STOCK avatars (synthetic people). scripts/build_stock_avatars.py generates each entry with the engine (spec + seed are the full provenance) and publishes the reviewed ones to packages/stock-assets. Names are fictional.",
+  "comment": "Source of the photorealistic STOCK avatars (synthetic people). scripts/build_stock_avatars.py generates each entry with the engine and publishes the reviewed ones to packages/stock-assets. The spec and the seed are the full provenance: each seed is the one of the attempt that was reviewed and kept, so a single attempt (--attempts 1) reproduces the published portrait. Names are fictional.",
   "size": 768,
   "avatars": [
-    {"slug": "lucia", "name": "Lucía", "seed": 1101, "ageGroup": "adult", "style": "professional",
-     "description": "Presentadora corporativa de pelo castaño con americana azul marino.",
-     "tags": ["negocios", "corporativo", "mujer", "castaño"],
-     "traits": {"skin": "clara", "hair": "castaño, media melena", "clothing": "americana azul marino", "profession": "negocios"},
-     "spec": {"gender": "female", "age": 34, "skin_tone": "light", "heritage": "Spanish", "hair": "shoulder-length brown hair", "clothing": "a navy blue blazer over a white high-neck blouse", "style": "business"}},
-    {"slug": "samuel", "name": "Samuel", "seed": 1102, "ageGroup": "adult", "style": "professional",
-     "description": "Directivo de pelo corto canoso con traje gris marengo y corbata.",
-     "tags": ["negocios", "directivo", "hombre", "traje"],
-     "traits": {"skin": "oscura", "hair": "corto, canoso", "clothing": "traje gris y corbata", "profession": "negocios"},
-     "spec": {"gender": "male", "age": 52, "skin_tone": "dark", "heritage": "Black", "hair": "short graying hair", "style": "business"}},
-    {"slug": "anaya", "name": "Anaya", "seed": 1103, "ageGroup": "young", "style": "professional",
-     "description": "Profesional sanitaria joven con uniforme azul claro y el pelo recogido.",
-     "tags": ["sanitario", "salud", "mujer", "uniforme"],
-     "traits": {"skin": "morena", "hair": "negro, recogido", "clothing": "uniforme sanitario azul", "profession": "sanidad"},
-     "spec": {"gender": "female", "age": 29, "skin_tone": "brown", "heritage": "South Asian", "hair": "black hair pulled back in a low bun", "clothing": "light blue medical scrubs with a round collar", "style": "healthcare"}},
-    {"slug": "hiro", "name": "Hiro", "seed": 1104, "ageGroup": "adult", "style": "casual",
-     "description": "Presentador de estilo informal con jersey verde y pelo corto negro.",
-     "tags": ["informal", "hombre", "jersey", "tecnología"],
-     "traits": {"skin": "clara", "hair": "negro, corto", "clothing": "jersey verde", "profession": "informal"},
-     "spec": {"gender": "male", "age": 31, "heritage": "Japanese", "hair": "short black hair", "clothing": "a plain forest green crew-neck sweater", "style": "casual"}},
-    {"slug": "carmen", "name": "Carmen", "seed": 1105, "ageGroup": "senior", "style": "professional",
-     "description": "Docente veterana de melena corta gris, gafas y rebeca.",
-     "tags": ["docente", "formación", "mujer", "gafas", "sénior"],
-     "traits": {"skin": "media", "hair": "gris, melena corta", "clothing": "rebeca y blusa", "profession": "docencia"},
-     "spec": {"gender": "female", "age": 61, "skin_tone": "medium", "heritage": "Latina", "hair": "short gray bob haircut", "extra": "thin rimmed glasses", "clothing": "a burgundy cardigan over a cream collared blouse", "style": "teacher"}},
-    {"slug": "omar", "name": "Omar", "seed": 1106, "ageGroup": "adult", "style": "casual",
-     "description": "Especialista técnico con barba corta y polo oscuro.",
-     "tags": ["tecnología", "hombre", "barba", "informal"],
-     "traits": {"skin": "media", "hair": "negro, corto, barba", "clothing": "polo azul oscuro", "profession": "tecnología"},
-     "spec": {"gender": "male", "age": 41, "skin_tone": "medium", "heritage": "Middle Eastern", "hair": "short black hair", "extra": "short trimmed beard", "clothing": "a dark navy polo shirt", "style": "tech"}},
-    {"slug": "amara", "name": "Amara", "seed": 1107, "ageGroup": "adult", "style": "creative",
-     "description": "Creativa de pelo corto rizado con jersey negro de cuello alto.",
-     "tags": ["creativo", "diseño", "mujer", "rizado"],
-     "traits": {"skin": "oscura", "hair": "negro, corto y rizado", "clothing": "jersey negro de cuello alto", "profession": "creatividad"},
-     "spec": {"gender": "female", "age": 38, "skin_tone": "dark", "heritage": "Black", "hair": "short natural curly black hair", "clothing": "a black turtleneck", "style": "creative"}},
-    {"slug": "erik", "name": "Erik", "seed": 1108, "ageGroup": "senior", "style": "professional",
-     "description": "Médico sénior de pelo blanco con bata y camisa azul.",
-     "tags": ["sanitario", "médico", "hombre", "sénior"],
-     "traits": {"skin": "clara", "hair": "blanco, corto", "clothing": "bata blanca", "profession": "sanidad"},
-     "spec": {"gender": "male", "age": 66, "skin_tone": "light", "heritage": "Scandinavian", "hair": "short white hair", "style": "healthcare"}},
-    {"slug": "mei", "name": "Mei", "seed": 1109, "ageGroup": "adult", "style": "professional",
-     "description": "Ejecutiva de melena lisa negra con americana gris perla.",
-     "tags": ["negocios", "ejecutiva", "mujer"],
-     "traits": {"skin": "clara", "hair": "negro, liso", "clothing": "americana gris", "profession": "negocios"},
-     "spec": {"gender": "female", "age": 45, "heritage": "Chinese", "hair": "straight black bob haircut", "clothing": "a light gray blazer over a black high-neck top", "style": "business"}},
-    {"slug": "diego", "name": "Diego", "seed": 1110, "ageGroup": "young", "style": "casual",
-     "description": "Creador de contenido joven con sudadera gris y camiseta blanca.",
-     "tags": ["informal", "joven", "hombre", "redes"],
-     "traits": {"skin": "morena", "hair": "castaño oscuro, corto", "clothing": "sudadera gris", "profession": "contenido"},
-     "spec": {"gender": "male", "age": 26, "skin_tone": "tan", "heritage": "Mexican", "hair": "short dark brown hair", "clothing": "a gray zip hoodie over a white crew-neck t-shirt", "style": "casual"}},
-    {"slug": "ines", "name": "Inés", "seed": 1111, "ageGroup": "young", "style": "casual",
-     "description": "Presentadora joven pelirroja con pecas y jersey mostaza.",
-     "tags": ["informal", "joven", "mujer", "pelirroja"],
-     "traits": {"skin": "muy clara", "hair": "pelirrojo, largo", "clothing": "jersey mostaza", "profession": "informal"},
-     "spec": {"gender": "female", "age": 25, "skin_tone": "very-light", "heritage": "Irish", "hair": "long straight red hair", "extra": "freckles", "clothing": "a mustard yellow crew-neck sweater", "style": "casual"}},
-    {"slug": "tomas", "name": "Tomás", "seed": 1112, "ageGroup": "adult", "style": "professional",
-     "description": "Formador de mediana edad con gafas, camisa y chaleco de punto.",
-     "tags": ["docente", "formación", "hombre", "gafas"],
-     "traits": {"skin": "clara", "hair": "castaño, corto", "clothing": "chaleco de punto y camisa", "profession": "docencia"},
-     "spec": {"gender": "male", "age": 47, "skin_tone": "light", "heritage": "Spanish", "hair": "short brown hair", "extra": "rectangular glasses", "clothing": "a gray knitted vest over a light blue collared shirt", "style": "teacher"}}
+    {
+      "slug": "lucia",
+      "name": "Lucía",
+      "seed": 1101,
+      "ageGroup": "adult",
+      "style": "professional",
+      "description": "Presentadora corporativa de melena castaña con americana gris y blusa azul marino.",
+      "tags": ["negocios", "corporativo", "mujer", "castaño"],
+      "traits": {
+        "skin": "clara",
+        "hair": "castaño, media melena",
+        "clothing": "americana gris y blusa azul marino",
+        "profession": "negocios"
+      },
+      "spec": {
+        "gender": "female",
+        "age": 34,
+        "skin_tone": "light",
+        "heritage": "Spanish",
+        "hair": "shoulder-length brown hair",
+        "clothing": "a navy blue blazer over a white high-neck blouse",
+        "style": "business"
+      }
+    },
+    {
+      "slug": "samuel",
+      "name": "Samuel",
+      "seed": 1115,
+      "ageGroup": "adult",
+      "style": "professional",
+      "description": "Directivo de pelo muy corto canoso con traje gris marengo, camisa blanca y corbata azul.",
+      "tags": ["negocios", "directivo", "hombre", "traje"],
+      "traits": {
+        "skin": "oscura",
+        "hair": "muy corto, canoso",
+        "clothing": "traje gris, camisa blanca y corbata",
+        "profession": "negocios"
+      },
+      "spec": {
+        "gender": "male",
+        "age": 52,
+        "skin_tone": "dark",
+        "heritage": "Black",
+        "hair": "very short graying hair",
+        "style": "business"
+      }
+    },
+    {
+      "slug": "anaya",
+      "name": "Anaya",
+      "seed": 1110,
+      "ageGroup": "young",
+      "style": "professional",
+      "description": "Profesional joven con el pelo recogido en un moño, chaqueta oscura y camisa blanca.",
+      "tags": ["profesional", "joven", "mujer", "moño"],
+      "traits": {
+        "skin": "morena",
+        "hair": "negro, recogido en moño",
+        "clothing": "chaqueta oscura y camisa blanca",
+        "profession": "servicios profesionales"
+      },
+      "spec": {
+        "gender": "female",
+        "age": 29,
+        "skin_tone": "brown",
+        "heritage": "South Asian",
+        "hair": "black hair pulled back in a low bun",
+        "clothing": "a white doctor coat over a light blue shirt",
+        "style": "healthcare"
+      }
+    },
+    {
+      "slug": "hiro",
+      "name": "Hiro",
+      "seed": 2001110,
+      "ageGroup": "adult",
+      "style": "casual",
+      "description": "Presentador de estilo informal con jersey gris verdoso, pelo corto negro y barba de pocos días.",
+      "tags": ["informal", "hombre", "jersey", "tecnología"],
+      "traits": {
+        "skin": "clara",
+        "hair": "negro, corto",
+        "clothing": "jersey gris verdoso",
+        "profession": "informal"
+      },
+      "spec": {
+        "gender": "male",
+        "age": 31,
+        "heritage": "Japanese",
+        "hair": "short cropped black hair",
+        "clothing": "a plain forest green crew-neck sweater",
+        "style": "casual",
+        "extra": "light stubble"
+      }
+    },
+    {
+      "slug": "carmen",
+      "name": "Carmen",
+      "seed": 2001111,
+      "ageGroup": "adult",
+      "style": "professional",
+      "description": "Formadora de melena corta castaña con gafas granates y rebeca gris.",
+      "tags": ["docente", "formación", "mujer", "gafas"],
+      "traits": {
+        "skin": "media",
+        "hair": "castaño, melena corta",
+        "clothing": "rebeca gris y blusa clara",
+        "profession": "docencia"
+      },
+      "spec": {
+        "gender": "female",
+        "age": 61,
+        "skin_tone": "medium",
+        "heritage": "Latina",
+        "hair": "short gray bob haircut",
+        "extra": "thin rimmed glasses",
+        "clothing": "a burgundy cardigan over a cream collared blouse",
+        "style": "teacher"
+      }
+    },
+    {
+      "slug": "amara",
+      "name": "Amara",
+      "seed": 1001110,
+      "ageGroup": "adult",
+      "style": "creative",
+      "description": "Creativa de melena rizada negra con jersey negro de cuello alto.",
+      "tags": ["creativo", "diseño", "mujer", "rizado"],
+      "traits": {
+        "skin": "oscura",
+        "hair": "negro, rizado",
+        "clothing": "jersey negro de cuello alto",
+        "profession": "creatividad"
+      },
+      "spec": {
+        "gender": "female",
+        "age": 38,
+        "skin_tone": "dark",
+        "heritage": "Black",
+        "hair": "short natural curly black hair",
+        "clothing": "a black turtleneck",
+        "style": "creative"
+      }
+    },
+    {
+      "slug": "erik",
+      "name": "Erik",
+      "seed": 2001114,
+      "ageGroup": "senior",
+      "style": "professional",
+      "description": "Médico sénior de pelo gris y perilla blanca con bata blanca y camisa azul.",
+      "tags": ["sanitario", "médico", "hombre", "sénior"],
+      "traits": {
+        "skin": "clara",
+        "hair": "gris, corto",
+        "clothing": "bata blanca y camisa azul",
+        "profession": "sanidad"
+      },
+      "spec": {
+        "gender": "male",
+        "age": 66,
+        "skin_tone": "light",
+        "heritage": "Scandinavian",
+        "hair": "short white hair",
+        "style": "healthcare"
+      }
+    },
+    {
+      "slug": "mei",
+      "name": "Mei",
+      "seed": 1109,
+      "ageGroup": "adult",
+      "style": "professional",
+      "description": "Ejecutiva de melena lisa negra con flequillo y americana negra.",
+      "tags": ["negocios", "ejecutiva", "mujer"],
+      "traits": {
+        "skin": "clara",
+        "hair": "negro, liso con flequillo",
+        "clothing": "americana negra",
+        "profession": "negocios"
+      },
+      "spec": {
+        "gender": "female",
+        "age": 45,
+        "heritage": "Chinese",
+        "hair": "straight black bob haircut",
+        "clothing": "a light gray blazer over a black high-neck top",
+        "style": "business"
+      }
+    },
+    {
+      "slug": "diego",
+      "name": "Diego",
+      "seed": 1110,
+      "ageGroup": "young",
+      "style": "casual",
+      "description": "Creador de contenido joven con bigote y perilla, sudadera gris con capucha y camiseta blanca.",
+      "tags": ["informal", "joven", "hombre", "redes"],
+      "traits": {
+        "skin": "morena",
+        "hair": "negro, corto",
+        "clothing": "sudadera gris con capucha",
+        "profession": "contenido"
+      },
+      "spec": {
+        "gender": "male",
+        "age": 26,
+        "skin_tone": "tan",
+        "heritage": "Mexican",
+        "hair": "short dark brown hair",
+        "clothing": "a gray zip hoodie over a white crew-neck t-shirt",
+        "style": "casual"
+      }
+    },
+    {
+      "slug": "ines",
+      "name": "Inés",
+      "seed": 1111,
+      "ageGroup": "young",
+      "style": "casual",
+      "description": "Presentadora joven pelirroja con pecas y jersey amarillo de cuello alto.",
+      "tags": ["informal", "joven", "mujer", "pelirroja"],
+      "traits": {
+        "skin": "muy clara",
+        "hair": "pelirrojo, largo",
+        "clothing": "jersey amarillo de cuello alto",
+        "profession": "informal"
+      },
+      "spec": {
+        "gender": "female",
+        "age": 25,
+        "skin_tone": "very-light",
+        "heritage": "Irish",
+        "hair": "long straight red hair",
+        "extra": "freckles",
+        "clothing": "a mustard yellow crew-neck sweater",
+        "style": "casual"
+      }
+    },
+    {
+      "slug": "tomas",
+      "name": "Tomás",
+      "seed": 1001115,
+      "ageGroup": "adult",
+      "style": "professional",
+      "description": "Formador de mediana edad con gafas de pasta, barba corta canosa, camisa azul y chaleco gris.",
+      "tags": ["docente", "formación", "hombre", "gafas"],
+      "traits": {
+        "skin": "clara",
+        "hair": "castaño canoso, corto",
+        "clothing": "chaleco gris y camisa azul",
+        "profession": "docencia"
+      },
+      "spec": {
+        "gender": "male",
+        "age": 47,
+        "skin_tone": "light",
+        "heritage": "Spanish",
+        "hair": "short brown hair",
+        "extra": "rectangular glasses",
+        "clothing": "a gray knitted vest over a light blue collared shirt",
+        "style": "teacher"
+      }
+    }
   ]
 }

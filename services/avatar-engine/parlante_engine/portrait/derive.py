@@ -72,7 +72,7 @@ def ensure_unet_ir(log: Callable[[str], None] | None = None) -> Path:
         out_dir.mkdir(parents=True, exist_ok=True)
         t0 = time.perf_counter()
         if log:
-            log("Deriving the OpenVINO IR of the UNet (one-off, ~10 s)…")
+            log("Deriving the OpenVINO IR of the UNet (one-off, a few seconds)…")
         # OpenVINO only follows external-data references that stay inside the model's own
         # directory; Hugging Face caches hold symlinks, so stage real files side by side.
         stage = Path(tempfile.mkdtemp(prefix="stage-", dir=out_dir))

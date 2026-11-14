@@ -204,6 +204,7 @@ def publish(staging: Path, slugs: list[str], manifest: dict) -> None:
     )
     (repo / "packages" / "stock-assets" / "src" / "photoreal-avatars.data.ts").write_text(text, encoding="utf-8")
     print(f"published {len(entries)} avatars to {assets}")
+    print("now run: node_modules/.bin/prettier --write packages/stock-assets/src/photoreal-avatars.data.ts")
 
 
 def main() -> int:
@@ -229,6 +230,9 @@ def main() -> int:
         return 0
     slugs = [s for s in (args.only.split(",") if args.only else all_slugs) if s]
     if not args.sheet:
+        import logging
+
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
         backends.limit_threads()
         for entry in manifest["avatars"]:
             if entry["slug"] not in slugs:

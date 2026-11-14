@@ -46,8 +46,9 @@ class OrmbgMatter:
             core = ov.Core()
             cfg = {"INFERENCE_NUM_THREADS": threads, "PERFORMANCE_HINT": "LATENCY"}
             self._net = core.compile_model(core.read_model(str(path)), "CPU", cfg)
-            self._port = self._net.inputs[0]
-            self._run = lambda x: np.array(self._net({self._port: x})[0])
+            # fed by NAME: calling a CompiledModel with a port object as the key pins it in memory
+            name = self._net.inputs[0].get_any_name()
+            self._run = lambda x: np.array(self._net({name: x})[0])
         else:
             sess = backends.ort_session(path, threads, allow_gpu=True)
             name = sess.get_inputs()[0].name

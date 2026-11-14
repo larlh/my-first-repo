@@ -7,7 +7,8 @@ import pytest
 
 from parlante_engine.portrait.pipeline import (alphas_cumprod, dpmpp_2m, karras_sigmas, round_size,
                                                 sigma_to_timestep)
-from parlante_engine.portrait.service import SEED_STRIDE, attempt_seed, estimate_seconds
+from parlante_engine.portrait.service import (SEED_STRIDE, attempt_seed, base_size, estimate_seconds,
+                                               estimate_stage_seconds, refine_steps)
 
 
 def test_schedule_matches_stable_diffusion_1x():
@@ -62,9 +63,31 @@ def test_retry_seeds_are_deterministic_and_distinct():
     assert len({attempt_seed(123, k) for k in range(6)}) == 6
 
 
-def test_time_estimate_grows_with_resolution_and_steps(work_dir):
-    assert estimate_seconds(768, 768) > 2 * estimate_seconds(512, 512)
-    assert estimate_seconds(512, 512, steps=30) > estimate_seconds(512, 512, steps=20)
+def test_composition_size_keeps_the_aspect_ratio_under_512():
+    assert base_size(512, 512) == (512, 512) and base_size(384, 448) == (384, 448)
+    assert base_size(768, 768) == (512, 512)
+    assert base_size(768, 576) == (512, 384)
+    assert base_size(576, 768) == (384, 512)
+    assert base_size(640, 640) == (512, 512)
+    assert refine_steps(20) == 10 and refine_steps(8) == 4
+
+
+def test_time_estimate_grows_with_resolution_and_steps(work_dir, monkeypatch, tmp_path):
+    from parlante_engine.core import config
+
+    monkeypatch.setenv("AVATAR_ENGINE_MODELS_DIR", str(tmp_path / "models"))   # no stored measurements
+    config.reset_settings_cache()
+    try:
+        assert estimate_seconds(768, 768) > 1.3 * estimate_seconds(512, 512)
+        assert estimate_seconds(512, 512, steps=30) > estimate_seconds(512, 512, steps=20)
+        # the estimate counts the compositions the quality control typically rejects
+        assert estimate_seconds(512, 512, attempts=1) < estimate_seconds(512, 512) < estimate_seconds(512, 512, attempts=1) * 2.3
+        attempt, refine = estimate_stage_seconds(512, 512)
+        assert 20 < attempt < 40 and 10 < refine < 25              # ~26 s + ~17 s on the build machine
+        attempt768, refine768 = estimate_stage_seconds(768, 768)
+        assert attempt768 == attempt and 40 < refine768 < 80       # same composition, larger second pass
+    finally:
+        config.reset_settings_cache()
 
 
 # ---------------------------------------------------------------- tokenizer (needs vocab files)
@@ -92,35 +115,69 @@ def test_tokenizer_matches_reference_clip_ids(tokenizer):
          318, 344]
 
 
-def test_tokenizer_windows(tokenizer):
-    one = tokenizer.windows("a portrait")
-    assert one.shape == (1, 77) and one[0, 0] == 49406 and one[0, 3] == 49407 and one[0, -1] == 49407
-    assert tokenizer.windows("").shape == (1, 77)
-    comma = tokenizer.ids("a, b")[1]
-
-    def body(row):
-        return [int(t) for t in row[1:] if t != 49407]
-
-    # 75 tokens still fit in one window; 76 need two
+def test_tokenizer_encode_is_one_window_and_truncates(tokenizer):
+    one = tokenizer.encode("a portrait")
+    assert one.shape == (1, 77) and one.dtype == np.int64
+    assert one[0, 0] == 49406 and one[0, 3] == 49407 and one[0, -1] == 49407
+    assert tokenizer.encode("").tolist() == [[49406] + [49407] * 76]
     exact = ", ".join(["portrait"] * 38)                 # 38 words + 37 commas = 75 tokens
-    assert tokenizer.count(exact) == 75 and tokenizer.windows(exact).shape == (1, 77)
-    over = exact + ", photo, sharp"                      # 79 tokens
-    two = tokenizer.windows(over)
-    assert two.shape == (2, 77) and two[0, 0] == 49406 and two[1, 0] == 49406
-    first, second = body(two[0]), body(two[1])
-    assert first + second == tokenizer.ids(over)         # nothing lost, order kept
-    assert abs(len(first) - len(second)) <= 16           # balanced, not 75 + 4
-    assert first[-1] == comma                            # cut at a comma, not mid-phrase
-    long = tokenizer.windows(", ".join(["studio portrait of a presenter"] * 60))
-    assert long.shape == (2, 77)                         # capped at two windows
-    assert len(body(long[0])) <= 75 and len(body(long[1])) == 75
+    assert tokenizer.count(exact) == 75
+    assert [int(t) for t in tokenizer.encode(exact)[0, 1:76]] == tokenizer.ids(exact)
+    over = tokenizer.encode(exact + ", photo, sharp")
+    assert over.shape == (1, 77) and over[0, -1] == 49407       # truncated, EOS kept
+    assert [int(t) for t in over[0, 1:76]] == tokenizer.ids(exact)
 
 
-def test_template_prompts_fit_in_two_windows(tokenizer):
-    from parlante_engine.portrait.prompts import PortraitSpec, build_prompt
+def test_template_prompts_fit_in_one_window(tokenizer):
+    """Every prompt the template can produce must fit in ONE CLIP window with its constraints
+    intact (two windows made the model ignore the subject: see tokenizer.py)."""
+    import json
+    from pathlib import Path
 
-    spec = PortraitSpec(gender="female", age=34, skin_tone="brown", heritage="South Asian", hair="long black hair",
-                        style="healthcare", extra="thin round glasses and small earrings")
-    pair = build_prompt(spec)
-    assert tokenizer.count(pair.positive) <= 150
-    assert tokenizer.count(pair.negative) <= 150
+    from parlante_engine.portrait.prompts import (NEGATIVE, STYLES, PortraitSpec, build_prompt,
+                                                   prompt_from_description)
+
+    specs = [PortraitSpec(**e["spec"]) for e in
+             json.loads((Path(__file__).parents[1] / "stock" / "avatars.json").read_text())["avatars"]]
+    specs += [PortraitSpec(gender=g, age=a, skin_tone="brown", heritage="South Asian", style=style,
+                           hair="long wavy black hair with a side parting", extra="thin round glasses and small earrings")
+              for g in ("female", "male", "neutral") for a in (22, 48, 70) for style in STYLES]
+    for spec in specs:
+        pair = build_prompt(spec, tokenizer.count)
+        assert tokenizer.count(pair.positive) <= 75, pair.positive
+        assert tokenizer.count(pair.negative) <= 75, pair.negative
+        for phrase in ("front view portrait", "lips closed", "looking into the camera", "head and shoulders",
+                       "wall background"):
+            assert phrase in pair.positive
+        assert NEGATIVE in pair.negative
+    long = prompt_from_description("mujer de 40 años con " + ", ".join(["pelo castaño rizado y gafas redondas"] * 20),
+                                   None, tokenizer.count)
+    assert tokenizer.count(long.positive) <= 75
+    for phrase in ("lips closed", "head and shoulders", "wall background", "woman", "40 years old"):
+        assert phrase in long.positive
+
+
+def test_emphasis_scales_only_the_named_tokens_and_keeps_the_mean(tokenizer):
+    """Prompt weighting on a stand-in text encoder (identity-like): only the rows of the word
+    change relative to the others, and the overall mean is preserved."""
+    from parlante_engine.portrait.pipeline import PortraitPipeline
+
+    pipe = PortraitPipeline.__new__(PortraitPipeline)
+    pipe.tokenizer = tokenizer
+    pipe._text_input = ("input_ids", np.int64)
+    rng = np.random.default_rng(0)
+    table = rng.standard_normal((49408, 8)).astype(np.float32) + 0.5
+    pipe._text_encoder = lambda: (lambda feed: [table[feed["input_ids"][0]][None]])
+    text = "portrait of a 40 year old man, short hair, a woman in the background"
+    plain = pipe.encode(text)
+    weighted = pipe.encode(text, {"man": 1.3})
+    assert plain.shape == weighted.shape == (1, 77, 8)
+    assert weighted.mean() == pytest.approx(plain.mean(), rel=1e-5)
+    ids = [int(t) for t in tokenizer.encode(text)[0]]
+    man = tokenizer.ids("man")[0]
+    ratio = weighted[0] / plain[0]
+    positions = [i for i, t in enumerate(ids) if t == man]
+    assert len(positions) == 1                                  # "woman" is a different token
+    others = [i for i in range(77) if i not in positions]
+    assert np.allclose(ratio[others], ratio[others][0], rtol=1e-4)
+    assert np.allclose(ratio[positions] / ratio[others][0], 1.3, rtol=1e-4)

@@ -33,9 +33,11 @@ UNET_DATA = _rv("unet/model.onnx_data", "c909f1831ba3fec5fdbd3a3e967b0700484470c
                 3438083840, "UNet weights (860 M parameters, FP32)")
 VAE_DECODER = _rv("vae_decoder/model.onnx", "20bf85ad399aafeac9ce47409f6a72f0d5ddb1becc2488ef4460a594fae2b752",
                   198078175, "VAE decoder (stabilityai/sd-vae-ft-mse, MIT)")
+VAE_ENCODER = _rv("vae_encoder/model.onnx", "58360e3cb51fe8aaf092caaee599cb4a5e18f7be9112e90aa69ae976a27e5c3b",
+                  136756653, "VAE encoder (high-resolution image-to-image pass)")
 VOCAB = _rv("tokenizer/vocab.json", "fd67774a869730a6b27bf53d3e434e72054f2a825873c7af3bece183bb1f791e",
             1109372, "CLIP BPE vocabulary")
 MERGES = _rv("tokenizer/merges.txt", "0bc7695944744789d6fd6d0ab754bcbbb9e36f1c182df0a006d619ce70a1e052",
              573514, "CLIP BPE merges")
 
-MODELS = [TEXT_ENCODER, UNET_GRAPH, UNET_DATA, VAE_DECODER, VOCAB, MERGES]
+MODELS = [TEXT_ENCODER, UNET_GRAPH, UNET_DATA, VAE_DECODER, VAE_ENCODER, VOCAB, MERGES]

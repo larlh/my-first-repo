@@ -99,10 +99,15 @@ def main() -> int:
         res["bestLagFramesOpen"] = best_lag(lip, cmd_open)
         cues = C.normalize_cues(rt["visemes"], dur)
         ends = [c["tMs"] for c in cues[1:]] + [dur]
-        at_mbp = [float(lip[int(np.clip(round(0.5 * (c["tMs"] + e) / 1000 * fps - 0.5), 0, n - 1))])
-                  for c, e in zip(cues, ends) if c["viseme"] == "MBP"]
-        at_a = [float(lip[int(np.clip(round(0.5 * (c["tMs"] + e) / 1000 * fps - 0.5), 0, n - 1))])
-                for c, e in zip(cues, ends) if c["viseme"] == "A" and e - c["tMs"] >= 60]
+        def at_mid(viseme: str, min_ms: float = 0.0) -> list[float]:
+            out = []
+            for c, e in zip(cues, ends):
+                f = int(round(0.5 * (c["tMs"] + e) / 1000 * fps - 0.5))
+                if c["viseme"] == viseme and e - c["tMs"] >= min_ms and 0 <= f < n:    # cues inside the clip only
+                    out.append(float(lip[f]))
+            return out
+
+        at_mbp, at_a = at_mid("MBP"), at_mid("A", 60.0)
         res["lipRatioAtBilabials"] = {"n": len(at_mbp), "mean": round(float(np.mean(at_mbp)), 3) if at_mbp else None,
                                       "max": round(float(np.max(at_mbp)), 3) if at_mbp else None}
         res["lipRatioAtOpenVowelA"] = {"n": len(at_a), "mean": round(float(np.mean(at_a)), 3) if at_a else None}

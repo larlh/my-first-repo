@@ -186,7 +186,10 @@ class Registry:
         return [f for f in self.files if capability in f.capabilities]
 
     def capability_ready(self, capability: str) -> bool:
-        files = self.files_for(capability)
+        """All files the capability REQUIRES are present. Matting models are alternatives and
+        optional (a portrait can be prepared with the fallback matte, or without one), so they
+        never block a capability; /health still lists whether each one is downloaded."""
+        files = [f for f in self.files_for(capability) if f.role != "matting"]
         return bool(files) and all(self.locate(f) is not None for f in files)
 
     def missing(self, capability: str | None = None) -> list[ModelFile]:

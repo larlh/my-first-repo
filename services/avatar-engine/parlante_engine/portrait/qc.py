@@ -21,9 +21,9 @@ IRIS_L, IRIS_R = 468, 473
 
 @dataclass(frozen=True)
 class QcThresholds:
-    min_face_height: float = 0.20      # forehead→chin / image height
-    max_face_height: float = 0.62
-    max_roll_deg: float = 7.0
+    min_face_height: float = 0.22      # forehead→chin / image height
+    max_face_height: float = 0.56      # larger: the top of the head is cut off
+    max_roll_deg: float = 10.0         # `prepare` straightens the crop; beyond this the shoulders look wrong
     max_yaw_asym: float = 0.16         # |dl - dr| / (dl + dr), nose tip to cheek edges
     min_pitch_ratio: float = 0.30      # (nose - eyes) / (chin - eyes), frontal ≈ 0.40–0.50
     max_pitch_ratio: float = 0.60

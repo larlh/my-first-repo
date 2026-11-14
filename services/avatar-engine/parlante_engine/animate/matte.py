@@ -5,7 +5,7 @@ pixels in every frame. Instead of re-segmenting each frame (which would discard 
 of the prepared matte and flicker at the edges), the prepared matte is carried along with the
 motion: dense optical flow (DIS) from each generated crop back to the portrait crop, heavily
 smoothed because head motion is smooth, re-samples the matte. Outside the generator crop
-the matte is the static one. ~10 ms per frame."""
+the matte is the static one. Measured cost: ~14 ms per frame."""
 from __future__ import annotations
 
 import cv2

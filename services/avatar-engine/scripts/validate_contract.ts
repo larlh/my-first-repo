@@ -21,7 +21,11 @@ const capture = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as {
 
 let checked = 0;
 const failures: string[] = [];
-function check(name: string, schema: { safeParse: (v: unknown) => { success: boolean; error?: unknown } }, values: unknown[]) {
+function check(
+  name: string,
+  schema: { safeParse: (v: unknown) => { success: boolean; error?: unknown } },
+  values: unknown[],
+) {
   values.forEach((value, i) => {
     const res = schema.safeParse(value);
     checked += 1;
@@ -39,10 +43,14 @@ for (const [i, e] of capture.errors.entries()) {
   }
 }
 const kinds = new Set(
-  (capture.jobs as { result: { kind: string } | null }[]).map((j) => j.result?.kind).filter(Boolean),
+  (capture.jobs as { result: { kind: string } | null }[])
+    .map((j) => j.result?.kind)
+    .filter(Boolean),
 );
 if (failures.length > 0) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`zod contract validation OK: ${checked} objects (result kinds: ${[...kinds].join(', ')})`);
+console.log(
+  `zod contract validation OK: ${checked} objects (result kinds: ${[...kinds].join(', ')})`,
+);

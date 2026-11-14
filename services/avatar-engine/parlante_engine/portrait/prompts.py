@@ -79,13 +79,18 @@ BACKGROUNDS = {
     "beige": "plain beige wall background",
 }
 
-_HEAD = "RAW photo, front view portrait of"
-#: never dropped: without them the portrait is useless for the animator
-_POSE = "facing the camera, looking into the camera, lips closed"
-_FRAMING = "head and shoulders, centered"
-#: dropped from the END when the prompt would not fit in one CLIP window (75 tokens)
-_OPTIONAL = ("calm friendly expression", "soft even studio lighting", "sharp focus", "natural skin texture")
+_HEAD = "RAW photo, close-up front view portrait of"
 TOKEN_BUDGET = 75
+DESCRIPTION_TOKENS = 30      # share of the window a free-text description may use
+# Fixed parts of the template as (text, drop rank): rank 0 is never dropped (without it the
+# portrait is useless for the animator); when the prompt would not fit in one CLIP window the
+# highest rank goes first.
+_FACING = ("facing the camera", 5)
+_GAZE_MOUTH = ("looking into the camera, lips closed", 0)
+_FRAMING = ("head and shoulders", 0)
+_CENTERED = ("centered", 6)
+_TAIL = (("calm friendly expression", 7), ("soft even studio lighting", 8), ("sharp focus", 9),
+         ("natural skin texture", 10))
 
 #: one CLIP window including the gender / age counter-terms (checked by the tests)
 NEGATIVE = (
@@ -155,17 +160,28 @@ def approx_tokens(text: str) -> int:
     return len(re.findall(r"[^\W\d_]+|\d|[^\w\s]|_", text, flags=re.UNICODE))
 
 
-def _assemble(required: list[str], optional: tuple[str, ...], count_tokens) -> str:
-    """Join the parts with commas, dropping optional parts from the end until the prompt fits
-    in one CLIP window. A prompt whose REQUIRED parts already overflow is returned whole (the
-    tokenizer then splits it into two balanced windows)."""
+def _assemble(parts: list[tuple[str, int]], count_tokens, shrinkable: tuple[int, ...] = ()) -> str:
+    """Join `(text, drop rank)` parts with commas so that the prompt fits in ONE CLIP window.
+    Parts with the highest rank are dropped first; if only rank-0 parts are left and it still
+    overflows, the free-text parts at the `shrinkable` indices lose words from their end
+    (longest first). The gaze / closed-mouth / framing / background constraints always survive."""
     budget = TOKEN_BUDGET if count_tokens is not None else TOKEN_BUDGET - 4
     counter = count_tokens or approx_tokens
-    parts = [p for p in required if p]
-    kept = list(optional)
-    while kept and counter(", ".join(parts + kept)) > budget:
-        kept.pop()
-    return ", ".join(parts + kept)
+    items = [[text, rank, i in shrinkable] for i, (text, rank) in enumerate(parts) if text]
+
+    def joined() -> str:
+        return ", ".join(text for text, _, _ in items)
+
+    while counter(joined()) > budget and any(rank > 0 for _, rank, _ in items):
+        worst = max(rank for _, rank, _ in items)
+        items = [it for it in items if it[1] != worst]
+    while counter(joined()) > budget:
+        candidates = [it for it in items if it[2] and len(it[0].split(" ")) > 3]
+        if not candidates:
+            break
+        longest = max(candidates, key=lambda it: len(it[0]))
+        longest[0] = " ".join(longest[0].split(" ")[:-1]).rstrip(" ,")
+    return joined()
 
 
 def _age_negative(age: int | None) -> str:
@@ -201,18 +217,18 @@ def build_prompt(spec: PortraitSpec, count_tokens=None) -> PromptPair:
     subject = "a " + " ".join(who)
     if spec.skin_tone:
         subject += f" with {SKIN_TONES[spec.skin_tone]}"
-    parts = [f"{_HEAD} {subject}"]
-    hair = _clean(spec.hair, 80)
-    if hair:
-        parts.append(hair)
-    extra = _clean(spec.extra, 120)
-    if extra:
-        parts.append(extra)
+    parts: list[tuple[str, int]] = [(f"{_HEAD} {subject}", 0)]
+    shrinkable = []
+    for text in (_clean(spec.hair, 80), _clean(spec.extra, 120)):
+        if text:
+            shrinkable.append(len(parts))
+            parts.append((text, 0))
     clothing = _clean(spec.clothing, 100) or STYLES[spec.style][spec.gender]
-    parts.append(f"wearing {clothing}")
-    parts += [_POSE, _FRAMING, BACKGROUNDS[spec.background]]
+    shrinkable.append(len(parts))
+    parts.append((f"wearing {clothing}", 0))
+    parts += [_FACING, _GAZE_MOUTH, _FRAMING, _CENTERED, (BACKGROUNDS[spec.background], 0), *_TAIL]
     negative = _join_negative(_NEGATIVE_GENDER[spec.gender], _age_negative(spec.age), NEGATIVE)
-    return PromptPair(_assemble(parts, _OPTIONAL, count_tokens), negative, spec.gender)
+    return PromptPair(_assemble(parts, count_tokens, tuple(shrinkable)), negative, spec.gender)
 
 
 # ---------------------------------------------------------------- free text (HTTP API)
@@ -350,16 +366,22 @@ def prompt_from_description(description: str, gender: str | None = None, count_t
     if gender is not None and gender not in GENDERS:
         raise EngineError("VALIDATION_ERROR", f"gender must be one of {GENDERS}", "invalid_gender")
     english = spanish_to_english(description)
+    # the description may use about half of the window; the rest belongs to the constraints
+    counter = count_tokens or approx_tokens
+    words = english.split(" ")
+    while len(words) > 3 and counter(" ".join(words)) > DESCRIPTION_TOKENS:
+        words.pop()
+    english = " ".join(words).rstrip(" ,")
     g = gender if gender in ("female", "male") else detect_gender(description)
     subject = english
     # the description rarely names the noun the model needs: add it when missing
     if not _PERSON_NOUN.search(english):
         subject = f"{_NOUN[g] if g != 'neutral' else 'adult person'}, {english}"
     article = "" if re.match(r"^(a|an|the)\b", subject) else ("an " if subject[:1] in "aeiou" else "a ")
-    parts = [f"{_HEAD} {article}{subject}"]
+    parts: list[tuple[str, int]] = [(f"{_HEAD} {article}{subject}", 0)]
     if not _CLOTHING_WORDS.search(english):
-        parts.append("wearing modest professional clothes")
-    parts += [_POSE, _FRAMING, BACKGROUNDS["light-gray"]]
-    positive = _assemble(parts, _OPTIONAL, count_tokens)
+        parts.append(("wearing modest professional clothes", 0))
+    parts += [_FACING, _GAZE_MOUTH, _FRAMING, _CENTERED, (BACKGROUNDS["light-gray"], 0), *_TAIL]
+    positive = _assemble(parts, count_tokens, shrinkable=(0,))
     negative = _join_negative(_NEGATIVE_GENDER[g], _age_negative(_described_age(description)), NEGATIVE)
     return PromptPair(positive, negative, g)

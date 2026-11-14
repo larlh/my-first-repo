@@ -4,10 +4,13 @@ from __future__ import annotations
 import pytest
 
 from parlante_engine.core.errors import EngineError
-from parlante_engine.portrait.prompts import (BACKGROUNDS, NEGATIVE, SKIN_TONES, STYLES, PortraitSpec, build_prompt,
-                                               detect_gender, prompt_from_description, spanish_to_english)
+from parlante_engine.portrait.prompts import (BACKGROUNDS, NEGATIVE, SKIN_TONES, STYLES, PortraitSpec,
+                                               approx_tokens, build_prompt, detect_gender,
+                                               prompt_from_description, spanish_to_english)
 
-MANDATORY = ("front view portrait", "facing the camera", "lips closed", "head and shoulders", "wall background")
+#: never dropped, whatever the length of the description
+CORE = ("front view portrait", "looking into the camera", "lips closed", "head and shoulders", "wall background")
+MANDATORY = CORE + ("facing the camera", "centered")
 
 
 def test_structured_prompt_has_the_presenter_constraints_and_the_parameters():
@@ -21,7 +24,7 @@ def test_structured_prompt_has_the_presenter_constraints_and_the_parameters():
         assert phrase in pair.positive
     # the mouth must be closed at rest: pushed from both sides
     assert "open mouth" in pair.negative and "teeth" in pair.negative
-    assert "man, male" in pair.negative            # counter-terms for the requested gender
+    assert pair.negative.startswith("man, male")   # counter-terms for the requested gender come first
     assert pair.gender == "female"
 
 
@@ -86,7 +89,7 @@ def test_description_gender_detection_and_override():
 
 
 def test_description_without_clothing_gets_modest_clothes_and_with_clothing_does_not():
-    assert "modest professional clothes" in prompt_from_description("young teacher with freckles").positive
+    assert "wearing modest professional clothes" in prompt_from_description("young teacher with freckles").positive
     assert "modest professional clothes" not in prompt_from_description("man wearing a green sweater").positive
 
 
@@ -107,6 +110,18 @@ def test_empty_and_overlong_descriptions():
     with pytest.raises(EngineError):
         prompt_from_description("  ,, ")
     pair = prompt_from_description("woman " + "very " * 400 + "tall")
-    assert len(pair.positive) < 900            # the description is capped, the constraints survive
-    for phrase in MANDATORY:
+    assert approx_tokens(pair.positive) <= 71  # the description is cut to fit one CLIP window …
+    for phrase in CORE:                        # … and the constraints survive
         assert phrase in pair.positive
+
+
+def test_optional_tags_are_dropped_before_the_constraints():
+    short = build_prompt(PortraitSpec(gender="male"))
+    assert short.positive.endswith("natural skin texture")
+    long = build_prompt(PortraitSpec(gender="male", age=47, skin_tone="light", heritage="Spanish",
+                                     hair="short brown hair with a side parting", extra="rectangular glasses",
+                                     clothing="a gray knitted vest over a light blue collared shirt"))
+    assert approx_tokens(long.positive) <= 71
+    assert "natural skin texture" not in long.positive
+    for phrase in CORE:
+        assert phrase in long.positive

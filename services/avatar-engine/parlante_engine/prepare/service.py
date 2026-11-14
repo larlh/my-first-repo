@@ -127,32 +127,47 @@ def _validate(bgr: np.ndarray, lm: np.ndarray) -> dict:
 
 
 def _frame(bgr: np.ndarray, lm: np.ndarray, info: dict, max_side: int) -> tuple[np.ndarray, np.ndarray]:
-    """Upright, square head-and-shoulders crop. Returns (portrait, 2x3 affine source -> portrait)."""
+    """Upright, square head-and-shoulders crop. Returns (portrait, 2x3 affine source -> portrait).
+
+    A tilted head (2..35 degrees) is rotated upright about the eye centre. The square is made
+    as large as FRAME_FACE_RATIO x face allows; when the (rotated) square does not fit in the
+    photo it is shrunk step by step, and only what still falls outside is mirror-filled."""
     h, w = bgr.shape[:2]
-    mn, mx = info["box"]
+    roll = info["roll"]
     eye_c = (lm[[33, 133], :2].mean(0) + lm[[263, 362], :2].mean(0)) / 2
+    rot = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    if 2.0 < abs(roll) <= MAX_ROLL:
+        rot = cv2.getRotationMatrix2D((float(eye_c[0]), float(eye_c[1])), roll, 1.0)
+    pts = lm[:468, :2] @ rot[:, :2].T + rot[:, 2]            # landmarks in the upright frame
+    mn, mx = pts.min(0), pts.max(0)
+    face = float(max(mx - mn))
     cx = float((mn[0] + mx[0]) / 2)
-    side = min(FRAME_FACE_RATIO * info["faceSide"], float(min(w, h)))
-    # eyes at 42 % of the height; keep the square inside the photo
-    x0 = float(np.clip(cx - side / 2, 0, w - side))
-    y0 = float(np.clip(eye_c[1] - 0.42 * side, 0, h - side))
+    inv_rot = cv2.invertAffineTransform(rot)
+    best = None
+    for shrink in (1.0, 0.93, 0.86, 0.79, 0.72):
+        side = max(min(FRAME_FACE_RATIO * face * shrink, float(min(w, h))), min(2.1 * face, float(min(w, h))))
+        x0 = cx - side / 2
+        y0 = float(eye_c[1]) - 0.42 * side                    # eyes at 42 % of the height
+        corners = np.array([[x0, y0], [x0 + side, y0], [x0, y0 + side], [x0 + side, y0 + side]])
+        src = corners @ inv_rot[:, :2].T + inv_rot[:, 2]
+        overflow = max(0.0, -src[:, 0].min(), -src[:, 1].min(), src[:, 0].max() - w, src[:, 1].max() - h)
+        if overflow > 1.0 and abs(roll) <= 2.0:
+            # no rotation: simply slide the square back inside the photo
+            x0 = float(np.clip(x0, 0, w - side))
+            y0 = float(np.clip(y0, 0, h - side))
+            overflow = 0.0
+        if best is None or overflow < best[0]:
+            best = (overflow, side, x0, y0)
+        if overflow <= 1.0:
+            break
+    _, side, x0, y0 = best
     out_side = int(min(max_side, round(side)))
     out_side -= out_side % 2
     k = out_side / side
-    roll = info["roll"]
-    m = np.array([[k, 0, -k * x0], [0, k, -k * y0]], np.float64)
-    if 2.0 < abs(roll) <= MAX_ROLL:
-        # rotate about the eye centre, but only if the rotated square stays inside the photo
-        rot = cv2.getRotationMatrix2D((float(eye_c[0]), float(eye_c[1])), roll, 1.0)
-        m_rot = m[:, :2] @ rot[:, :2], m[:, :2] @ rot[:, 2] + m[:, 2]
-        cand = np.concatenate([m_rot[0], m_rot[1][:, None]], 1)
-        inv = cv2.invertAffineTransform(cand)
-        corners = np.array([[0, 0, 1], [out_side, 0, 1], [0, out_side, 1], [out_side, out_side, 1]], np.float64)
-        src = corners @ inv.T
-        if src[:, 0].min() >= -1 and src[:, 1].min() >= -1 and src[:, 0].max() <= w + 1 and src[:, 1].max() <= h + 1:
-            m = cand
+    crop = np.array([[k, 0, -k * x0], [0, k, -k * y0]], np.float64)
+    m = np.concatenate([crop[:, :2] @ rot[:, :2], (crop[:, :2] @ rot[:, 2] + crop[:, 2])[:, None]], 1)
     interp = cv2.INTER_AREA if k < 0.8 else cv2.INTER_LINEAR
-    portrait = cv2.warpAffine(bgr, m, (out_side, out_side), flags=interp, borderMode=cv2.BORDER_REPLICATE)
+    portrait = cv2.warpAffine(bgr, m, (out_side, out_side), flags=interp, borderMode=cv2.BORDER_REFLECT_101)
     return portrait, m
 
 

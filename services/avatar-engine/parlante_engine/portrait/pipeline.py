@@ -34,6 +34,8 @@ class PipelinePaths:
     vae_decoder: Path
     vocab: Path
     merges: Path
+    #: needed only by the high-resolution pass (image-to-image)
+    vae_encoder: Path | None = None
 
 
 @dataclass
@@ -125,6 +127,8 @@ class PortraitPipeline:
         self._text = None
         self._unet = None
         self._vae = None
+        self._text_input: tuple[str, type] = ("input_ids", np.int64)
+        self._vae_input = "latent_sample"
         self._t_dtype = np.float32
         self._t_scalar = True
         self.load_s = 0.0
@@ -137,9 +141,20 @@ class PortraitPipeline:
         self.load_s += time.perf_counter() - t
         return model, compiled
 
+    # NOTE: models are always fed by tensor NAME. Calling a CompiledModel with port objects
+    # (`compiled({compiled.inputs[0]: x})`) keeps it alive after its last reference is dropped
+    # (openvino 2026.4, measured: +0.9 GB per job for the text encoder alone, which got a
+    # long batch run killed by the OOM killer). `InferRequest.infer` with ports does not.
+    @staticmethod
+    def _input(model, index: int = 0) -> tuple[str, type]:
+        port = model.inputs[index]
+        return port.get_any_name(), (np.int32 if "i32" in str(port.get_element_type()) else
+                                     np.int64 if "i64" in str(port.get_element_type()) else np.float32)
+
     def _text_encoder(self):
         if self._text is None:
-            _, self._text = self._compile(self.paths.text_encoder)
+            model, self._text = self._compile(self.paths.text_encoder)
+            self._text_input = self._input(model)
         return self._text
 
     def _unet_model(self):
@@ -152,7 +167,8 @@ class PortraitPipeline:
 
     def _vae_decoder(self):
         if self._vae is None:
-            _, self._vae = self._compile(self.paths.vae_decoder)
+            model, self._vae = self._compile(self.paths.vae_decoder)
+            self._vae_input = self._input(model)[0]
         return self._vae
 
     def close(self) -> None:
@@ -160,32 +176,70 @@ class PortraitPipeline:
         gc.collect()
 
     # ---------------------------------------------------------------- stages
-    def encode(self, prompt: str) -> np.ndarray:
-        """[1, 77 * n_windows, 768] text embeddings."""
+    def encode(self, prompt: str, emphasis: dict[str, float] | None = None) -> np.ndarray:
+        """[1, 77, 768] text embeddings (one CLIP window; see tokenizer.py).
+
+        `emphasis` maps words of the prompt to a weight: the embeddings at the positions of
+        those tokens are multiplied by it and the tensor is rescaled to its original mean (the
+        usual prompt-weighting scheme). Used sparingly: 1.3 on one word is safe, 1.8 on two
+        words produced broken images in our tests."""
         te = self._text_encoder()
-        port = te.inputs[0]
-        windows = self.tokenizer.windows(prompt)
-        dtype = np.int32 if "i32" in str(port.get_element_type()) else np.int64
-        chunks = [np.array(te({port: w[None].astype(dtype)})[0]) for w in windows]
-        return np.concatenate(chunks, axis=1).astype(np.float32)
+        name, dtype = self._text_input
+        ids = self.tokenizer.encode(prompt)
+        emb = np.array(te({name: ids.astype(dtype)})[0]).astype(np.float32)
+        if emphasis:
+            mean = float(emb.mean())
+            row = [int(t) for t in ids[0]]
+            for word, weight in emphasis.items():
+                target = self.tokenizer.ids(word)
+                n = len(target)
+                for pos in range(1, len(row) - n + 1):
+                    if n and row[pos: pos + n] == target:
+                        emb[0, pos: pos + n] *= float(weight)
+            if abs(float(emb.mean())) > 1e-12:
+                emb *= mean / float(emb.mean())
+        return emb
 
     def _eps(self, x: np.ndarray, t: int, emb: np.ndarray) -> np.ndarray:
         tt = np.array(t, self._t_dtype) if self._t_scalar else np.array([t], self._t_dtype)
         out = self._unet({"sample": x.astype(np.float32), "timestep": tt, "encoder_hidden_states": emb})
         return np.array(out[0]).astype(np.float64)
 
+    def encode_image(self, rgb: np.ndarray) -> np.ndarray:
+        """RGB uint8 [H, W, 3] -> scaled latent [1, 4, H/8, W/8] (the posterior MEAN: deterministic).
+        The encoder is compiled for the call and released: it is used once or twice per job."""
+        if self.paths.vae_encoder is None:
+            raise RuntimeError("the VAE encoder is not available")
+        model, encoder = self._compile(self.paths.vae_encoder)
+        name = self._input(model)[0]
+        del model
+        x = (rgb.astype(np.float32) / 127.5 - 1.0).transpose(2, 0, 1)[None]
+        params = np.array(encoder({name: np.ascontiguousarray(x)})[0])
+        del encoder
+        return params[:, :4].astype(np.float64) * VAE_SCALE
+
     def decode(self, latent: np.ndarray) -> np.ndarray:
         vae = self._vae_decoder()
-        img = np.array(vae({vae.inputs[0]: (latent / VAE_SCALE).astype(np.float32)})[0])[0]
+        img = np.array(vae({self._vae_input: (latent / VAE_SCALE).astype(np.float32)})[0])[0]
         return ((img.transpose(1, 2, 0) / 2 + 0.5).clip(0, 1) * 255).round().astype(np.uint8)
 
     # ---------------------------------------------------------------- generate
     def generate(self, positive: str, negative: str, seed: int, width: int, height: int, steps: int = 20,
                  guidance: float = 5.5, on_eval: Callable[[int, int], None] | None = None,
                  should_cancel: Callable[[], None] | None = None,
-                 embeddings: tuple[np.ndarray, np.ndarray] | None = None) -> tuple[np.ndarray, GenStats]:
-        """RGB uint8 [height, width, 3]. `on_eval(done, total)` is called after every UNet
-        evaluation (2 per step); `should_cancel()` may raise to abort between evaluations."""
+                 embeddings: tuple[np.ndarray, np.ndarray] | None = None,
+                 init_image: np.ndarray | None = None, strength: float = 1.0,
+                 release_unet: bool = False) -> tuple[np.ndarray, GenStats]:
+        """RGB uint8 [height, width, 3].
+
+        `init_image` (RGB uint8, same size) + `strength` in (0, 1]: start from that image noised
+        to the sigma at `1 - strength` of the schedule and run only the remaining steps
+        (image-to-image). `strength` 1 with an init image still runs every step but keeps the
+        image's low frequencies in the starting latent.
+        `release_unet`: free the UNet before decoding (the last image of a job): the VAE decoder
+        needs ~1 GB of activations at 768 px and the peak RSS is what limits the image size.
+        `on_eval(done, total)` is called after every UNet evaluation (2 per step);
+        `should_cancel()` may raise to abort between evaluations."""
         st = GenStats()
         load0 = self.load_s
         t0 = time.perf_counter()
@@ -196,11 +250,22 @@ class PortraitPipeline:
         else:
             cond, uncond = embeddings
         st.text_s = time.perf_counter() - t0
-        self._unet_model()
-        total_evals = steps * 2
         sigmas = karras_sigmas(steps)
         rng = np.random.default_rng(int(seed))
-        x = rng.standard_normal((1, 4, height // LATENT_DOWN, width // LATENT_DOWN)) * np.sqrt(sigmas[0] ** 2 + 1)
+        noise = rng.standard_normal((1, 4, height // LATENT_DOWN, width // LATENT_DOWN))
+        if init_image is None:
+            x = noise * np.sqrt(sigmas[0] ** 2 + 1)
+        else:
+            if init_image.shape[:2] != (height, width):
+                raise ValueError("init_image must have the requested size")
+            first = int(min(steps - 1, max(0, round(steps * (1.0 - float(strength))))))
+            sigmas = sigmas[first:]
+            self._vae = None                    # the decoder is recompiled later; never hold both VAEs
+            gc.collect()
+            x = self.encode_image(init_image) + noise * sigmas[0]
+            gc.collect()
+        self._unet_model()
+        total_evals = (len(sigmas) - 1) * 2
 
         def denoise(x: np.ndarray, sigma: float) -> np.ndarray:
             t = sigma_to_timestep(sigma)
@@ -223,6 +288,9 @@ class PortraitPipeline:
         st.unet_s = time.perf_counter() - t1
         if should_cancel:
             should_cancel()
+        if release_unet:
+            self._unet = None
+            gc.collect()
         t2 = time.perf_counter()
         img = self.decode(x)
         st.vae_s = time.perf_counter() - t2

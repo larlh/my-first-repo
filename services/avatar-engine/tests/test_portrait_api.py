@@ -28,18 +28,28 @@ class StubPipeline:
     instances: list["StubPipeline"] = []
 
     def __init__(self, paths, threads=None):
+        from types import SimpleNamespace
+
+        from parlante_engine.portrait.prompts import approx_tokens
+
         self.closed = False
         self.seeds: list[int] = []
+        self.calls: list[dict] = []
+        self.emphasis: list = []
         self._text = None
+        self.tokenizer = SimpleNamespace(count=approx_tokens)
         StubPipeline.instances.append(self)
 
-    def encode(self, prompt):
+    def encode(self, prompt, emphasis=None):
+        self.emphasis.append(emphasis)
         return np.zeros((1, 77, 768), np.float32)
 
     def generate(self, positive, negative, seed, width, height, steps=20, guidance=5.5, on_eval=None,
-                 should_cancel=None, embeddings=None):
+                 should_cancel=None, embeddings=None, init_image=None, strength=1.0, release_unet=False):
         self.seeds.append(seed)
         self.last = dict(positive=positive, negative=negative, width=width, height=height, steps=steps)
+        self.calls.append(dict(seed=seed, width=width, height=height, strength=strength,
+                               init=None if init_image is None else init_image.shape))
         for i in range(steps * 2):
             if should_cancel:
                 should_cancel()
@@ -55,9 +65,10 @@ class StubPipeline:
         self.closed = True
 
 
-def passing_report() -> QcReport:
-    lm = {k: {"x": 0.5, "y": 0.5} for k in ("leftEye", "rightEye", "mouthLeft", "mouthRight", "chin")}
-    return QcReport(True, [], 1, {"mouthOpen": 0.01}, lm, 0.0)
+def passing_report(face_height: float = 0.47, eye_y: float = 0.42) -> QcReport:
+    """A face already framed as a presenter shot (no re-framing needed) unless told otherwise."""
+    lm = {k: {"x": 0.5, "y": eye_y} for k in ("leftEye", "rightEye", "mouthLeft", "mouthRight", "chin")}
+    return QcReport(True, [], 1, {"mouthOpen": 0.01, "faceHeight": face_height, "centerOffset": 0.0}, lm, 0.0)
 
 
 @pytest.fixture()
@@ -122,21 +133,81 @@ def test_generate_rounds_the_size_and_honours_gender(client, work_dir):
     done = wait_job(client, r.json()["jobId"])
     assert done["status"] == "succeeded"
     assert (done["result"]["width"], done["result"]["height"]) == (768, 576)
-    last = StubPipeline.instances[-1].last
-    assert "man" in last["positive"] and "woman, female" in last["negative"]
+    pipe = StubPipeline.instances[-1]
+    assert "man" in pipe.last["positive"] and "woman, female" in pipe.last["negative"]
+    assert pipe.emphasis == [{"man": 1.3}, None]          # positive prompt of a man: noun weighted; negative: never
+    image = cv2.imdecode(np.fromfile(done["result"]["imagePath"], np.uint8), cv2.IMREAD_COLOR)
+    assert image.shape == (576, 768, 3)
+
+
+def test_large_portraits_are_composed_at_512_and_refined_at_the_target_size(client, work_dir, monkeypatch):
+    """Above 512 px: quality control (and retries) on a <= 512 px composition, then ONE
+    image-to-image pass at the requested size from the approved composition, same seed."""
+    reports = iter([QcReport(False, ["head_tilted"], 1, {}, passing_report().landmarks5, 1.4),
+                    passing_report(), passing_report()])
+    monkeypatch.setattr(service, "check_portrait", lambda rgb: next(reports))
+    r = client.post("/v1/portraits/generate", json={"prompt": "a woman", "seed": 9, "width": 768, "height": 768,
+                                                    "outputDir": str(work_dir / "g7")})
+    done = wait_job(client, r.json()["jobId"])
+    assert done["status"] == "succeeded", done
+    calls = StubPipeline.instances[-1].calls
+    second = 9 + service.SEED_STRIDE
+    assert [(c["seed"], c["width"], c["height"], c["init"]) for c in calls] == [
+        (9, 512, 512, None), (second, 512, 512, None), (second, 768, 768, (768, 768, 3))]
+    assert calls[-1]["strength"] == service.REFINE_STRENGTH
+    res = done["result"]
+    assert (res["width"], res["height"], res["attempts"], res["seedUsed"], res["qcPassed"]) == (768, 768, 2, second, True)
+    meta = json.loads((work_dir / "g7" / "portrait.json").read_text())
+    assert meta["compositionSize"] == [512, 512] and meta["refineStrength"] == service.REFINE_STRENGTH
+    # a 512-pixel request whose composition is already a head-and-shoulders shot is a single stage
+    r = client.post("/v1/portraits/generate", json={"prompt": "a woman", "seed": 9, "outputDir": str(work_dir / "g8")})
+    wait_job(client, r.json()["jobId"])
+    assert [(c["width"], c["init"]) for c in StubPipeline.instances[-1].calls] == [(512, None)]
+
+
+def test_small_faces_are_reframed_and_refined_even_at_512(client, work_dir, monkeypatch):
+    """A wide composition (face 25 % of the height) is cropped to the presenter framing and
+    re-rendered at the requested size, so the delivered face is large."""
+    reports = iter([passing_report(face_height=0.25, eye_y=0.30), passing_report()])
+    monkeypatch.setattr(service, "check_portrait", lambda rgb: next(reports))
+    r = client.post("/v1/portraits/generate", json={"prompt": "a man", "seed": 2, "outputDir": str(work_dir / "g9")})
+    done = wait_job(client, r.json()["jobId"])
+    assert done["status"] == "succeeded", done
+    calls = StubPipeline.instances[-1].calls
+    assert [(c["width"], c["init"], c["strength"]) for c in calls] == [
+        (512, None, 1.0), (512, (512, 512, 3), service.REFINE_STRENGTH)]
+    meta = json.loads((work_dir / "g9" / "portrait.json").read_text())
+    x0, y0, cw, ch = meta["compositionCrop"]
+    assert cw == ch == round(0.25 * 512 / service.FRAME_FACE_FRACTION)          # 272 px square
+    assert x0 == round(256 - cw / 2) and y0 == round(0.30 * 512 - service.FRAME_EYE_LINE * ch)
+
+
+def test_presenter_crop_geometry():
+    crop = service.presenter_crop
+    assert crop(passing_report(), 512, 512, 1.0) is None                        # already framed
+    assert crop(QcReport(False, ["no_face"], 0), 512, 512, 1.0) is None
+    # face near the top-left corner: the crop is clamped inside the image
+    lm = {k: {"x": 0.2, "y": 0.1} for k in ("leftEye", "rightEye", "mouthLeft", "mouthRight", "chin")}
+    corner = QcReport(True, [], 1, {"faceHeight": 0.2, "centerOffset": -0.3}, lm, 0.0)
+    x0, y0, cw, ch = crop(corner, 512, 512, 1.0)
+    assert (x0, y0) == (0, 0) and cw == ch == round(0.2 * 512 / service.FRAME_FACE_FRACTION)
+    # a 4:3 target keeps the aspect ratio and never exceeds the image
+    x0, y0, cw, ch = crop(passing_report(face_height=0.3, eye_y=0.4), 512, 384, 4 / 3)
+    assert abs(cw / ch - 4 / 3) < 0.02 and x0 >= 0 and y0 >= 0 and x0 + cw <= 512 and y0 + ch <= 384
 
 
 def test_failed_quality_control_retries_with_derived_seeds_and_keeps_the_best(client, work_dir, monkeypatch):
     reports = iter([QcReport(False, ["mouth_open", "head_tilted"], 1, {}, passing_report().landmarks5, 3.0),
                     QcReport(False, ["mouth_open"], 1, {}, passing_report().landmarks5, 1.2),
-                    QcReport(False, ["head_tilted", "not_frontal"], 1, {}, passing_report().landmarks5, 2.5)])
+                    QcReport(False, ["head_tilted", "not_frontal"], 1, {}, passing_report().landmarks5, 2.5),
+                    QcReport(False, ["not_frontal"], 1, {}, passing_report().landmarks5, 1.9)])
     monkeypatch.setattr(service, "check_portrait", lambda rgb: next(reports))
     r = client.post("/v1/portraits/generate", json={"prompt": "a man", "seed": 40, "outputDir": str(work_dir / "g3")})
     done = wait_job(client, r.json()["jobId"])
     assert done["status"] == "succeeded"
     res = done["result"]
-    assert StubPipeline.instances[-1].seeds == [40, 40 + service.SEED_STRIDE, 40 + 2 * service.SEED_STRIDE]
-    assert res["attempts"] == 3 and res["qcPassed"] is False and res["qcIssues"] == ["mouth_open"]
+    assert StubPipeline.instances[-1].seeds == [40 + k * service.SEED_STRIDE for k in range(4)]
+    assert res["attempts"] == 4 and res["qcPassed"] is False and res["qcIssues"] == ["mouth_open"]
     assert res["seedUsed"] == 40 + service.SEED_STRIDE                         # the least bad attempt
     image = cv2.imdecode(np.fromfile(res["imagePath"], np.uint8), cv2.IMREAD_COLOR)
     assert int(image[0, 0, 2]) == (40 + service.SEED_STRIDE) % 251            # and it is that attempt's image
@@ -211,9 +282,21 @@ def test_missing_weights_answer_503(work_dir, monkeypatch, tmp_path):
         registry.reset_registry()
 
 
+def test_options_endpoint_lists_template_choices_and_estimates(client):
+    body = client.get("/v1/portraits/options").json()
+    assert body["genders"] == ["female", "male", "neutral"]
+    assert body["age"] == {"min": 18, "max": 90}
+    assert "business" in body["styles"] and set(body["styles"]["business"]) == {"female", "male", "neutral"}
+    assert "dark" in body["skinTones"] and "light-gray" in body["backgrounds"]
+    assert body["size"] == {"min": 384, "max": 768, "multipleOf": 64, "default": 512}
+    est = body["performance"]["estimatedSeconds"]
+    assert 0 < est["512x512"] < est["640x640"] < est["768x768"]
+    assert body["performance"]["steps"] == 20 and body["performance"]["maxAttempts"] == 4
+
+
 def test_cancel_stops_a_running_generation(client, work_dir, monkeypatch):
     def slow_generate(self, positive, negative, seed, width, height, steps=20, guidance=5.5, on_eval=None,
-                      should_cancel=None, embeddings=None):
+                      should_cancel=None, embeddings=None, init_image=None, strength=1.0, release_unet=False):
         for i in range(2000):
             should_cancel()
             on_eval(min(i + 1, steps * 2), steps * 2)
@@ -233,27 +316,46 @@ def test_cancel_stops_a_running_generation(client, work_dir, monkeypatch):
 
 
 @pytest.mark.slow
-def test_real_generation_is_deterministic_and_passes_basic_checks(work_dir):
-    """Real weights, 384x384 and 10 steps to keep it short (~15 s per image on 4 cores)."""
+def test_real_generation_is_deterministic_two_stage_and_releases_its_memory(work_dir):
+    """Real weights: a 384-px single-stage job twice (determinism), then a 576-px two-stage job
+    (512-px composition + image-to-image), 10 steps each to keep it short (~1 minute in total on
+    4 idle cores)."""
+    import gc
+
+    import psutil
+
     from parlante_engine.core.registry import get_registry
 
     if not get_registry().capability_ready("generate"):
         pytest.skip("portrait weights not downloaded (run scripts/download_models.py --all)")
     from parlante_engine.portrait.prompts import PortraitSpec
 
-    def run(tag: str) -> tuple[dict, np.ndarray]:
+    def run(tag: str, size: int) -> tuple[dict, np.ndarray, dict]:
         out = work_dir / tag
         out.mkdir()
-        job = service.GenerateJob(output_dir=out, seed=3, width=384, height=384, steps=10, max_attempts=1,
+        job = service.GenerateJob(output_dir=out, seed=3, width=size, height=size, steps=10, max_attempts=1,
                                   spec=PortraitSpec(gender="female", age=40, style="business"))
         res = service.run_generate(job)
-        return res, cv2.imdecode(np.fromfile(res["imagePath"], np.uint8), cv2.IMREAD_COLOR)
+        meta = json.loads((out / "portrait.json").read_text())
+        return res, cv2.imdecode(np.fromfile(res["imagePath"], np.uint8), cv2.IMREAD_COLOR), meta
 
-    res_a, img_a = run("a")
-    res_b, img_b = run("b")
+    proc = psutil.Process()
+    res_a, img_a, meta_a = run("a", 384)
+    gc.collect()
+    rss_after_first = proc.memory_info().rss
+    res_b, img_b, _ = run("b", 384)
     assert img_a.shape == (384, 384, 3)
     assert np.array_equal(img_a, img_b)                    # same request -> same portrait
     assert img_a.std() > 20                                # an actual image, not a flat field
-    meta = json.loads((work_dir / "a" / "portrait.json").read_text())
-    assert meta["qc"]["faceCount"] == 1
-    assert meta["timings"]["unetEvals"] == 20
+    assert meta_a["qc"]["faceCount"] == 1
+    assert meta_a["timings"]["composition"]["unetEvals"] == 20 and meta_a["timings"]["refine"] is None
+
+    res_c, img_c, meta_c = run("c", 576)
+    assert img_c.shape == (576, 576, 3) and res_c["width"] == 576
+    assert meta_c["compositionSize"] == [512, 512]
+    assert meta_c["timings"]["composition"]["unetEvals"] == 20
+    assert meta_c["timings"]["refine"]["unetEvals"] == 10  # half of the schedule at the target size
+    assert meta_c["qc"]["faceCount"] == 1
+    gc.collect()
+    # the models are released after every job: three jobs must not accumulate memory
+    assert proc.memory_info().rss - rss_after_first < 400 * 1024 * 1024

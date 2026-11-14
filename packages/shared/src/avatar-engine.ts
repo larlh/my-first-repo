@@ -139,7 +139,7 @@ export const EngineJobResultSchema = z.discriminatedUnion('kind', [
     attempts: z.number().int().optional(),
     /** false = no attempt passed every check; the least bad one is returned with `qcIssues`. */
     qcPassed: z.boolean().optional(),
-    /** e.g. `mouth_open`, `head_tilted`, `not_frontal`, `pose_asymmetric`. */
+    /** e.g. `mouth_open`, `head_tilted`, `not_frontal`, `face_too_small`, `not_looking_at_camera`. */
     qcIssues: z.array(z.string()).optional(),
   }),
   z.object({

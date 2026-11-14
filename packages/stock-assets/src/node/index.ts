@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,13 +41,18 @@ const AVATARS_DIR = path.resolve(
 export function stockPhotorealAvatarFiles(avatarId: string): {
   portraitPath: string;
   maskPath: string | null;
+  /** 256-px WebP thumbnail (`<portrait stem>.thumb.webp`), or null when it was not shipped. */
+  thumbPath: string | null;
 } {
   const meta = getStockPhotorealAvatar(avatarId);
   if (!meta) throw new AppError('NOT_FOUND', 'Stock avatar not found', { avatarId });
   // File names come from the catalogue (code), never from input; basename() is belt and braces.
+  const portraitFile = path.basename(meta.portraitFile);
+  const thumbPath = path.join(AVATARS_DIR, `${path.parse(portraitFile).name}.thumb.webp`);
   return {
-    portraitPath: path.join(AVATARS_DIR, path.basename(meta.portraitFile)),
+    portraitPath: path.join(AVATARS_DIR, portraitFile),
     maskPath: meta.maskFile ? path.join(AVATARS_DIR, path.basename(meta.maskFile)) : null,
+    thumbPath: existsSync(thumbPath) ? thumbPath : null,
   };
 }
 

@@ -1,7 +1,8 @@
 """POST /v1/portraits/generate — text description -> portrait of a SYNTHETIC presenter.
+GET  /v1/portraits/options  — template choices and expected duration on this machine.
 
-Long job (tens of seconds to minutes on CPU): answers 202 with an EngineJob; poll
-GET /v1/jobs/{jobId} for `progress`, `etaSec` and the result.
+`generate` is a long job (tens of seconds to minutes on CPU): it answers 202 with an EngineJob;
+poll GET /v1/jobs/{jobId} for `progress`, `etaSec` and the result.
 """
 from __future__ import annotations
 
@@ -28,6 +29,25 @@ class GenerateRequest(Request):
     outputDir: str = Field(min_length=1, max_length=4096)
     #: additive (optional in the shared contract): steers the template and the negative prompt
     gender: Optional[Literal["female", "male", "neutral"]] = None
+
+
+@router.get("/v1/portraits/options")
+def options() -> dict:
+    """Additive helper (not in the shared contract): the structured choices of the presenter
+    template and the expected duration of a job on THIS machine, for forms and estimates."""
+    from .prompts import BACKGROUNDS, GENDERS, MAX_AGE, MIN_AGE, SKIN_TONES, STYLES
+    from .service import MAX_SIDE, MIN_SIDE, performance_summary
+
+    return {
+        "genders": list(GENDERS),
+        "age": {"min": MIN_AGE, "max": MAX_AGE},
+        "skinTones": list(SKIN_TONES),
+        "styles": {name: clothing for name, clothing in STYLES.items()},
+        "backgrounds": list(BACKGROUNDS),
+        "size": {"min": MIN_SIDE, "max": MAX_SIDE, "multipleOf": 64, "default": 512},
+        "ready": get_registry().capability_ready("generate"),
+        "performance": performance_summary(),
+    }
 
 
 @router.post("/v1/portraits/generate", status_code=202)
