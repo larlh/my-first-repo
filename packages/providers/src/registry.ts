@@ -1,4 +1,4 @@
-import type { Capabilities, Providers } from '@parlante/shared';
+import type { Capabilities, EngineModelInfo, EngineStatus, Providers } from '@parlante/shared';
 import { parseEnv } from '@parlante/shared/node';
 import { providerEnvSchema } from './env';
 import type { ProviderEnv } from './env';
@@ -38,18 +38,61 @@ export function createProvidersFromEnv(
   return createProviders(parseEnv(providerEnvSchema, source));
 }
 
+function statusOrUnavailable(status: Promise<EngineStatus>): Promise<EngineStatus> {
+  return status.catch((err: unknown) => ({
+    available: false,
+    reason: err instanceof Error ? err.message : 'Avatar engine status check failed',
+    device: null,
+    secondsPerVideoSecond: null,
+  }));
+}
+
+/**
+ * State of the photorealistic avatar engine for `/api/capabilities`, merged from BOTH neural
+ * providers: per-operation availability (animate ← lip-sync; generate / prepare ← portrait),
+ * the models with their licences, and the measured costs. A provider that does not report
+ * `operations` contributes its `available` flag to the operations it implements.
+ */
+export function mergeEngineStatus(
+  lipsync: EngineStatus,
+  portrait: EngineStatus,
+): Capabilities['avatarEngine'] {
+  const operations = {
+    generate: portrait.operations?.generate ?? portrait.available,
+    prepare: portrait.operations?.prepare ?? portrait.available,
+    animate: lipsync.operations?.animate ?? lipsync.available,
+  };
+  const models = new Map<string, EngineModelInfo>();
+  for (const model of [...(lipsync.models ?? []), ...(portrait.models ?? [])]) {
+    models.set(model.id, model);
+  }
+  const available = operations.generate || operations.prepare || operations.animate;
+  const allUp = operations.generate && operations.prepare && operations.animate;
+  return {
+    available,
+    reason: allUp ? null : (lipsync.reason ?? portrait.reason),
+    device: lipsync.device ?? portrait.device,
+    secondsPerVideoSecond: lipsync.secondsPerVideoSecond,
+    operations,
+    models: [...models.values()],
+    nonCommercial:
+      Boolean(lipsync.nonCommercial || portrait.nonCommercial) ||
+      [...models.values()].some((model) => model.downloaded && !model.commercialUse),
+    secondsPerPortrait: portrait.secondsPerPortrait ?? lipsync.secondsPerPortrait ?? null,
+  };
+}
+
 /**
  * Snapshot for `GET /api/capabilities`: which provider is active per capability, plus the live
  * state of the photorealistic avatar engine (never throws: an unreachable engine is reported
  * as unavailable).
  */
 export async function describeCapabilities(providers: Providers): Promise<Capabilities> {
-  const engine = await providers.lipsync.status().catch((err: unknown) => ({
-    available: false,
-    reason: err instanceof Error ? err.message : 'Avatar engine status check failed',
-    device: null,
-    secondsPerVideoSecond: null,
-  }));
+  const [lipsync, portrait] = await Promise.all([
+    statusOrUnavailable(providers.lipsync.status()),
+    statusOrUnavailable(providers.portrait.status()),
+  ]);
+  const engine = mergeEngineStatus(lipsync, portrait);
   return {
     active: {
       tts: providers.tts.default.info,

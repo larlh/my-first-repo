@@ -1,10 +1,29 @@
 import { EMPTY_SCENE_RUNTIME, mediaRefKey } from '@parlante/shared';
-import type { Background, Composition, Fit, Layer, RenderRuntime, Scene } from '@parlante/shared';
+import type {
+  AvatarFraming,
+  Background,
+  Composition,
+  Fit,
+  Layer,
+  PhotoLandmarks,
+  RenderRuntime,
+  Scene,
+} from '@parlante/shared';
+import { photoAvatarPlacement } from './avatars/photo';
 import { computeAvatarState } from './avatars/state';
 import { clamp01, ease } from './easing';
 import { canvasFont } from './fonts';
+import {
+  avatarClipTimeMs,
+  backgroundVideoRawMs,
+  layerActiveAt,
+  mediaTimeMs,
+  sceneInstantsAt,
+  videoLayerRawMs,
+} from './media';
+import { drawSubtitleCue } from './subtitle-draw';
 import { buildSubtitleCues, cueAt } from './subtitles';
-import { computeTimeline, locateScene } from './timeline';
+import { computeTimeline } from './timeline';
 import type { Timeline } from './timeline';
 import type { Ctx2D, PixelBox, RenderAssets, RenderImage, RenderOptions } from './types';
 
@@ -18,6 +37,12 @@ import type { Ctx2D, PixelBox, RenderAssets, RenderImage, RenderOptions } from '
  * renderer-core, who completes each `draw*` function (text wrapping and styles, all shapes,
  * gradients, layer animations, every transition type, subtitle presets, blur/dim, masks).
  * Keep the exported signature stable.
+ *
+ * Two pieces are deliberately NOT private to this file, because other code must agree with
+ * them exactly — keep routing through them when completing the drawing:
+ *  - media clock (./media): which scene(s) are drawn and at which time every video is sampled
+ *    (`sceneInstantsAt`, `mediaTimeMs`, `avatarClipTimeMs`), mirrored by `mediaPlaybackAt`
+ *  - photoreal placement (`photoAvatarPlacement`): shared by the stand-in rig and the clip
  * ----------------------------------------------------------------------------------------- */
 
 interface Frame {
@@ -51,9 +76,10 @@ export function renderFrame(
     assets,
     quality: options.quality ?? 'final',
   };
-  const { timing, localMs, speechMs } = locateScene(timeline, tMs);
-  const scene = composition.scenes[timing.index];
-  if (!scene) return;
+  // One scene normally; during a transition the frozen previous scene, then the incoming one.
+  const instants = sceneInstantsAt(composition, timeline, tMs);
+  const current = instants[instants.length - 1];
+  if (!current) return;
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -61,29 +87,20 @@ export function renderFrame(
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, width, height);
 
-  const inTransition = timing.transitionMs > 0 && localMs < timing.transitionMs;
-  const previousTiming = timeline.scenes[timing.index - 1];
-  const previousScene = composition.scenes[timing.index - 1];
-  if (inTransition && previousTiming && previousScene) {
-    // Previous scene frozen on its last frame, incoming scene blended on top.
-    const lastLocal = Math.max(0, previousTiming.durationMs - 1000 / timeline.fps);
-    drawScene(
-      frame,
-      previousScene,
-      lastLocal,
-      lastLocal - (previousTiming.speechStartMs - previousTiming.startMs),
-    );
-    const progress = ease('ease-in-out', localMs / timing.transitionMs);
-    ctx.save();
-    ctx.globalAlpha = clamp01(progress);
-    drawScene(frame, scene, localMs, speechMs);
-    ctx.restore();
-  } else {
-    drawScene(frame, scene, localMs, speechMs);
+  for (const instant of instants) {
+    if (instant.frozen || instant.transitionProgress >= 1) {
+      drawScene(frame, instant.scene, instant.localMs, instant.speechMs);
+    } else {
+      // Incoming scene blended on top of the frozen previous one.
+      ctx.save();
+      ctx.globalAlpha = clamp01(ease('ease-in-out', instant.transitionProgress));
+      drawScene(frame, instant.scene, instant.localMs, instant.speechMs);
+      ctx.restore();
+    }
   }
 
   const showSubtitles = options.subtitles ?? composition.subtitles.enabled;
-  if (showSubtitles) drawSubtitles(frame, scene, speechMs);
+  if (showSubtitles) drawSubtitles(frame, current.scene, current.speechMs);
   if (options.watermark) drawWatermark(frame);
   ctx.restore();
 }
@@ -92,15 +109,9 @@ function drawScene(frame: Frame, scene: Scene, localMs: number, speechMs: number
   drawBackground(frame, scene.background, localMs);
   const ordered = scene.layers
     .map((layer, index) => ({ layer, index }))
-    .filter(({ layer }) => layer.visible && layerActive(layer, localMs))
+    .filter(({ layer }) => layerActiveAt(layer, localMs))
     .sort((a, b) => a.layer.z - b.layer.z || a.index - b.index);
   for (const { layer } of ordered) drawLayer(frame, scene, layer, localMs, speechMs);
-}
-
-function layerActive(layer: Layer, localMs: number): boolean {
-  const timing = layer.timing;
-  if (!timing) return true;
-  return localMs >= timing.startMs && (timing.endMs === null || localMs < timing.endMs);
 }
 
 function toPixels(frame: Frame, box: { x: number; y: number; w: number; h: number }): PixelBox {
@@ -177,9 +188,11 @@ function drawBackground(frame: Frame, background: Background, localMs: number): 
     }
     case 'video': {
       const source = frame.assets.video(mediaRefKey(background.src));
-      const duration = source?.durationMs ?? 0;
-      const mediaMs = background.trimStartMs + localMs;
-      const t = background.loop && duration > 0 ? mediaMs % duration : Math.min(mediaMs, duration);
+      const t = mediaTimeMs(
+        backgroundVideoRawMs(background, localMs),
+        background.loop,
+        source?.durationMs ?? 0,
+      );
       const image = source?.frameAt(t) ?? null;
       if (image) drawImageFit(ctx, image, full, background.fit);
       else drawPlaceholder(frame, full, 'video');
@@ -246,12 +259,10 @@ function drawLayer(
         ctx.clip();
       }
       const clip = frame.assets.avatarClip(scene.id, layer.id);
-      const clipFrame = clip
-        ? clip.frameAt(Math.min(Math.max(0, speechMs), Math.max(0, clip.durationMs - 1)))
-        : null;
-      if (clipFrame) {
-        // Photorealistic avatar: neural clip (with alpha), anchored like a rig.
-        drawAvatarClipFrame(ctx, clipFrame, box, layer.flip);
+      const clipFrame = clip ? clip.frameAt(avatarClipTimeMs(clip, localMs, speechMs)) : null;
+      if (clip && clipFrame) {
+        // Photorealistic avatar: neural clip (with alpha), placed exactly like the stand-in.
+        drawAvatarClipFrame(ctx, clipFrame, box, layer.framing, clip.landmarks, layer.flip);
       } else if (rig) {
         const state = computeAvatarState({
           runtime: frame.runtime.scenes[scene.id] ?? EMPTY_SCENE_RUNTIME,
@@ -296,9 +307,7 @@ function drawLayer(
     }
     case 'video': {
       const source = frame.assets.video(mediaRefKey(layer.src));
-      const duration = source?.durationMs ?? 0;
-      const mediaMs = layer.trimStartMs + localMs - (layer.timing?.startMs ?? 0);
-      const t = layer.loop && duration > 0 ? mediaMs % duration : Math.min(mediaMs, duration);
+      const t = mediaTimeMs(videoLayerRawMs(layer, localMs), layer.loop, source?.durationMs ?? 0);
       const image = source?.frameAt(t) ?? null;
       if (image) drawImageFit(ctx, image, box, layer.fit);
       else drawPlaceholder(frame, box, 'video');
@@ -326,18 +335,29 @@ function drawLayer(
   ctx.restore();
 }
 
-/** Fit a clip frame inside the box (contain), bottom-centre anchored like the avatar rigs. */
-function drawAvatarClipFrame(ctx: Ctx2D, image: RenderImage, box: PixelBox, flip: boolean): void {
+/**
+ * Draw a neural clip frame where `photoAvatarPlacement` puts it — the same rectangle the
+ * stand-in rig uses for the same box, framing and landmarks — clipped to the layer box.
+ */
+function drawAvatarClipFrame(
+  ctx: Ctx2D,
+  image: RenderImage,
+  box: PixelBox,
+  framing: AvatarFraming,
+  landmarks: PhotoLandmarks | undefined,
+  flip: boolean,
+): void {
   if (image.width === 0 || image.height === 0) return;
-  const scale = Math.min(box.w / image.width, box.h / image.height);
-  const w = image.width * scale;
-  const h = image.height * scale;
+  const dest = photoAvatarPlacement(image.width, image.height, box, framing, landmarks);
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(box.x, box.y, box.w, box.h);
+  ctx.clip();
   if (flip) {
     ctx.translate(2 * (box.x + box.w / 2), 0);
     ctx.scale(-1, 1);
   }
-  ctx.drawImage(image.source, box.x + (box.w - w) / 2, box.y + box.h - h, w, h);
+  ctx.drawImage(image.source, dest.x, dest.y, dest.w, dest.h);
   ctx.restore();
 }
 
@@ -361,34 +381,7 @@ function drawSubtitles(frame: Frame, scene: Scene, speechMs: number): void {
   if (!sceneRuntime || sceneRuntime.words.length === 0) return;
   const style = frame.composition.subtitles;
   const cue = cueAt(buildSubtitleCues(sceneRuntime.words, style), speechMs);
-  if (!cue) return;
-  const { ctx, width, height } = frame;
-  const sizePx = style.fontSize * height;
-  ctx.save();
-  ctx.font = canvasFont(style.fontFamily, sizePx, style.fontWeight);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const textWidth = Math.min(ctx.measureText(cue.text).width, width * 0.9);
-  const padding = sizePx * 0.45;
-  const y =
-    style.position === 'top'
-      ? style.margin * height + sizePx / 2
-      : style.position === 'middle'
-        ? height / 2
-        : height - style.margin * height - sizePx / 2;
-  ctx.fillStyle = style.backgroundColor;
-  ctx.beginPath();
-  ctx.roundRect(
-    width / 2 - textWidth / 2 - padding,
-    y - sizePx / 2 - padding / 2,
-    textWidth + padding * 2,
-    sizePx + padding,
-    sizePx * 0.25,
-  );
-  ctx.fill();
-  ctx.fillStyle = style.color;
-  ctx.fillText(cue.text, width / 2, y, width * 0.9);
-  ctx.restore();
+  if (cue) drawSubtitleCue(frame.ctx, cue, style, frame.width, frame.height, speechMs);
 }
 
 function drawWatermark(frame: Frame): void {

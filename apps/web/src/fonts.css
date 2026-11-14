@@ -1,0 +1,35 @@
+/*
+ * Fonts available to VIDEO compositions (packages/shared FONT_FAMILIES × FONT_WEIGHTS).
+ * The renderer draws text on a canvas with these exact families; `ensureBrowserFonts()` from
+ * @parlante/renderer/browser waits until they are loaded. UI fonts live in styles/tokens.css.
+ */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/inter/800.css';
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';
+@import '@fontsource/poppins/800.css';
+@import '@fontsource/montserrat/400.css';
+@import '@fontsource/montserrat/500.css';
+@import '@fontsource/montserrat/600.css';
+@import '@fontsource/montserrat/700.css';
+@import '@fontsource/montserrat/800.css';
+@import '@fontsource/playfair-display/400.css';
+@import '@fontsource/playfair-display/500.css';
+@import '@fontsource/playfair-display/600.css';
+@import '@fontsource/playfair-display/700.css';
+@import '@fontsource/playfair-display/800.css';
+@import '@fontsource/roboto-slab/400.css';
+@import '@fontsource/roboto-slab/500.css';
+@import '@fontsource/roboto-slab/600.css';
+@import '@fontsource/roboto-slab/700.css';
+@import '@fontsource/roboto-slab/800.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource/jetbrains-mono/700.css';
+@import '@fontsource/jetbrains-mono/800.css';

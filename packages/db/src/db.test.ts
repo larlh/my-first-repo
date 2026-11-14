@@ -2,6 +2,8 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PLANS, SIGNUP_CREDITS, buildPage, createComposition, newId } from '@parlante/shared';
 import {
+  assets,
+  avatars,
   chargeCredits,
   creditLedger,
   cursorOrder,
@@ -175,6 +177,40 @@ describe('credits', () => {
     expect(await getCreditBalance(handle.db, workspace.id)).toBe(0);
   });
 
+  it('labels settlements with the given reason (default render_adjustment)', async () => {
+    const { workspace } = await seedAccount(handle.db, { credits: 20 });
+    const render = { refType: 'renderJob', refId: newId('renderJob') };
+    const translation = { refType: 'translationJob', refId: newId('translationJob') };
+    for (const ref of [render, translation]) {
+      await chargeCredits(handle.db, {
+        workspaceId: workspace.id,
+        amount: 6,
+        reason: 'render',
+        ...ref,
+      });
+    }
+    await settleCredits(handle.db, { workspaceId: workspace.id, actualCost: 4, ...render });
+    await settleCredits(handle.db, {
+      workspaceId: workspace.id,
+      actualCost: 2,
+      reason: 'adjustment',
+      ...translation,
+    });
+    const rows = await handle.db
+      .select()
+      .from(creditLedger)
+      .where(eq(creditLedger.workspaceId, workspace.id));
+    const positive = rows.filter((r) => r.delta > 0 && r.refId !== null);
+    expect(positive.find((r) => r.refId === render.refId)).toMatchObject({
+      delta: 2,
+      reason: 'render_adjustment',
+    });
+    expect(positive.find((r) => r.refId === translation.refId)).toMatchObject({
+      delta: 4,
+      reason: 'adjustment',
+    });
+  });
+
   it('serialises concurrent charges on one workspace', async () => {
     const { workspace } = await seedAccount(handle.db, { credits: 5 });
     const results = await Promise.allSettled(
@@ -186,6 +222,49 @@ describe('credits', () => {
     expect(await getCreditBalance(handle.db, workspace.id)).toBe(0);
     await grantCredits(handle.db, { workspaceId: workspace.id, amount: 2, reason: 'top_up' });
     expect(await getCreditBalance(handle.db, workspace.id)).toBe(2);
+  });
+});
+
+describe('migration 0001 (contract closing)', () => {
+  it('adds asset purpose and avatar progress / cut-out columns with safe defaults', async () => {
+    const { workspace, user } = await seedAccount(handle.db);
+    const [asset] = await handle.db
+      .insert(assets)
+      .values({
+        id: newId('asset'),
+        workspaceId: workspace.id,
+        kind: 'image',
+        name: 'foto.png',
+        mimeType: 'image/png',
+        sizeBytes: 10,
+        storageKey: 'ws/x/assets/y/original.png',
+      })
+      .returning();
+    expect(asset?.purpose).toBe('library');
+    const [avatar] = await handle.db
+      .insert(avatars)
+      .values({
+        id: newId('avatar'),
+        workspaceId: workspace.id,
+        name: 'Persona sintética',
+        origin: 'generated',
+        prompt: 'mujer de unos 40 años',
+        createdBy: user.id,
+      })
+      .returning();
+    expect(avatar).toMatchObject({
+      status: 'processing',
+      progress: 0,
+      etaSec: null,
+      cutoutKey: null,
+      model: null,
+    });
+    const [updated] = await handle.db
+      .update(avatars)
+      .set({ progress: 40, etaSec: 95, cutoutKey: 'k', model: 'rv6-lcm' })
+      .where(eq(avatars.id, avatar?.id ?? ''))
+      .returning();
+    expect(updated).toMatchObject({ progress: 40, etaSec: 95, cutoutKey: 'k', model: 'rv6-lcm' });
   });
 });
 

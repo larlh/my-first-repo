@@ -5,6 +5,7 @@ import { GlobalFonts, createCanvas, loadImage } from '@napi-rs/canvas';
 import type { Canvas } from '@napi-rs/canvas';
 import type { Composition, RenderRuntime } from '@parlante/shared';
 import { listFontFiles } from '../fonts';
+import { matteCanvas } from '../matte';
 import { renderFrame } from '../render-frame';
 import type { Ctx2D, RenderAssets, RenderImage, RenderOptions, RenderPlatform } from '../types';
 
@@ -112,4 +113,36 @@ export function renderFrameToPng(
   const { canvas, ctx } = createNodeCanvas(width, height);
   renderFrame(ctx, composition, tMs, runtime, assets, { ...options, width, height });
   return canvasToPng(canvas);
+}
+
+/**
+ * Portrait (+ greyscale matte) → RGBA PNG with the matte applied: the avatar CUT-OUT stored as
+ * `cutout.png` by the photo-avatar job and served for stock `real_…` avatars. Inputs are
+ * encoded image bytes or local file paths; `mask: null` just re-encodes the portrait.
+ */
+export async function cutoutPng(
+  portrait: Uint8Array | string,
+  mask: Uint8Array | string | null,
+): Promise<Buffer> {
+  const image = await loadNodeImage(portrait);
+  const matte = mask === null ? null : await loadNodeImage(mask);
+  const { canvas } = matteCanvas(nodePlatform, image, matte);
+  return canvasToPng(canvas as NodeCanvas);
+}
+
+/** Downscaled JPEG (largest side `maxSide`) of an image, over an opaque background. */
+export async function thumbnailJpeg(
+  source: Uint8Array | string,
+  maxSide = 256,
+  background = '#e9e6f0',
+): Promise<Buffer> {
+  const image = await loadNodeImage(source);
+  const scale = Math.min(1, maxSide / Math.max(image.width, image.height, 1));
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+  const { canvas, ctx } = createNodeCanvas(width, height);
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(image.source, 0, 0, width, height);
+  return canvasToJpeg(canvas, 86);
 }

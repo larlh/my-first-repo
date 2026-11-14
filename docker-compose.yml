@@ -16,6 +16,8 @@ x-node-env: &node-env
   STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
   STORAGE_LOCAL_DIR: /data/storage
   AVATAR_ENGINE_URL: ${AVATAR_ENGINE_URL:-http://avatar-engine:8090}
+  # The engine is reached over the compose network (not loopback): requests carry this token.
+  AVATAR_ENGINE_TOKEN: ${AVATAR_ENGINE_TOKEN:-}
   AVATAR_ENGINE_WORK_DIR: /data/avatar-engine
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
@@ -102,8 +104,11 @@ services:
     profiles: ['neural']
     build: { context: services/avatar-engine }
     environment:
+      # Same absolute path as in api/worker: file paths travel verbatim in request bodies.
       AVATAR_ENGINE_WORK_DIR: /data/avatar-engine
       AVATAR_ENGINE_MODELS_DIR: /models
+      AVATAR_ENGINE_HOST: 0.0.0.0
+      AVATAR_ENGINE_TOKEN: ${AVATAR_ENGINE_TOKEN:?Set AVATAR_ENGINE_TOKEN in .env to use the neural profile}
     volumes:
       - engine:/data/avatar-engine
       - models:/models

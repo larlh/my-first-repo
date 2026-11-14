@@ -80,3 +80,52 @@ export function collectScriptTexts(
   }
   return out;
 }
+
+export interface ModerationText {
+  /** Where the text comes from (reported in CONTENT_BLOCKED details). */
+  sceneId: string;
+  kind: 'script' | 'transcript' | 'text-layer';
+  /** Layer id for `text-layer`, null otherwise. */
+  layerId: string | null;
+  text: string;
+  language: string | undefined;
+}
+
+/**
+ * EVERY user-written text a video shows or speaks: TTS scripts, transcripts of uploaded
+ * narration and text layers (empty ones skipped). This is the single definition of "what is
+ * moderated before rendering": `startRender` in @parlante/jobs runs each entry through the
+ * ModerationProvider (context `script`) for Studio renders, the public API and batch rows
+ * alike. Call it on the composition AFTER `applyVariables`, so variable values (CSV cells, API
+ * input) are moderated too.
+ */
+export function collectModerationTexts(composition: Composition): ModerationText[] {
+  const out: ModerationText[] = [];
+  for (const scene of composition.scenes) {
+    const script = scene.script;
+    const language = script.kind === 'none' ? undefined : script.language;
+    if (script.kind === 'tts' && script.text.trim() !== '') {
+      out.push({ sceneId: scene.id, kind: 'script', layerId: null, text: script.text, language });
+    } else if (script.kind === 'audio' && script.transcript.trim() !== '') {
+      out.push({
+        sceneId: scene.id,
+        kind: 'transcript',
+        layerId: null,
+        text: script.transcript,
+        language,
+      });
+    }
+    for (const layer of scene.layers) {
+      if (layer.type === 'text' && layer.text.trim() !== '') {
+        out.push({
+          sceneId: scene.id,
+          kind: 'text-layer',
+          layerId: layer.id,
+          text: layer.text,
+          language,
+        });
+      }
+    }
+  }
+  return out;
+}

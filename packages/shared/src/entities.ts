@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { AspectRatioSchema, CompositionSchema, ResolutionSchema } from './composition/schema';
+import {
+  AspectRatioSchema,
+  CompositionSchema,
+  ResolutionSchema,
+  SubtitleStyleSchema,
+} from './composition/schema';
 import { BrandColorsSchema, BrandFontsSchema } from './composition/brand';
 import { ConsentKindSchema, ConsentRelationshipSchema } from './consent';
 import { StoredErrorSchema } from './errors';
@@ -57,6 +62,29 @@ export type ProviderRef = z.infer<typeof ProviderRefSchema>;
 export const ProvenanceSchema = z.partialRecord(CapabilitySchema, ProviderRefSchema);
 export type Provenance = z.infer<typeof ProvenanceSchema>;
 
+/** One model of the local avatar engine, as reported by its `GET /health` (docs/MODELS.md). */
+export const EngineModelInfoSchema = z.object({
+  /** Stable id used in docs/MODELS.md. */
+  id: z.string(),
+  role: z.enum(['portrait-generation', 'face-detection', 'matting', 'animation', 'other']),
+  /** Weights present in the cache directory (checksums verified). */
+  downloaded: z.boolean(),
+  license: z.string(),
+  commercialUse: z.boolean(),
+});
+export type EngineModelInfo = z.infer<typeof EngineModelInfoSchema>;
+
+/** Which operations of the avatar engine are usable right now (all their weights present). */
+export const EngineOperationsSchema = z.object({
+  /** Text → portrait of a synthetic person. */
+  generate: z.boolean(),
+  /** Photo → prepared portrait (face detection, crop, matte). */
+  prepare: z.boolean(),
+  /** Portrait + audio → talking clip. */
+  animate: z.boolean(),
+});
+export type EngineOperations = z.infer<typeof EngineOperationsSchema>;
+
 export const CapabilitiesSchema = z.object({
   /** Active provider per capability. */
   active: z.record(CapabilitySchema, ProviderRefSchema),
@@ -79,6 +107,21 @@ export const CapabilitiesSchema = z.object({
      * (null until measured). Shown to the user as an honest time estimate.
      */
     secondsPerVideoSecond: z.number().positive().nullable(),
+    /**
+     * Availability PER OPERATION. `available` is true when at least one is usable; endpoints
+     * check the one they need (generate → POST /api/photo-avatars/generate, prepare → POST
+     * /api/photo-avatars, animate → renders with photorealistic avatars) BEFORE charging.
+     */
+    operations: EngineOperationsSchema.default({ generate: false, prepare: false, animate: false }),
+    /** Models of the engine with their licence (drives the licence notice of §2b). */
+    models: z.array(EngineModelInfoSchema).default([]),
+    /**
+     * True when any DOWNLOADED model forbids commercial use: the UI must show a visible
+     * "non-commercial model" notice wherever photorealistic avatars are created or rendered.
+     */
+    nonCommercial: z.boolean().default(false),
+    /** MEASURED seconds to generate one portrait on this machine (null until measured). */
+    secondsPerPortrait: z.number().positive().nullable().default(null),
   }),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
@@ -169,14 +212,27 @@ export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 export const PointSchema = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
 export type Point = z.infer<typeof PointSchema>;
 
-/** Five landmarks on the source photo, normalised to the image (0..1). */
-export const PhotoLandmarksSchema = z.object({
-  leftEye: PointSchema,
-  rightEye: PointSchema,
-  mouthLeft: PointSchema,
-  mouthRight: PointSchema,
-  chin: PointSchema,
-});
+/**
+ * Five face landmarks, normalised (0..1) to THE IMAGE THEY WERE MARKED ON. Which image that is
+ * depends on where the value travels:
+ *  - `CreatePhotoAvatarBody.landmarks` (create): the UPLOADED source image (`imageAssetId`).
+ *    The photo-avatar job maps them onto the prepared portrait.
+ *  - `PhotoAvatarRig.landmarks`, `PreparedPortrait.landmarks`, `Avatar.rig`, and the body of
+ *    `PATCH /api/photo-avatars/:id` (update): the PREPARED portrait (`Avatar.imageUrl`, same
+ *    size and framing as `Avatar.cutoutUrl`).
+ * "left"/"right" are image-space (leftEye.x < rightEye.x), not the person's anatomical side.
+ */
+export const PhotoLandmarksSchema = z
+  .object({
+    leftEye: PointSchema,
+    rightEye: PointSchema,
+    mouthLeft: PointSchema,
+    mouthRight: PointSchema,
+    chin: PointSchema,
+  })
+  .describe(
+    'Face landmarks normalised 0..1. On create: relative to the uploaded image. On update and in every response: relative to the prepared portrait (Avatar.imageUrl).',
+  );
 export type PhotoLandmarks = z.infer<typeof PhotoLandmarksSchema>;
 
 /**
@@ -193,6 +249,30 @@ export const PhotoAvatarRigSchema = z.object({
 });
 export type PhotoAvatarRig = z.infer<typeof PhotoAvatarRigSchema>;
 
+/**
+ * Optional English texts of a catalogue entry. Catalogues are written in Spanish (the default
+ * UI language); the API picks `en` values when `user.locale === 'en'` (see
+ * `localizeCatalogEntry`) and searches (`q`) match both languages.
+ */
+export const CatalogEnglishSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+});
+export type CatalogEnglish = z.infer<typeof CatalogEnglishSchema>;
+
+/** Name / description / tags of a catalogue entry in the given UI language. */
+export function localizeCatalogEntry<
+  T extends { name: string; description?: string; tags: string[]; en?: CatalogEnglish | undefined },
+>(entry: T, locale: string): { name: string; description: string; tags: string[] } {
+  const en = locale === 'en' ? entry.en : undefined;
+  return {
+    name: en?.name ?? entry.name,
+    description: en?.description ?? entry.description ?? '',
+    tags: en?.tags ?? entry.tags,
+  };
+}
+
 /** Static catalogue entry of a stock avatar (lives in packages/renderer/src/avatars). */
 export const StockAvatarMetaSchema = z.object({
   id: AvatarIdSchema,
@@ -204,6 +284,7 @@ export const StockAvatarMetaSchema = z.object({
   tags: z.array(z.string()),
   /** Free-form visual traits for filters/chips, e.g. `{ skin: 'dark', hair: 'curly black' }`. */
   traits: z.record(z.string(), z.string()),
+  en: CatalogEnglishSchema.optional(),
 });
 export type StockAvatarMeta = z.infer<typeof StockAvatarMetaSchema>;
 
@@ -239,6 +320,7 @@ export const StockPhotorealAvatarMetaSchema = z.object({
   portraitFile: z.string(),
   maskFile: z.string().nullable(),
   rig: PhotoAvatarRigSchema,
+  en: CatalogEnglishSchema.optional(),
 });
 export type StockPhotorealAvatarMeta = z.infer<typeof StockPhotorealAvatarMetaSchema>;
 
@@ -259,14 +341,40 @@ export const AvatarSchema = z.object({
   tags: z.array(z.string()),
   traits: z.record(z.string(), z.string()),
   status: AsyncResourceStatusSchema,
+  /**
+   * Preparation / generation progress 0..100 and MEASURED seconds remaining, persisted by the
+   * photo-avatar job (clients poll `GET /api/avatars/:id` while `status` is `processing`).
+   * Stock and `ready` avatars report 100 / null.
+   */
+  progress: z.number().min(0).max(100).default(100),
+  etaSec: z.number().int().min(0).nullable().default(null),
   /** Instant stock avatars have no image: clients draw them with the renderer rig. */
   thumbnailUrl: UrlSchema.nullable(),
-  /** Photoreal avatars: the prepared portrait (PNG), its alpha matte and stand-in rig data. */
+  /**
+   * Photoreal avatars — all null for instant ones and until `status` is `ready`:
+   *  - imageUrl:  prepared portrait (PNG, with its ORIGINAL background)
+   *  - maskUrl:   alpha matte of the portrait (greyscale PNG, same size), null if none
+   *  - cutoutUrl: portrait with the matte already applied (RGBA PNG, same size and framing).
+   *               THIS is the image the Canvas stand-in rig is built from
+   *               (`createPhotoAvatarRig(id, cutout, rig)`), so previews show the person cut
+   *               out over the scene background exactly like the exported neural clip.
+   * Workspace avatars (`avt_…`): signed storage URLs. Stock `real_…` avatars:
+   * `GET /api/stock-avatars/:avatarId/{portrait|mask|cutout|thumb}` (public, cacheable).
+   */
   imageUrl: UrlSchema.nullable(),
   maskUrl: UrlSchema.nullable(),
+  cutoutUrl: UrlSchema.nullable().default(null),
   rig: PhotoAvatarRigSchema.nullable(),
-  /** `generated` avatars: the description they were generated from. */
+  /** `generated` avatars (and stock `real_…`): the description they were generated from. */
   prompt: z.string().nullable(),
+  /** Seed actually used to generate the portrait (reuse it to reproduce the person). */
+  seed: z.number().int().nullable().default(null),
+  /** Model that generated the portrait (provenance / licence, see docs/MODELS.md). */
+  model: z.string().nullable().default(null),
+  /**
+   * Never null in the DTO. DB rows have `provider` null until the job finishes: the API
+   * writes `providers.portrait.info` when it inserts the row (and mappers fall back to it).
+   */
   provider: ProviderRefSchema,
   /** null for stock avatars. */
   workspaceId: idOf('workspace').nullable(),
@@ -295,8 +403,20 @@ export const VoiceSchema = z.object({
   id: VoiceIdSchema,
   kind: z.enum(['stock', 'cloned']),
   name: z.string(),
+  /**
+   * Never null in the DTO. Cloned voices: the API writes `providers.voiceClone.info` when it
+   * inserts the row; the voice-clone job overwrites it with the provider that did the work.
+   */
   provider: ProviderRefSchema,
+  /** Primary language of the voice. */
   language: LocaleSchema,
+  /**
+   * True when the voice speaks every supported language (e.g. OpenAI TTS, ElevenLabs
+   * multilingual): `GET /api/voices?language=xx` ALWAYS includes multilingual voices, and a
+   * TTS script may use them with any `language`. `languages` optionally lists them.
+   */
+  multilingual: z.boolean().default(false),
+  languages: z.array(LocaleSchema).optional(),
   gender: GenderSchema,
   description: z.string(),
   tags: z.array(z.string()),
@@ -337,6 +457,38 @@ export const SynthesizedSpeechSchema = z.object({
   provider: ProviderRefSchema,
 });
 export type SynthesizedSpeech = z.infer<typeof SynthesizedSpeechSchema>;
+
+/**
+ * Content of `cache/tts/<sha>.json`, the sidecar of the cached WAV `cache/tts/<sha>.wav`
+ * (`storageKeys.ttsCacheMeta/Audio`, hash from `ttsCacheKey`). The API
+ * (`POST /api/tts/synthesize`) and the worker (render, translation) SHARE this cache, so both
+ * read and write it only through `synthesizeCached` in @parlante/jobs. An entry that does not
+ * parse is treated as a miss and rewritten.
+ */
+export const TtsCacheMetaSchema = z.object({
+  v: z.literal(1),
+  runtime: SceneRuntimeSchema,
+  provider: ProviderRefSchema,
+  /** Sample rate of the cached WAV (PCM 16-bit mono). */
+  sampleRate: z.number().int().positive(),
+});
+export type TtsCacheMeta = z.infer<typeof TtsCacheMetaSchema>;
+
+/**
+ * Content of the `meta.json` of a cached neural avatar clip
+ * (`storageKeys.avatarClipCache`, hash from `avatarClipCacheKey`). Written by the render job
+ * after `lipsync.animate`, read before calling it again.
+ */
+export const AvatarClipCacheMetaSchema = z.object({
+  v: z.literal(1),
+  alpha: z.enum(['none', 'mask-video', 'mask-image']),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  fps: z.number().positive(),
+  frameCount: z.number().int().min(0),
+  provider: ProviderRefSchema,
+});
+export type AvatarClipCacheMeta = z.infer<typeof AvatarClipCacheMetaSchema>;
 
 /* ---------- videos & render jobs ---------- */
 
@@ -381,6 +533,14 @@ export const VideoSummarySchema = z.object({
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
   renderedAt: IsoDateSchema.nullable(),
+  /** While queued/rendering: current pipeline stage and estimated seconds remaining. */
+  renderStage: RenderStageSchema.nullable(),
+  renderEtaSec: z.number().int().nullable(),
+  /**
+   * True when the composition uses photorealistic avatars (`usesPhotorealAvatars(composition)`):
+   * slow neural render on CPU, and the output is labelled as AI-generated in the UI.
+   */
+  usesPhotorealAvatars: z.boolean(),
 });
 export type VideoSummary = z.infer<typeof VideoSummarySchema>;
 
@@ -392,18 +552,19 @@ export const VideoSchema = VideoSummarySchema.extend({
   renderedRevision: z.number().int().nullable(),
   /** Estimated duration of the current composition (before rendering). */
   estimatedDurationMs: z.number().int(),
-  /** MP4 (H.264 + AAC). */
+  /** MP4 (H.264 + AAC), for playback. */
   videoUrl: UrlSchema.nullable(),
+  /**
+   * Same MP4 served as an attachment named after the title
+   * (`fileUrl(videoKey, { downloadName })`). File URLs are cross-origin, where browsers ignore
+   * `<a download>`, so "Download" buttons MUST use this URL instead of `videoUrl`.
+   */
+  downloadUrl: UrlSchema.nullable(),
   srtUrl: UrlSchema.nullable(),
   vttUrl: UrlSchema.nullable(),
   /** Which providers produced the current output. */
   providers: ProvenanceSchema.nullable(),
   templateId: z.string().nullable(),
-  /** While queued/rendering: current pipeline stage and estimated seconds remaining. */
-  renderStage: RenderStageSchema.nullable(),
-  renderEtaSec: z.number().int().nullable(),
-  /** True when the composition uses photorealistic avatars (slow neural render on CPU). */
-  usesPhotorealAvatars: z.boolean(),
 });
 export type Video = z.infer<typeof VideoSchema>;
 
@@ -477,10 +638,29 @@ export function assetKindForMime(mime: string): AssetKind | null {
   return null;
 }
 
+/**
+ * Why an asset was uploaded:
+ *  - library:            media for compositions (the default; what the asset library lists)
+ *  - avatar_source:      photo of a real person for a photo avatar (consent required)
+ *  - voice_sample:       voice sample for a clone (consent required)
+ *  - translation_source: video to translate
+ * Non-library assets are hidden from `GET /api/assets` unless asked for, and `avatar_source` /
+ * `voice_sample` assets are DELETED with their avatar / voice or when its consent is revoked.
+ */
+export const ASSET_PURPOSES = [
+  'library',
+  'avatar_source',
+  'voice_sample',
+  'translation_source',
+] as const;
+export const AssetPurposeSchema = z.enum(ASSET_PURPOSES);
+export type AssetPurpose = z.infer<typeof AssetPurposeSchema>;
+
 export const AssetSchema = z.object({
   id: idOf('asset'),
   workspaceId: idOf('workspace'),
   kind: AssetKindSchema,
+  purpose: AssetPurposeSchema.default('library'),
   name: z.string(),
   mimeType: z.string(),
   sizeBytes: z.number().int(),
@@ -511,7 +691,9 @@ export const StockAssetSchema = z.object({
 });
 export type StockAsset = z.infer<typeof StockAssetSchema>;
 /** Catalogue entry without the URL (what packages/stock-assets exports). */
-export const StockAssetMetaSchema = StockAssetSchema.omit({ url: true });
+export const StockAssetMetaSchema = StockAssetSchema.omit({ url: true }).extend({
+  en: CatalogEnglishSchema.pick({ name: true, tags: true }).optional(),
+});
 export type StockAssetMeta = z.infer<typeof StockAssetMetaSchema>;
 
 /* ---------- templates ---------- */
@@ -545,6 +727,10 @@ export const TemplateSchema = z.object({
   aspect: AspectRatioSchema,
   tags: z.array(z.string()),
   sceneCount: z.number().int(),
+  /**
+   * Poster of the first scene. Built-in: `GET /api/templates/:templateId/thumbnail`; custom:
+   * signed URL of `storageKeys.templateThumb` (rendered by "save as template").
+   */
   thumbnailUrl: UrlSchema.nullable(),
   createdAt: IsoDateSchema.nullable(),
 });
@@ -657,10 +843,14 @@ export const PublicVideoSchema = z.object({
   resolution: ResolutionSchema.nullable(),
   durationMs: z.number().int().nullable(),
   videoUrl: UrlSchema.nullable(),
+  /** `videoUrl` served as an attachment (Content-Disposition) named after the title. */
+  downloadUrl: UrlSchema.nullable().default(null),
   thumbnailUrl: UrlSchema.nullable(),
   srtUrl: UrlSchema.nullable(),
   vttUrl: UrlSchema.nullable(),
   providers: ProvenanceSchema.nullable(),
+  /** True when the video contains a synthetic, AI-animated photorealistic presenter. */
+  aiGenerated: z.boolean().default(false),
   error: StoredErrorSchema.nullable(),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
@@ -714,8 +904,9 @@ export const TranslationOutputSchema = z.object({
   language: LanguageCodeSchema,
   voiceId: VoiceIdSchema,
   status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  /** Dubbed MP4. */
+  /** Dubbed MP4 (playback) and the same file as an attachment (see `Video.downloadUrl`). */
   videoUrl: UrlSchema.nullable(),
+  downloadUrl: UrlSchema.nullable().default(null),
   srtUrl: UrlSchema.nullable(),
   vttUrl: UrlSchema.nullable(),
   error: StoredErrorSchema.nullable(),
@@ -727,6 +918,12 @@ export const TranslationOptionsSchema = z.object({
   originalAudioVolume: z.number().min(0).max(1).default(0.08),
   /** Burn translated subtitles into the picture (SRT/VTT are always produced). */
   burnSubtitles: z.boolean().default(false),
+  /**
+   * Look of the burned-in subtitles (default: `SubtitleStyleSchema` defaults). The translation
+   * job paints them with `drawSubtitleCue` from @parlante/renderer — the same routine as
+   * Studio videos — never with an ffmpeg subtitles filter.
+   */
+  subtitleStyle: SubtitleStyleSchema.optional(),
 });
 export type TranslationOptions = z.infer<typeof TranslationOptionsSchema>;
 
@@ -765,6 +962,8 @@ export const BatchItemSchema = z.object({
   status: z.enum(['pending', 'queued', 'rendering', 'completed', 'failed', 'canceled']),
   videoId: idOf('video').nullable(),
   videoUrl: UrlSchema.nullable(),
+  /** `videoUrl` as an attachment (see `Video.downloadUrl`). */
+  downloadUrl: UrlSchema.nullable().default(null),
   thumbnailUrl: UrlSchema.nullable(),
   error: StoredErrorSchema.nullable(),
 });
@@ -782,6 +981,10 @@ export const BatchJobSchema = z.object({
   completed: z.number().int(),
   failed: z.number().int(),
   progress: z.number().min(0).max(100),
+  /**
+   * Sum of `render_jobs.credits_charged` of the batch's videos (kept by `recomputeBatchStatus`).
+   * The batch itself is never charged: every render is, with refType `renderJob`.
+   */
   creditsCharged: z.number().int(),
   error: StoredErrorSchema.nullable(),
   createdBy: UserRefSchema.nullable(),
@@ -861,6 +1064,11 @@ export const PublicShareSchema = z.object({
   downloadUrl: UrlSchema.nullable(),
   workspaceName: z.string(),
   providers: ProvenanceSchema.nullable(),
+  /**
+   * True when the video contains a synthetic, AI-animated photorealistic presenter: the public
+   * page shows an "AI-generated" label (the MP4 also carries `AI_GENERATED_METADATA`).
+   */
+  aiGenerated: z.boolean().default(false),
   createdAt: IsoDateSchema,
 });
 export type PublicShare = z.infer<typeof PublicShareSchema>;

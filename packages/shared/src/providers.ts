@@ -1,4 +1,6 @@
 import type {
+  EngineModelInfo,
+  EngineOperations,
   GeneratedScript,
   PhotoLandmarks,
   ProviderRef,
@@ -33,8 +35,14 @@ export interface ProviderVoice {
   /** Provider-specific id (the part after `<provider>:` in a stock voice id). */
   providerVoiceId: string;
   name: string;
-  /** Locale: `es`, `es-MX`, `en-US`… */
+  /** Primary locale: `es`, `es-MX`, `en-US`… */
   language: string;
+  /**
+   * Set (to every supported locale) by providers whose voices speak ALL their languages
+   * (OpenAI TTS, ElevenLabs multilingual models). The API then exposes the voice ONCE with
+   * `multilingual: true` — never duplicate a voice per language with invented ids.
+   */
+  languages?: string[];
   gender: Gender;
   description: string;
   tags: string[];
@@ -71,7 +79,9 @@ export interface TTSProvider extends BaseProvider {
   listVoices(): Promise<ProviderVoice[]>;
   /**
    * Synthesize speech. Providers without native phoneme timing MUST still return visemes and
-   * words (estimated from text and audio length) so lip-sync and subtitles always work.
+   * words so lip-sync and subtitles always work: they call `estimateSpeechTimeline(text,
+   * durationMs, language)` from @parlante/shared (THE shared estimator — do not write another;
+   * adapters with word-level timestamps keep their real `words` and only take `visemes`).
    * Empty/whitespace text ⇒ `durationMs: 0`, empty timelines and a valid empty WAV.
    */
   synthesize(request: TTSRequest): Promise<TTSResult>;
@@ -80,8 +90,15 @@ export interface TTSProvider extends BaseProvider {
 /* ---------- STT ---------- */
 
 export interface STTRequest {
-  /** WAV PCM 16-bit mono 16 kHz (the worker converts with ffmpeg before calling). */
+  /**
+   * WAV PCM 16-bit mono 16 kHz (the worker converts with ffmpeg before calling). About
+   * 115 MB per hour: adapters whose upstream limits the upload size (Whisper API: 25 MB) MUST
+   * split the audio into chunks at silences, transcribe each and re-offset the segments —
+   * callers never chunk. The source length is bounded by `PlanLimits.maxTranslationSourceSec`.
+   */
   audio: Uint8Array;
+  /** The same audio as a local file, when the caller has one (lets adapters stream/slice it). */
+  audioPath?: string;
   /** Hint; providers may auto-detect when omitted. */
   language?: LanguageCode;
 }
@@ -172,11 +189,24 @@ export interface TranslationProvider extends BaseProvider {
  * callers check this BEFORE accepting work and report `reason` to the user verbatim.
  */
 export interface EngineStatus {
+  /** True when the operations THIS provider offers are usable right now. */
   available: boolean;
   reason: string | null;
   device: 'cpu' | 'gpu' | null;
   /** Measured seconds of computation per second of animated video, or null if unknown. */
   secondsPerVideoSecond: number | null;
+  /**
+   * Per-operation availability from the engine's `GET /health` (`capabilities`). The
+   * `local-neural` providers always fill it; when absent, `available` applies to everything
+   * the provider does (lip-sync: animate; portrait: generate + prepare).
+   */
+  operations?: EngineOperations;
+  /** Models of the engine with licence and download state (`GET /health` → `models`). */
+  models?: EngineModelInfo[];
+  /** True when any downloaded model forbids commercial use (the UI shows a visible notice). */
+  nonCommercial?: boolean;
+  /** Measured seconds to generate one portrait, or null if unknown. */
+  secondsPerPortrait?: number | null;
 }
 
 export interface EngineProgress {
@@ -185,6 +215,17 @@ export interface EngineProgress {
   /** Estimated seconds remaining, when known. */
   etaSec?: number;
 }
+
+/*
+ * FILE PATHS in the three request types below: ANY local path readable (inputs) / writable
+ * (`outputDir`) by the Node process — the worker's temp dir, the local storage dir, a file of
+ * packages/stock-assets. Callers do NOT need to know about AVATAR_ENGINE_WORK_DIR: the
+ * `local-neural` provider copies inputs into a private sub-directory of the engine work dir,
+ * runs the engine there, copies the results into `request.outputDir` and deletes the
+ * sub-directory (helper `createEngineJobDir` in packages/providers). Result paths are always
+ * inside `request.outputDir`. Callers own `outputDir` (create it before, remove it after).
+ * When `signal` aborts, the provider cancels the engine job (DELETE /v1/jobs/:id) and throws.
+ */
 
 export interface LipSyncRequest {
   /** Prepared portrait (PNG) of the avatar: local file path readable by the provider. */
@@ -201,12 +242,23 @@ export interface LipSyncRequest {
   maxSize: number;
   /** Directory (server-generated) where the provider writes its output files. */
   outputDir: string;
+  /**
+   * Stable reference of this piece of work, e.g. `${renderJobId}:${sceneId}:${layerId}`: lets
+   * the engine hand back a still-running job after a worker restart instead of starting an
+   * identical one.
+   */
+  clientRef?: string;
   onProgress?: (progress: EngineProgress) => void;
   signal?: AbortSignal;
 }
 
 export interface LipSyncResult {
-  /** Clip of the talking avatar, exactly as long as the audio: local file path. */
+  /**
+   * Clip of the talking avatar, exactly as long as the audio: local file path. Its frames
+   * have THE SAME FRAMING AND ASPECT RATIO as `portraitPath` (possibly scaled down to
+   * `maxSize`), so the renderer places them with `photoAvatarPlacement` and the avatar's
+   * landmarks exactly like the Canvas stand-in.
+   */
   videoPath: string;
   /**
    * Matte for compositing over any background:
@@ -241,6 +293,7 @@ export interface PortraitGenerationRequest {
   seed: number;
   gender?: Gender;
   outputDir: string;
+  clientRef?: string;
   onProgress?: (progress: EngineProgress) => void;
   signal?: AbortSignal;
 }
@@ -248,9 +301,10 @@ export interface PortraitGenerationRequest {
 export interface PortraitPreparationRequest {
   /** Source image (uploaded photo or generated portrait): local file path. */
   imagePath: string;
-  /** Landmarks marked by the user; skips face detection when given. */
+  /** Landmarks marked by the user ON `imagePath`; skips face detection when given. */
   landmarks?: PhotoLandmarks;
   outputDir: string;
+  clientRef?: string;
   onProgress?: (progress: EngineProgress) => void;
   signal?: AbortSignal;
 }
@@ -278,7 +332,11 @@ export interface PortraitProvider extends BaseProvider {
   status(): Promise<EngineStatus>;
   generate(
     request: PortraitGenerationRequest,
-  ): Promise<{ imagePath: string; provider: ProviderRef }>;
+  ): Promise<{
+    imagePath: string;
+    provider: ProviderRef;
+    /** Model that drew it. */ model?: string;
+  }>;
   prepare(request: PortraitPreparationRequest): Promise<PreparedPortrait>;
 }
 
@@ -313,7 +371,17 @@ export interface VoiceCloneProvider extends BaseProvider {
 
 /* ---------- moderation ---------- */
 
-export type ModerationContext = 'script' | 'chat' | 'name' | 'translation';
+/**
+ * What kind of text is being checked, so providers can apply context-specific rules:
+ *  - script:        narration, on-screen text and transcripts of a video (before rendering)
+ *  - chat:          a user turn of the interactive avatar
+ *  - name:          names of avatars / voices / resources
+ *  - translation:   transcript of a video to translate
+ *  - avatar_prompt: description of a synthetic person to generate. On top of the general
+ *                   rules, prompts that name or describe REAL, identifiable people
+ *                   (celebrities, politicians, "looks like <person>") or minors are blocked.
+ */
+export type ModerationContext = 'script' | 'chat' | 'name' | 'translation' | 'avatar_prompt';
 
 export interface ModerationRequest {
   text: string;

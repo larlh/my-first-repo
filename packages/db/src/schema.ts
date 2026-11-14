@@ -15,6 +15,7 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type {
   AspectRatio,
   AssetKind,
+  AssetPurpose,
   AsyncJobStatus,
   AsyncResourceStatus,
   BrandColors,
@@ -156,6 +157,11 @@ export const assets = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     kind: text('kind').$type<AssetKind>().notNull(),
+    /**
+     * Why it was uploaded. Only `library` assets are listed by default; `avatar_source` /
+     * `voice_sample` assets are deleted with their avatar / voice (and on consent revocation).
+     */
+    purpose: text('purpose').$type<AssetPurpose>().notNull().default('library'),
     name: text('name').notNull(),
     /** Detected from the file bytes. */
     mimeType: text('mime_type').notNull(),
@@ -214,20 +220,30 @@ export const avatars = pgTable(
     name: text('name').notNull(),
     gender: text('gender').$type<Gender>().notNull().default('neutral'),
     status: text('status').$type<AsyncResourceStatus>().notNull().default('processing'),
+    /** 0..100 and measured seconds remaining, persisted by the photo-avatar job. */
+    progress: integer('progress').notNull().default(0),
+    etaSec: integer('eta_sec'),
     /** `photo` = from an uploaded photo of a real person; `generated` = synthetic, from text. */
     origin: text('origin').$type<'photo' | 'generated'>().notNull(),
     /** origin `generated`: description and seed the portrait is generated from. */
     prompt: text('prompt'),
     seed: integer('seed'),
+    /** Model that generated the portrait (written by the job; see docs/MODELS.md). */
+    model: text('model'),
     /** origin `photo`: uploaded source image. */
     sourceAssetId: text('source_asset_id').references(() => assets.id, { onDelete: 'set null' }),
-    /** Prepared portrait PNG and its alpha matte (written by the photo-avatar job). */
+    /**
+     * Written by the photo-avatar job (`storageKeys.avatarFile`): prepared portrait PNG, its
+     * alpha matte, and the portrait with the matte applied (RGBA, image of the stand-in rig).
+     */
     imageKey: text('image_key'),
     maskKey: text('mask_key'),
+    cutoutKey: text('cutout_key'),
     thumbnailKey: text('thumbnail_key'),
     /** Landmarks supplied by the user at creation (null = estimate). */
     requestedLandmarks: jsonb('requested_landmarks').$type<PhotoAvatarRig['landmarks']>(),
     rig: jsonb('rig').$type<PhotoAvatarRig>(),
+    /** Set by the API on insert (`providers.portrait.info`); the job confirms it. */
     provider: jsonb('provider').$type<ProviderRef>(),
     /**
      * REQUIRED for origin `photo` (enforced by the API with `consumeConsent` and by the
@@ -266,7 +282,7 @@ export const voices = pgTable(
     providerVoiceId: text('provider_voice_id'),
     /** Local cloning: estimated parameters. */
     profile: jsonb('profile').$type<VoiceProfile>(),
-    /** Provider that performed the cloning. */
+    /** Provider that performs the cloning: set by the API on insert, confirmed by the job. */
     provider: jsonb('provider').$type<ProviderRef>(),
     sampleAssetId: text('sample_asset_id').references(() => assets.id, { onDelete: 'set null' }),
     consentId: text('consent_id')

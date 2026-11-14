@@ -16,9 +16,16 @@ export const ENGINE_UNAVAILABLE: EngineStatus = {
  * (services/avatar-engine — open-source models, no paid service). STUB — owner: providers-ai.
  *
  * Implement against the HTTP contract in @parlante/shared `avatar-engine.ts`
- * (POST /v1/animations → poll GET /v1/jobs/:id, files exchanged by path inside
- * AVATAR_ENGINE_WORK_DIR). `status()` must call GET /health and never throw: when the engine is
- * stopped or its weights are missing it returns `available: false` with a reason for the user.
+ * (POST /v1/animations → poll GET /v1/jobs/:id). Shared plumbing lives in ../engine.ts — use
+ * it, do not duplicate it:
+ *  - `engineRequestHeaders(env)`   headers incl. the bearer token
+ *  - `createEngineJobDir(env)`     THE PROVIDER moves the files: import request inputs into the
+ *                                  job dir, send `outputDir = job.dir`, export results into
+ *                                  `request.outputDir`, `remove()` in `finally`
+ *  - `engineStatusFromHealth(h, 'lipsync')`  GET /health → EngineStatus (operations, models,
+ *                                  nonCommercial); `status()` never throws: when the engine is
+ *                                  stopped it returns `available: false` with a reason
+ * Forward `request.clientRef`; on `request.signal` abort call DELETE /v1/jobs/:id and throw.
  */
 export function createLocalNeuralLipSyncProvider(_env: ProviderEnv): LipSyncProvider {
   return {

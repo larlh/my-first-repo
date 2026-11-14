@@ -1,7 +1,9 @@
+import { creditsForRender, usesPhotorealAvatars } from '@parlante/shared';
 import type { Provenance, RenderStage, Resolution, StoredError } from '@parlante/shared';
-import { and, eq, refundCredits, renderJobs, settleCredits, videos } from '@parlante/db';
+import { and, eq, inArray, renderJobs, settleCredits, videos } from '@parlante/db';
 import type { RenderJobRow } from '@parlante/db';
-import { notifyVideoFinished } from '@parlante/jobs';
+import { failRenderJob, notifyVideoFinished } from '@parlante/jobs';
+import type { RenderRef } from '@parlante/jobs';
 import type { WorkerContext } from '../context';
 
 /* -------------------------------------------------------------------------------------------
@@ -14,13 +16,15 @@ import type { WorkerContext } from '../context';
  * Invariants handled here so the job cannot forget them: credits are settled to the real cost
  * on success and refunded on failure; `video.completed` / `video.failed` webhooks and batch
  * bookkeeping are triggered exactly when the terminal state is written.
+ *
+ * CANCELLATION. The API's cancel sets the job `canceled`, refunds it and resets the video.
+ * The handler checks `isRenderCanceled` between stages; when true it cleans up and RETURNS
+ * `{ canceled: true, videoId }` (RenderJobCanceledResultSchema) — no throw, no mark* call.
+ * Even if a cancel lands during encode/finalize, both terminal helpers only act on a job that
+ * is still `running` (`queued` too for failures): a cancelled job is never flipped to
+ * `completed`/`failed`, never charged again and fires no webhook. They return whether they
+ * changed anything.
  * ----------------------------------------------------------------------------------------- */
-
-interface RenderRef {
-  renderJobId: string;
-  videoId: string;
-  workspaceId: string;
-}
 
 const jobWhere = (ref: RenderRef) =>
   and(eq(renderJobs.id, ref.renderJobId), eq(renderJobs.workspaceId, ref.workspaceId));
@@ -45,16 +49,25 @@ export async function isRenderCanceled(ctx: WorkerContext, ref: RenderRef): Prom
   return !row || row.status === 'canceled';
 }
 
-export async function markRenderStarted(ctx: WorkerContext, ref: RenderRef): Promise<void> {
-  await ctx.db.transaction(async (tx) => {
-    await tx
+/**
+ * Move a queued job to `running`. Returns false (and changes nothing) when the job is not
+ * `queued` any more — cancelled before the worker picked it up, or already finished: the
+ * handler must then return `{ canceled: true, videoId }` without doing any work.
+ */
+export async function markRenderStarted(ctx: WorkerContext, ref: RenderRef): Promise<boolean> {
+  return ctx.db.transaction(async (tx) => {
+    const [job] = await tx
       .update(renderJobs)
       .set({ status: 'running', stage: 'prepare', progress: 0, startedAt: new Date(), error: null })
-      .where(jobWhere(ref));
+      // `running` is accepted so a retried / re-delivered job can start over.
+      .where(and(jobWhere(ref), inArray(renderJobs.status, ['queued', 'running'])))
+      .returning({ id: renderJobs.id });
+    if (!job) return false;
     await tx
       .update(videos)
       .set({ status: 'rendering', progress: 0, error: null, updatedAt: new Date() })
       .where(and(videoWhere(ref), eq(videos.currentRenderJobId, ref.renderJobId)));
+    return true;
   });
 }
 
@@ -95,31 +108,37 @@ export interface RenderOutput {
   srtKey: string;
   vttKey: string;
   providers: Provenance;
-  /** Real cost in credits (`creditsForRender(durationMs, resolution)`). */
-  actualCredits: number;
+}
+
+/**
+ * Real cost of a finished render — the SAME formula `startRender` reserved with, including the
+ * photorealistic multiplier (derived from the job's own snapshot, so API and worker cannot
+ * disagree about it).
+ */
+export function actualRenderCredits(
+  job: Pick<RenderJobRow, 'composition'>,
+  output: Pick<RenderOutput, 'durationMs' | 'resolution'>,
+): number {
+  return creditsForRender(output.durationMs, output.resolution, {
+    photoreal: usesPhotorealAvatars(job.composition),
+  });
 }
 
 /**
  * Terminal success: stores outputs on the video (only if this is still its current render),
- * settles credits to the real cost, then fires webhooks / batch bookkeeping.
+ * settles credits to the real cost (computed here, see `actualRenderCredits`), then fires
+ * webhooks / batch bookkeeping. No-op returning false unless the job is still `running`.
  */
 export async function markRenderCompleted(
   ctx: WorkerContext,
   ref: RenderRef,
   output: RenderOutput,
-): Promise<void> {
-  const job = await loadRenderJob(ctx, ref);
-  if (!job) return;
-  const charged = await settleCredits(ctx.db, {
-    workspaceId: ref.workspaceId,
-    refType: 'renderJob',
-    refId: ref.renderJobId,
-    actualCost: output.actualCredits,
-    description: 'Render cost adjustment',
-  });
+): Promise<boolean> {
   const now = new Date();
-  await ctx.db.transaction(async (tx) => {
-    await tx
+  const completed = await ctx.db.transaction(async (tx) => {
+    // Claim the terminal state first: a concurrent cancel either happened before (no row
+    // matches → nothing is settled) or waits for this transaction and then finds `completed`.
+    const [job] = await tx
       .update(renderJobs)
       .set({
         status: 'completed',
@@ -127,10 +146,19 @@ export async function markRenderCompleted(
         progress: 100,
         etaSec: null,
         finishedAt: now,
-        creditsCharged: charged,
         error: null,
       })
-      .where(jobWhere(ref));
+      .where(and(jobWhere(ref), eq(renderJobs.status, 'running')))
+      .returning();
+    if (!job || job.videoId !== ref.videoId) return false;
+    const charged = await settleCredits(tx, {
+      workspaceId: ref.workspaceId,
+      refType: 'renderJob',
+      refId: ref.renderJobId,
+      actualCost: actualRenderCredits(job, output),
+      description: 'Render cost adjustment',
+    });
+    await tx.update(renderJobs).set({ creditsCharged: charged }).where(jobWhere(ref));
     await tx
       .update(videos)
       .set({
@@ -149,35 +177,29 @@ export async function markRenderCompleted(
         updatedAt: now,
       })
       .where(and(videoWhere(ref), eq(videos.currentRenderJobId, ref.renderJobId)));
+    return true;
   });
-  await notifyVideoFinished({ db: ctx.db, queues: ctx.queues, fileUrl: ctx.fileUrl, ...ref });
+  if (completed) {
+    await notifyVideoFinished({ db: ctx.db, queues: ctx.queues, fileUrl: ctx.fileUrl, ...ref });
+  }
+  return completed;
 }
 
 /**
  * Terminal failure: stores the error, refunds the credits reserved for the job, then fires
- * webhooks / batch bookkeeping. Call it only when the failure is final (see `finalFailure`).
+ * webhooks / batch bookkeeping. Call it only when the failure is final (see `finalFailure`);
+ * the render job also wires it as its `onFinalFailure`, which covers a worker that died
+ * mid-render (stalled job). Idempotent: acts only while the job is `queued` or `running`
+ * (`failRenderJob` in @parlante/jobs) and returns whether it changed anything.
  */
 export async function markRenderFailed(
   ctx: WorkerContext,
   ref: RenderRef,
   error: StoredError,
-): Promise<void> {
-  await refundCredits(ctx.db, {
-    workspaceId: ref.workspaceId,
-    refType: 'renderJob',
-    refId: ref.renderJobId,
-    description: 'Render failed — credits refunded',
-  });
-  const now = new Date();
-  await ctx.db.transaction(async (tx) => {
-    await tx
-      .update(renderJobs)
-      .set({ status: 'failed', etaSec: null, finishedAt: now, creditsCharged: 0, error })
-      .where(jobWhere(ref));
-    await tx
-      .update(videos)
-      .set({ status: 'failed', error, updatedAt: now })
-      .where(and(videoWhere(ref), eq(videos.currentRenderJobId, ref.renderJobId)));
-  });
-  await notifyVideoFinished({ db: ctx.db, queues: ctx.queues, fileUrl: ctx.fileUrl, ...ref });
+): Promise<boolean> {
+  const failed = await failRenderJob(ctx.db, ref, error);
+  if (failed) {
+    await notifyVideoFinished({ db: ctx.db, queues: ctx.queues, fileUrl: ctx.fileUrl, ...ref });
+  }
+  return failed;
 }

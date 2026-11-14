@@ -1,4 +1,4 @@
-import { and, batchItems, batchJobs, eq, sql, videos } from '@parlante/db';
+import { and, batchItems, batchJobs, eq, renderJobs, sql, videos } from '@parlante/db';
 import type { AsyncJobStatus } from '@parlante/shared';
 import type { Db, VideoRow } from '@parlante/db';
 import { WEBHOOK_URL_TTL_SEC } from './file-urls';
@@ -58,8 +58,9 @@ async function syncBatchAfterVideo(db: Db, video: VideoRow): Promise<void> {
 }
 
 /**
- * Recompute `completed` / `failed` counters and the status of a batch from its items.
- * Also used by the batch job (after fan-out) and by "cancel batch".
+ * Recompute `completed` / `failed` counters, `credits_charged` and the status of a batch from
+ * its items and the render jobs of its videos (a batch is never charged itself: the sum of its
+ * renders is its cost). Also used by the batch job (after fan-out) and by "cancel batch".
  */
 export async function recomputeBatchStatus(
   db: Pick<Db, 'select' | 'update'>,
@@ -83,8 +84,19 @@ export async function recomputeBatchStatus(
     else if (counts.completed > 0) status = 'partial';
     else status = counts.canceled === counts.total ? 'canceled' : 'failed';
   }
+  const [credits] = await db
+    .select({ total: sql<number>`coalesce(sum(${renderJobs.creditsCharged}), 0)::int` })
+    .from(renderJobs)
+    .innerJoin(videos, eq(videos.currentRenderJobId, renderJobs.id))
+    .where(and(eq(videos.batchJobId, batchJobId), eq(videos.workspaceId, workspaceId)));
   await db
     .update(batchJobs)
-    .set({ completed: counts.completed, failed: counts.failed, status, updatedAt: new Date() })
+    .set({
+      completed: counts.completed,
+      failed: counts.failed,
+      creditsCharged: credits?.total ?? 0,
+      status,
+      updatedAt: new Date(),
+    })
     .where(and(eq(batchJobs.id, batchJobId), eq(batchJobs.workspaceId, workspaceId)));
 }

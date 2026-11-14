@@ -19,6 +19,16 @@ import { LanguageCodeSchema } from './languages';
  *  - Handlers report progress with `ctx.progress(...)` (schema below) AND persist status /
  *    progress on the row; clients poll the REST resource.
  *  - On final failure the handler stores `{code, message}` on the row and refunds credits.
+ *  - A job can also die WITHOUT its handler running to the end (worker killed → BullMQ marks it
+ *    stalled and fails it). Every job that owns a row therefore also defines
+ *    `JobDefinition.onFinalFailure` (apps/worker), which the runner calls from the BullMQ
+ *    `failed` event when no attempts are left; it must be idempotent with the handler's own
+ *    failure path (guard the UPDATE with the non-terminal statuses).
+ *  - The API enqueues AFTER its transaction commits. If enqueueing throws, the row is marked
+ *    failed and its credits refunded right there (`enqueueOrCompensate` in @parlante/jobs;
+ *    `startRender` does it for renders).
+ *  - Credits: one ledger ref per unit of work — `renderJob` (reason `render`), `translationJob`,
+ *    `avatar`, `voice`. The API reserves, the job settles/refunds (see packages/db credits.ts).
  * ----------------------------------------------------------------------------------------- */
 
 export const QUEUE_NAMES = {
@@ -52,7 +62,7 @@ export const RenderJobProgressSchema = z.object({
   etaSec: z.number().int().min(0).optional(),
   message: z.string().optional(),
 });
-export const RenderJobResultSchema = z.object({
+export const RenderJobCompletedResultSchema = z.object({
   videoId: idOf('video'),
   durationMs: z.number().int(),
   resolution: ResolutionSchema,
@@ -63,6 +73,21 @@ export const RenderJobResultSchema = z.object({
   vttKey: z.string(),
   providers: ProvenanceSchema,
 });
+/**
+ * A render either completes or stops QUIETLY because the user cancelled it: when
+ * `isRenderCanceled` turns true between stages the handler cleans up and returns
+ * `{ canceled: true, videoId }` — it does not throw (a cancellation is not a failure) and does
+ * not call `markRenderCompleted` / `markRenderFailed` (the API already refunded and reset the
+ * video; both helpers are no-ops on a cancelled job anyway).
+ */
+export const RenderJobCanceledResultSchema = z.object({
+  canceled: z.literal(true),
+  videoId: idOf('video'),
+});
+export const RenderJobResultSchema = z.union([
+  RenderJobCompletedResultSchema,
+  RenderJobCanceledResultSchema,
+]);
 
 /* ---------- translation ---------- */
 
@@ -84,9 +109,21 @@ export const TranslationJobResultSchema = z.object({
 /* ---------- batch ---------- */
 
 /**
- * Fan-out job: for every pending `batch_items` row it creates a Video (composition with the
- * row's variables applied), reserves credits and enqueues a render job. Item/batch status then
- * follows the videos (see worker `notifyVideoFinished`).
+ * Fan-out job: for every pending `batch_items` row it creates a Video (source `batch`, the
+ * batch composition KEEPING its `{{variables}}`, `batch_job_id` set) and calls
+ * `startRender(deps, { …, variables: item.values, skipConcurrencyLimit: true })` from
+ * @parlante/jobs, which applies the row's values, moderates them, charges and enqueues.
+ * Item/batch status then follows the videos (`notifyVideoFinished`).
+ *
+ * WHO CHARGES A BATCH — exactly one place:
+ *  - `POST /api/batches` (API) charges NOTHING. It only CHECKS that the current balance covers
+ *    the estimate (`BatchPreview.estimatedCredits`) and answers INSUFFICIENT_CREDITS otherwise.
+ *  - Each render is charged by `startRender` with refType `renderJob` (and settled / refunded
+ *    by the render job like any other render). There is no `batchJob` ledger ref.
+ *  - A row whose `startRender` fails (credits ran out meanwhile, blocked content…) becomes a
+ *    `failed` item with that error; the others continue.
+ *  - `BatchJob.creditsCharged` = sum of `render_jobs.credits_charged` of the batch's videos,
+ *    recomputed by `recomputeBatchStatus`.
  */
 export const BatchJobPayloadSchema = z.object({
   batchJobId: idOf('batchJob'),
@@ -114,6 +151,14 @@ export const PhotoAvatarJobPayloadSchema = z.object({
  *  - origin `photo`:     face detection + crop + alpha matte of the uploaded photo
  *  - origin `generated`: text → photorealistic portrait of a synthetic person, then the same
  *                        preparation
+ */
+/**
+ * Besides BullMQ progress, the handler PERSISTS `avatars.progress` / `avatars.eta_sec`
+ * (throttled, like `reportRenderProgress`) so `GET /api/avatars/:id` can show a real progress
+ * bar and the measured time remaining (§2b) — see apps/worker `lib/avatar-status.ts`.
+ * It stores under `storageKeys.avatarFile`: `image.png` (prepared portrait), `mask.png`
+ * (matte, when available), `cutout.png` (portrait with the matte applied, RGBA — the image of
+ * the Canvas stand-in), `thumb.jpg`, and for generated avatars `source.png` (raw portrait).
  */
 export const PhotoAvatarJobProgressSchema = z.object({
   percent,

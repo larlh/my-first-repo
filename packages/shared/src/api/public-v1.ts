@@ -39,7 +39,8 @@ export const V1MeSchema = z.object({
 
 /**
  * Three ways to describe the video:
- *  - `script`:      one talking-avatar scene from plain text (simplest)
+ *  - `script`:      one talking-avatar scene from plain text (simplest); the document is built
+ *                   with `compositionFromScript` (shared with the AI script writer)
  *  - `template`:    a template (built-in or custom) with `{{variables}}` filled in
  *  - `composition`: a full Composition document
  */
@@ -120,11 +121,24 @@ export const publicV1Routes = {
     auth: 'apiKey',
     feature: 9,
     tag: 'Public API v1',
+    /**
+     * Creates the Video (source `api`, composition keeping its `{{variables}}`) and, when
+     * `render` is true, calls `startRender` from @parlante/jobs with `input.variables` — the
+     * same moderation, limits and charging as a Studio render.
+     */
     summary: 'Create a video and (by default) queue its render',
     body: V1CreateVideoBodySchema,
     response: PublicVideoSchema,
     status: 202,
-    errors: ['INSUFFICIENT_CREDITS', 'PLAN_LIMIT_EXCEEDED', 'CONTENT_BLOCKED', 'UNPROCESSABLE'],
+    errors: [
+      'INSUFFICIENT_CREDITS',
+      'PLAN_LIMIT_EXCEEDED',
+      'CONTENT_BLOCKED',
+      'UNPROCESSABLE',
+      'INVALID_STATE',
+      'PROVIDER_NOT_CONFIGURED',
+      'SERVICE_UNAVAILABLE',
+    ],
   }),
   listVideos: route({
     method: 'GET',

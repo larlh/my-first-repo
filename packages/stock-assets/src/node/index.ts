@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError } from '@parlante/shared';
+import { cutoutPng, thumbnailJpeg } from '@parlante/renderer/node';
 import { getStockAssetMeta } from '../catalog';
 import { getStockPhotorealAvatar } from '../photoreal-avatars';
 import { GENERATORS } from './generators';
@@ -58,4 +59,55 @@ export async function getStockPhotorealAvatarImages(
     portrait: await fs.readFile(files.portraitPath),
     mask: files.maskPath ? await fs.readFile(files.maskPath) : null,
   };
+}
+
+export type StockAvatarFileKind = 'portrait' | 'mask' | 'cutout' | 'thumb';
+
+const avatarFileCache = new Map<string, Promise<GeneratedAsset>>();
+
+/**
+ * Bytes behind `GET /api/stock-avatars/:avatarId/:file` and what the worker loads for
+ * `real_…` avatars:
+ *   portrait → the versioned prepared portrait (PNG)
+ *   mask     → its greyscale alpha matte (PNG); NOT_FOUND when the avatar has none
+ *   cutout   → portrait with the matte applied (RGBA PNG) — the image of the stand-in rig
+ *   thumb    → 256 px JPEG of the portrait
+ * `cutout` and `thumb` are derived on first use and memoised (inputs are immutable files).
+ * Throws AppError NOT_FOUND for unknown ids.
+ */
+export function getStockPhotorealAvatarFile(
+  avatarId: string,
+  file: StockAvatarFileKind,
+): Promise<GeneratedAsset> {
+  const cacheKey = `${avatarId}/${file}`;
+  let pending = avatarFileCache.get(cacheKey);
+  if (!pending) {
+    pending = loadStockAvatarFile(avatarId, file);
+    avatarFileCache.set(cacheKey, pending);
+    pending.catch(() => avatarFileCache.delete(cacheKey));
+  }
+  return pending;
+}
+
+async function loadStockAvatarFile(
+  avatarId: string,
+  file: StockAvatarFileKind,
+): Promise<GeneratedAsset> {
+  const files = stockPhotorealAvatarFiles(avatarId); // throws NOT_FOUND for unknown ids
+  switch (file) {
+    case 'portrait':
+      return { bytes: await fs.readFile(files.portraitPath), mimeType: 'image/png' };
+    case 'mask':
+      if (!files.maskPath) {
+        throw new AppError('NOT_FOUND', 'This stock avatar has no matte', { avatarId });
+      }
+      return { bytes: await fs.readFile(files.maskPath), mimeType: 'image/png' };
+    case 'cutout':
+      return {
+        bytes: await cutoutPng(files.portraitPath, files.maskPath),
+        mimeType: 'image/png',
+      };
+    case 'thumb':
+      return { bytes: await thumbnailJpeg(files.portraitPath, 256), mimeType: 'image/jpeg' };
+  }
 }

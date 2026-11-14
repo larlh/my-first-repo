@@ -14,6 +14,7 @@ import {
 import {
   AgeGroupSchema,
   AssetKindSchema,
+  AssetPurposeSchema,
   AssetSchema,
   AvatarRenderingSchema,
   AvatarSchema,
@@ -55,9 +56,12 @@ export const ListVideosQuerySchema = PaginationQuerySchema.extend({
 
 /**
  * Create a draft. Exactly one starting point:
- *  - `composition`: full document (e.g. built by the script writer on the client)
+ *  - `composition`: full document (e.g. built by the script writer on the client with
+ *                   `compositionFromScript`, sending `source: 'script'`)
  *  - `templateId`:  copy of a built-in or custom template
  *  - neither:       empty one-scene document with `aspect` (default 16:9)
+ * `Video.source` is `template` when `templateId` is given, else `source` (default `studio`).
+ * `api` and `batch` are only ever set by the server (public API v1, batch fan-out).
  */
 export const CreateVideoBodySchema = z
   .object({
@@ -65,6 +69,7 @@ export const CreateVideoBodySchema = z
     composition: CompositionSchema.optional(),
     templateId: TemplateIdSchema.optional(),
     aspect: AspectRatioSchema.optional(),
+    source: z.enum(['studio', 'script']).optional(),
   })
   .refine((b) => !(b.composition && b.templateId), {
     message: 'Provide either composition or templateId, not both',
@@ -173,7 +178,7 @@ export const videoRoutes = {
     feature: 5,
     tag: 'Videos',
     summary:
-      'Moderate the script, reserve credits, snapshot the composition and queue a render job',
+      'Moderate the script, reserve credits, snapshot the composition and queue a render job (implemented by `startRender` in @parlante/jobs — never re-implement the sequence)',
     params: videoParams,
     body: RenderVideoBodySchema,
     response: RenderStartedSchema,
@@ -183,7 +188,9 @@ export const videoRoutes = {
       'PLAN_LIMIT_EXCEEDED',
       'CONTENT_BLOCKED',
       'INVALID_STATE',
+      'UNPROCESSABLE',
       'PROVIDER_NOT_CONFIGURED',
+      'SERVICE_UNAVAILABLE',
     ],
   }),
   cancelRender: route({
@@ -302,8 +309,14 @@ export const assetRoutes = {
     auth: 'session',
     feature: 8,
     tag: 'Assets',
-    summary: 'Uploaded assets, newest first',
-    query: PaginationQuerySchema.extend({ kind: AssetKindSchema.optional(), q: search }),
+    summary:
+      'Uploaded assets, newest first. Only `purpose: library` unless another purpose is requested',
+    query: PaginationQuerySchema.extend({
+      kind: AssetKindSchema.optional(),
+      /** Default `library`: source photos, voice samples and translation sources stay hidden. */
+      purpose: AssetPurposeSchema.default('library'),
+      q: search,
+    }),
     response: paginated(AssetSchema),
   }),
   upload: route({
@@ -317,8 +330,16 @@ export const assetRoutes = {
       'Upload an image, video or audio file. The real file type is detected from its bytes; size is limited by the plan',
     multipart: {
       fileField: 'file',
-      fields: z.object({ name: z.string().max(120).optional() }),
-      description: 'multipart/form-data with one `file` part and an optional `name` field',
+      fields: z.object({
+        name: z.string().max(120).optional(),
+        /**
+         * Why the file is uploaded (default `library`). The photo-avatar, voice-clone and
+         * translation screens send `avatar_source` / `voice_sample` / `translation_source`.
+         */
+        purpose: AssetPurposeSchema.optional(),
+      }),
+      description:
+        'multipart/form-data with one `file` part and optional `name` and `purpose` fields (send the fields BEFORE the file)',
     },
     response: AssetSchema,
     status: 201,
@@ -353,9 +374,18 @@ export const assetRoutes = {
     minRole: 'editor',
     feature: 8,
     tag: 'Assets',
-    summary: 'Delete an asset and its file',
+    /**
+     * 409 CONFLICT with `details: { usedBy: [{ type: 'translationJob' | 'avatar' | 'voice',
+     * id }] }` when the asset is the source of a translation job (FK restrict: delete the job
+     * first) or the source of a photo avatar / voice clone (delete that resource, which also
+     * deletes the asset). References from compositions and brand kits do NOT block: the
+     * renderer draws a placeholder and `startRender` reports missing narration audio.
+     */
+    summary:
+      'Delete an asset and its file (409 CONFLICT while a translation, avatar or voice clone uses it as its source)',
     params: assetParams,
     response: OkSchema,
+    errors: ['CONFLICT'],
   }),
   listStock: route({
     method: 'GET',
@@ -414,6 +444,29 @@ export const avatarRoutes = {
     params: z.object({ avatarId: AvatarIdSchema }),
     response: AvatarSchema,
   }),
+  /**
+   * Images of a photorealistic STOCK avatar (`real_<slug>`), which are versioned files of
+   * packages/stock-assets, not storage objects — `Avatar.imageUrl / maskUrl / cutoutUrl /
+   * thumbnailUrl` of `real_…` avatars point here. Implemented with
+   * `getStockPhotorealAvatarFile(avatarId, file)` from @parlante/stock-assets/node:
+   *   portrait → PNG, prepared portrait      mask   → PNG greyscale matte (404 when none)
+   *   cutout   → PNG RGBA, matte applied     thumb  → JPEG 256 px
+   * Ids come from the catalogue in code, so the bytes are public and immutable per id.
+   */
+  stockFile: route({
+    method: 'GET',
+    path: '/api/stock-avatars/:avatarId/:file',
+    auth: 'public',
+    feature: 2,
+    tag: 'Avatars',
+    summary: 'Portrait, matte, cut-out or thumbnail of a photorealistic stock avatar (cacheable)',
+    params: z.object({
+      avatarId: z.string().regex(/^real_[a-z0-9-]{1,40}$/),
+      file: z.enum(['portrait', 'mask', 'cutout', 'thumb']),
+    }),
+    response: z.unknown(),
+    binary: true,
+  }),
 } as const;
 
 /* ============================== voices & speech (feature 3) ============================== */
@@ -437,6 +490,7 @@ export const voiceRoutes = {
     summary: 'Stock voices of every active TTS provider plus cloned voices of the workspace',
     query: z.object({
       kind: z.enum(['stock', 'cloned']).optional(),
+      /** Voices of this language PLUS every `multilingual` voice. */
       language: LanguageCodeSchema.optional(),
       gender: GenderSchema.optional(),
       provider: z.string().max(24).optional(),
@@ -455,8 +509,10 @@ export const voiceRoutes = {
     response: VoiceSchema,
   }),
   /**
-   * Synthesize speech on demand. Results are cached by content hash (`ttsCacheKey`), so the
-   * Studio can call it on every script edit and the render job reuses the same audio.
+   * Synthesize speech on demand. Results are cached by content hash, so the Studio can call it
+   * on every script edit and the render job reuses the same audio. Implemented with
+   * `synthesizeCached` from @parlante/jobs (voice resolution + cache protocol shared with the
+   * worker); the route only adds moderation (context `script`) and the signed `audioUrl`.
    */
   synthesize: route({
     method: 'POST',
@@ -501,6 +557,22 @@ export const templateRoutes = {
     summary: 'Template with its composition',
     params: templateParams,
     response: TemplateDetailSchema,
+  }),
+  /**
+   * Poster of a BUILT-IN template, rendered on demand with the renderer (first scene, resting
+   * avatar) and memoised. Custom templates do not use this route: their `thumbnailUrl` is the
+   * signed URL of `storageKeys.templateThumb`.
+   */
+  thumbnail: route({
+    method: 'GET',
+    path: '/api/templates/:templateId/thumbnail',
+    auth: 'public',
+    feature: 7,
+    tag: 'Templates',
+    summary: 'JPEG poster of a built-in template (cacheable)',
+    params: z.object({ templateId: z.string().regex(/^builtin_[a-z0-9-]{1,40}$/) }),
+    response: z.unknown(),
+    binary: true,
   }),
   use: route({
     method: 'POST',

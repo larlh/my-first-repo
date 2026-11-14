@@ -1,17 +1,42 @@
 import { z } from 'zod';
-import { PhotoLandmarksSchema } from './entities';
-import { VisemeCueSchema } from './runtime';
+import { EngineModelInfoSchema, PhotoLandmarksSchema } from './entities';
+import { VisemeCueSchema, WordCueSchema } from './runtime';
 
 /* -------------------------------------------------------------------------------------------
  * HTTP contract of the local neural avatar engine (`services/avatar-engine`, Python — master
  * prompt §2b). The `local-neural` providers in packages/providers are its only client.
  *
  * Transport
- *  - JSON over HTTP on AVATAR_ENGINE_URL (default http://127.0.0.1:8090), loopback only.
+ *  - JSON over HTTP on AVATAR_ENGINE_URL (default http://127.0.0.1:8090). The engine binds to
+ *    loopback by default. When it must listen on another interface (docker compose: the worker
+ *    reaches it as http://avatar-engine:8090 over the compose network) it MUST be started with
+ *    AVATAR_ENGINE_TOKEN and then requires `Authorization: Bearer <token>` on every request
+ *    except GET /health (401 otherwise). The providers send the header whenever the variable is
+ *    set (packages/providers `providerEnvSchema.AVATAR_ENGINE_TOKEN`).
  *  - FILES ARE EXCHANGED BY PATH inside a directory both processes can read and write
  *    (AVATAR_ENGINE_WORK_DIR). Requests name input files and an `outputDir`; the engine writes
  *    results there and answers with paths. The engine must refuse paths outside the work dir.
+ *    The directory MUST be mounted at the SAME ABSOLUTE PATH in both processes (paths travel
+ *    verbatim in the JSON bodies; docker-compose mounts the `engine` volume at
+ *    /data/avatar-engine in api, worker and avatar-engine).
+ *  - WHO MOVES THE FILES: the `local-neural` providers, never their callers. Callers (worker
+ *    jobs) pass any path readable by the Node process; the provider copies inputs into a
+ *    private sub-directory of the work dir, asks the engine to write there, copies the results
+ *    to the caller's `outputDir` and removes the sub-directory (helper `createEngineJobDir` in
+ *    packages/providers). The engine never sees paths outside the work dir.
  *  - Long operations are jobs: POST creates one (202 + EngineJob), GET polls it, DELETE cancels.
+ *    The provider MUST call DELETE /v1/jobs/:jobId when its `signal` is aborted or it gives up
+ *    polling, so an abandoned job does not keep burning CPU for minutes.
+ *  - Idempotent retries: requests may carry `clientRef` (opaque, ≤ 200 chars). When a job with
+ *    the same `clientRef` and kind is still queued or running, the engine SHOULD answer the
+ *    POST with THAT job instead of starting an identical one (a restarted worker re-attaches to
+ *    it). Engines that ignore the field stay correct, only slower.
+ *
+ * Output geometry (normative): `prepare` returns a portrait and, when it can, a matte of the
+ * same pixel size. `animate` returns frames with THE SAME FRAMING AND ASPECT RATIO AS
+ * `portraitPath` (the animated face is pasted back onto the full prepared portrait; frames may
+ * be uniformly scaled down to `maxSize`). The renderer therefore places clip frames with the
+ * same function and landmarks as the Canvas stand-in (`photoAvatarPlacement`).
  *
  * Endpoints
  *   GET    /health                    → EngineHealth
@@ -24,15 +49,11 @@ import { VisemeCueSchema } from './runtime';
  * (UNPROCESSABLE = no usable face; SERVICE_UNAVAILABLE = weights missing; VALIDATION_ERROR).
  * ----------------------------------------------------------------------------------------- */
 
-export const EngineModelInfoSchema = z.object({
-  /** Stable id used in docs/MODELS.md. */
-  id: z.string(),
-  role: z.enum(['portrait-generation', 'face-detection', 'matting', 'animation', 'other']),
-  /** Weights present in the cache directory (checksums verified). */
-  downloaded: z.boolean(),
-  license: z.string(),
-  commercialUse: z.boolean(),
-});
+/* `EngineModelInfoSchema` (one entry of `EngineHealth.models`) lives in ./entities because
+ * `GET /api/capabilities` exposes the same objects; it is exported from the package root. */
+
+/** Opaque caller reference for idempotent retries (see "Idempotent retries" above). */
+const ClientRefSchema = z.string().min(1).max(200).optional();
 
 export const EngineHealthSchema = z.object({
   status: z.literal('ok'),
@@ -47,6 +68,13 @@ export const EngineHealthSchema = z.object({
   models: z.array(EngineModelInfoSchema),
   /** Measured on this machine by the engine's benchmark; null until it has run. */
   secondsPerVideoSecond: z.number().positive().nullable(),
+  /** Measured seconds to generate ONE portrait on this machine; null/absent until measured. */
+  secondsPerPortrait: z.number().positive().nullable().optional(),
+  /**
+   * Additive, optional: which animation drivers are usable. `audio` needs extra weights
+   * (requests WITHOUT `visemes` fail with SERVICE_UNAVAILABLE while it is false).
+   */
+  drivers: z.object({ visemes: z.boolean(), audio: z.boolean() }).optional(),
 });
 export type EngineHealth = z.infer<typeof EngineHealthSchema>;
 
@@ -57,13 +85,16 @@ export const EngineGenerateRequestSchema = z.object({
   width: z.number().int().min(256).max(1024).default(512),
   height: z.number().int().min(256).max(1024).default(512),
   outputDir: z.string().min(1),
+  clientRef: ClientRefSchema,
 });
 export type EngineGenerateRequest = z.infer<typeof EngineGenerateRequestSchema>;
 
 export const EnginePrepareRequestSchema = z.object({
   imagePath: z.string().min(1),
+  /** Marked by the user on `imagePath` (normalised to THAT image); skips face detection. */
   landmarks: PhotoLandmarksSchema.optional(),
   outputDir: z.string().min(1),
+  clientRef: ClientRefSchema,
 });
 export type EnginePrepareRequest = z.infer<typeof EnginePrepareRequestSchema>;
 
@@ -76,6 +107,19 @@ export const EngineAnimateRequestSchema = z.object({
   fps: z.number().int().min(1).max(60).default(30),
   maxSize: z.number().int().min(128).max(1024).default(512),
   outputDir: z.string().min(1),
+  /** E.g. `${renderJobId}:${sceneId}:${layerId}`. */
+  clientRef: ClientRefSchema,
+  /* ---- additive, optional (engines that ignore them stay correct) ---- */
+  /** Word timeline of the narration: head nods and brow raises follow word onsets. */
+  words: z.array(WordCueSchema).optional(),
+  /**
+   * `visemes` = deterministic animation from the viseme timeline (default when `visemes` is
+   * sent); `audio` = audio-driven model, for audio without a timeline (default otherwise);
+   * `auto` = that default.
+   */
+  driver: z.enum(['auto', 'visemes', 'audio']).optional(),
+  /** Same request + seed ⇒ identical frames. Default: derived from portrait + timeline. */
+  seed: z.number().int().min(0).max(2147483647).optional(),
 });
 export type EngineAnimateRequest = z.infer<typeof EngineAnimateRequestSchema>;
 
@@ -111,6 +155,12 @@ export const EngineJobSchema = z.object({
   progress: z.number().min(0).max(1),
   etaSec: z.number().min(0).nullable(),
   result: EngineJobResultSchema.nullable(),
-  error: z.object({ code: z.string(), message: z.string() }).nullable(),
+  /**
+   * `reason` (additive, optional): stable snake_case key for i18n of user-facing failures,
+   * e.g. `no_face`, `multiple_faces`, `face_too_small`, `not_frontal`, `weights_missing`.
+   */
+  error: z
+    .object({ code: z.string(), message: z.string(), reason: z.string().optional() })
+    .nullable(),
 });
 export type EngineJob = z.infer<typeof EngineJobSchema>;

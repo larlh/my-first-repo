@@ -1,3 +1,4 @@
+import type { PhotoLandmarks } from '@parlante/shared';
 import type { AvatarRig } from './avatars/types';
 import type { Timeline } from './timeline';
 
@@ -38,10 +39,36 @@ export interface VideoFrameSource {
   /**
    * Frame to show at `timeMs` of the media (already trimmed/looped by the caller).
    * Returns null when the frame is not available (the renderer then keeps the placeholder).
-   *  - Node: frames pre-extracted with ffmpeg by the worker.
+   *  - Node: frames decoded with ffmpeg by the worker.
    *  - Browser: the current frame of an HTMLVideoElement kept in sync by the preview player.
+   * WHICH time the renderer will ask for is not private knowledge: `mediaPlaybackAt` (./media)
+   * returns it for every video of a frame. The Studio player uses it to seek / set the volume
+   * of its elements; the worker uses it to decode only the window it needs — nobody
+   * re-derives the trim / loop / transition arithmetic by hand.
    */
   frameAt(timeMs: number): RenderImage | null;
+}
+
+/**
+ * Pre-rendered neural clip of one photorealistic avatar layer in one scene.
+ * Its frames have the same framing and aspect ratio as the avatar's prepared portrait and
+ * carry an alpha channel (the worker merges the engine's matte while decoding).
+ */
+export interface AvatarClipSource extends VideoFrameSource {
+  /**
+   * Scene-local ms at which the clip's time 0 falls. Default (undefined): the start of the
+   * scene's narration (`scene.paddingStartMs`), and the first / last frame is held outside the
+   * clip. THE WORKER SETS `originMs: 0` and animates over the narration PADDED WITH SILENCE to
+   * the full scene length, so the avatar keeps blinking and moving during paddings, the tail
+   * of fixed-duration scenes and scenes with no narration at all (an all-silence clip).
+   */
+  readonly originMs?: number;
+  /**
+   * Landmarks of the avatar's prepared portrait (`Avatar.rig.landmarks`). With them the clip
+   * is placed by `photoAvatarPlacement` honouring the layer's `framing`, exactly like the
+   * Canvas stand-in; without them it is fitted whole (as framing `half`).
+   */
+  readonly landmarks?: PhotoLandmarks;
 }
 
 /**
@@ -55,16 +82,24 @@ export interface RenderAssets {
   video(key: string): VideoFrameSource | null;
   /**
    * Canvas rig for an avatar id: the real drawing for instant avatars (`stock_…`), or the
-   * stand-in rig over the portrait for photorealistic ones (`real_…`, `avt_…`).
+   * stand-in rig for photorealistic ones (`real_…`, `avt_…`), built with
+   * `createPhotoAvatarRig(id, cutout, rig)` from the avatar's CUT-OUT image
+   * (`Avatar.cutoutUrl`: portrait with its matte applied) so previews show the person over
+   * the scene background, like the export.
    */
   avatar(avatarId: string): AvatarRig | null;
   /**
-   * Pre-rendered neural clip of a PHOTOREALISTIC avatar layer for one scene (exports only):
-   * frames carry an alpha channel (the worker merges the engine's matte when extracting them)
-   * and frame time 0 = start of the scene's narration. When present it replaces the rig;
-   * outside the clip's duration the first/last frame is held. Null in live previews.
+   * Pre-rendered neural clip of a PHOTOREALISTIC avatar layer for one scene (exports only).
+   * When present it replaces the rig. Null in live previews.
+   *
+   * RULE FOR THE RENDER JOB (so an exported MP4 never shows the grey placeholder or a
+   * stand-in next to neural scenes): for EVERY photorealistic avatar layer of EVERY scene it
+   *  1. registers the stand-in too (`setAvatar`, from the cut-out) as a safety net, and
+   *  2. registers a clip (`setAvatarClip`) with `originMs: 0` covering the whole scene —
+   *     narration padded with silence; for scenes without narration, pure silence (the engine
+   *     then produces idle motion: blinking, breathing) — and `landmarks` of the avatar.
    */
-  avatarClip(sceneId: string, layerId: string): VideoFrameSource | null;
+  avatarClip(sceneId: string, layerId: string): AvatarClipSource | null;
 }
 
 export interface RenderOptions {

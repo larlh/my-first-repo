@@ -5,6 +5,7 @@ export * from './languages';
 export * from './composition';
 export * from './visemes';
 export * from './runtime';
+export * from './speech-estimate';
 export * from './subtitles';
 export * from './plans';
 export * from './consent';

@@ -1,6 +1,6 @@
 import type { AvatarRig } from './avatars/types';
 import { getStockAvatarRig } from './avatars/registry';
-import type { RenderAssets, RenderImage, VideoFrameSource } from './types';
+import type { AvatarClipSource, RenderAssets, RenderImage, VideoFrameSource } from './types';
 
 /**
  * Simple in-memory RenderAssets. Fill it before rendering:
@@ -8,8 +8,12 @@ import type { RenderAssets, RenderImage, VideoFrameSource } from './types';
  *   const assets = new MapRenderAssets();
  *   assets.setImage(mediaRefKey(ref), await platform.loadImage(bytes));
  *   assets.setVideo(key, frameSource);
- *   assets.setAvatar(avatarId, createPhotoAvatarRig(avatarId, portrait, rig));   // stand-in
- *   assets.setAvatarClip(sceneId, layerId, clipFrames);                          // exports
+ *   assets.setAvatar(avatarId, createPhotoAvatarRig(avatarId, cutout, rig));     // stand-in
+ *   assets.setAvatarClip(sceneId, layerId, { ...clipFrames, originMs: 0, landmarks }); // exports
+ *
+ * `cutout` = the avatar's portrait with its matte applied (`Avatar.cutoutUrl`, or
+ * `applyAlphaMatte(platform, portrait, mask)`). See `RenderAssets.avatarClip` for what the
+ * render job must register for photorealistic avatars.
  *
  * Stock avatars (`stock_…`) resolve automatically from the built-in registry.
  */
@@ -17,7 +21,7 @@ export class MapRenderAssets implements RenderAssets {
   private readonly images = new Map<string, RenderImage>();
   private readonly videos = new Map<string, VideoFrameSource>();
   private readonly avatars = new Map<string, AvatarRig>();
-  private readonly avatarClips = new Map<string, VideoFrameSource>();
+  private readonly avatarClips = new Map<string, AvatarClipSource>();
 
   setImage(key: string, image: RenderImage): this {
     this.images.set(key, image);
@@ -35,12 +39,12 @@ export class MapRenderAssets implements RenderAssets {
   }
 
   /** Neural clip for the avatar layer `layerId` of scene `sceneId` (photoreal exports). */
-  setAvatarClip(sceneId: string, layerId: string, source: VideoFrameSource): this {
+  setAvatarClip(sceneId: string, layerId: string, source: AvatarClipSource): this {
     this.avatarClips.set(`${sceneId}/${layerId}`, source);
     return this;
   }
 
-  avatarClip(sceneId: string, layerId: string): VideoFrameSource | null {
+  avatarClip(sceneId: string, layerId: string): AvatarClipSource | null {
     return this.avatarClips.get(`${sceneId}/${layerId}`) ?? null;
   }
 

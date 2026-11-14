@@ -40,8 +40,9 @@ export const GenerateScriptBodySchema = z.object({
 
 export const scriptWriterRoutes = {
   /**
-   * Returns scenes only. The client turns them into a draft with the shared composition
-   * factories and `POST /api/videos` (so the user can pick avatar/voice/template first).
+   * Returns scenes only. The client turns them into a draft with `compositionFromScript`
+   * (shared) and `POST /api/videos` with `source: 'script'` (so the user can pick avatar and
+   * voice first).
    */
   generate: route({
     method: 'POST',
@@ -100,6 +101,11 @@ export const translationRoutes = {
     tag: 'Translation',
     summary:
       'Queue a translation: transcript → translation → TTS dub → mix → subtitles, per target language',
+    /**
+     * PLAN_LIMIT_EXCEEDED when there are more targets than `maxTranslationTargets` or the
+     * source is longer than `maxTranslationSourceSec`. The source asset should be uploaded
+     * with `purpose: translation_source`.
+     */
     body: CreateTranslationBodySchema,
     response: TranslationJobSchema,
     status: 202,
@@ -200,7 +206,13 @@ export const batchRoutes = {
     minRole: 'editor',
     feature: 15,
     tag: 'Batch',
-    summary: 'Queue one personalised video per row',
+    /**
+     * Charges NOTHING: it checks that the balance covers the estimate (INSUFFICIENT_CREDITS
+     * otherwise) and queues the fan-out job; every render is charged individually by
+     * `startRender` (see `BatchJobPayloadSchema`).
+     */
+    summary:
+      'Queue one personalised video per row (credits are charged per rendered video, not here)',
     body: CreateBatchBodySchema,
     response: BatchJobSchema,
     status: 202,
@@ -338,12 +350,15 @@ const AvatarNameSchema = z.string().trim().min(1).max(60);
 
 export const CreatePhotoAvatarBodySchema = z.object({
   name: AvatarNameSchema,
-  /** Uploaded image Asset with one clearly visible, front-facing face. */
+  /** Uploaded image Asset (`purpose: avatar_source`) with one clearly visible, front-facing face. */
   imageAssetId: idOf('asset'),
   /** ConsentRecord of kind `photo_avatar` created by the same user, not yet used. */
   consentId: idOf('consent'),
   gender: GenderSchema.default('neutral'),
-  /** Landmarks marked by the user; when omitted the engine detects the face. */
+  /**
+   * Landmarks marked by the user ON THE UPLOADED IMAGE (normalised 0..1 to `imageAssetId`);
+   * when omitted the engine detects the face. See `PhotoLandmarksSchema`.
+   */
   landmarks: PhotoLandmarksSchema.optional(),
 });
 
@@ -351,7 +366,8 @@ export const GenerateAvatarBodySchema = z.object({
   name: AvatarNameSchema,
   /**
    * Description of a SYNTHETIC person ("mujer de unos 40 años, pelo corto canoso, chaqueta
-   * azul, fondo neutro"). Prompts naming real people are rejected by moderation.
+   * azul, fondo neutro"). Checked with the ModerationProvider using context `avatar_prompt`,
+   * whose rules reject prompts naming or describing real, identifiable people.
    */
   prompt: z.string().trim().min(10).max(500),
   gender: GenderSchema.default('neutral'),
@@ -369,6 +385,11 @@ export const photoAvatarRoutes = {
     tag: 'Photorealistic avatars',
     summary:
       'Create a photorealistic avatar from a photo of a real person (consent required). Preparation is asynchronous',
+    /**
+     * Requires engine operation `prepare` (checked BEFORE charging: SERVICE_UNAVAILABLE with
+     * the engine's reason). The image asset should be uploaded with `purpose: avatar_source`;
+     * the API sets that purpose on it either way.
+     */
     body: CreatePhotoAvatarBodySchema,
     response: AvatarSchema,
     status: 202,
@@ -378,6 +399,7 @@ export const photoAvatarRoutes = {
       'PLAN_LIMIT_EXCEEDED',
       'CONTENT_BLOCKED',
       'PROVIDER_NOT_CONFIGURED',
+      'SERVICE_UNAVAILABLE',
     ],
   }),
   generate: route({
@@ -389,6 +411,7 @@ export const photoAvatarRoutes = {
     tag: 'Photorealistic avatars',
     summary:
       'Generate a photorealistic avatar of a synthetic person from a text description with the local engine. Asynchronous',
+    /** Requires engine operations `generate` AND `prepare` (checked before charging). */
     body: GenerateAvatarBodySchema,
     response: AvatarSchema,
     status: 202,
@@ -397,6 +420,7 @@ export const photoAvatarRoutes = {
       'PLAN_LIMIT_EXCEEDED',
       'CONTENT_BLOCKED',
       'PROVIDER_NOT_CONFIGURED',
+      'SERVICE_UNAVAILABLE',
     ],
   }),
   update: route({
@@ -406,7 +430,12 @@ export const photoAvatarRoutes = {
     minRole: 'editor',
     feature: 14,
     tag: 'Photorealistic avatars',
-    summary: 'Rename a workspace avatar or adjust its landmarks',
+    /**
+     * `landmarks` here are relative to the PREPARED portrait (`Avatar.imageUrl`, what the
+     * editor shows). The API writes them to `rig.landmarks` with `landmarksSource: 'user'`;
+     * it does NOT re-run the preparation and `status` does not change.
+     */
+    summary: 'Rename a workspace avatar or adjust its landmarks (on the prepared portrait)',
     params: photoAvatarParams,
     body: z.object({
       name: AvatarNameSchema.optional(),
@@ -421,7 +450,13 @@ export const photoAvatarRoutes = {
     minRole: 'editor',
     feature: 14,
     tag: 'Photorealistic avatars',
-    summary: 'Delete a workspace avatar and its images',
+    /**
+     * Deletes the row, the whole storage prefix of the avatar (portrait, matte, cut-out,
+     * cached neural clips) AND, for avatars made from a photo, the source Asset with its
+     * file: nothing of the real person stays in the workspace.
+     */
+    summary:
+      'Delete a workspace avatar, its images, cached clips and (photo avatars) the source photo',
     params: photoAvatarParams,
     response: OkSchema,
   }),
@@ -433,7 +468,10 @@ const voiceCloneParams = z.object({ voiceId: idOf('voice') });
 
 export const CreateVoiceCloneBodySchema = z.object({
   name: z.string().trim().min(1).max(60),
-  /** Uploaded audio Asset: 10 s – 5 min of clean speech from a single speaker. */
+  /**
+   * Uploaded audio Asset: 10 s – 5 min of clean speech from a single speaker (upload it with
+   * `purpose: voice_sample`; the API sets that purpose on it either way).
+   */
   sampleAssetId: idOf('asset'),
   /** ConsentRecord of kind `voice_clone` created by the same user, not yet used. */
   consentId: idOf('consent'),
@@ -474,7 +512,12 @@ export const voiceCloneRoutes = {
     minRole: 'editor',
     feature: 14,
     tag: 'Voice clones',
-    summary: 'Delete a cloned voice (also removed from the external provider)',
+    /**
+     * Deletes the row, the storage prefix of the voice (`sample.wav`), the voice at the
+     * external provider (`voiceClone.deleteVoice`) AND the sample Asset with its file.
+     */
+    summary:
+      'Delete a cloned voice, its sample and source asset (also removed from the external provider)',
     params: voiceCloneParams,
     response: OkSchema,
   }),

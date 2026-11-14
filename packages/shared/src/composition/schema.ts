@@ -155,7 +155,14 @@ export const AudioScriptSchema = z.object({
   kind: z.literal('audio'),
   /** Uploaded audio Asset used as the scene narration. */
   assetId: idOf('asset'),
-  /** Optional transcript: drives subtitles (words are spread evenly over the audio). */
+  /**
+   * Optional transcript: drives subtitles and, without audio analysis, the mouth. The scene's
+   * SceneRuntime is ALWAYS built with `sceneRuntimeFromAudio` from @parlante/shared (words
+   * spread over the audio by `estimateSpeechTimeline`; visemes from the audio envelope when
+   * PCM is available, else estimated from the transcript) — by the Studio in the browser
+   * (`Asset.durationMs` + decoded audio) and by the render job, so preview and export agree.
+   * May contain `{{variables}}`.
+   */
   transcript: z.string().max(COMPOSITION_LIMITS.maxScriptChars).default(''),
   language: LocaleSchema.optional(),
 });
@@ -174,7 +181,8 @@ export type Script = z.infer<typeof ScriptSchema>;
 
 /**
  * `auto`: scene lasts paddingStartMs + narration + paddingEndMs (3 s when there is no narration).
- * `fixed`: scene lasts exactly `seconds`; narration that does not fit is cut with a short fade.
+ * `fixed`: scene lasts exactly `seconds`; narration that does not fit is cut with a short fade
+ * of `AUDIO_MIX.narrationCutFadeMs`.
  */
 export const SceneDurationSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('auto') }),
@@ -484,7 +492,11 @@ export type SubtitleStyle = z.infer<typeof SubtitleStyleSchema>;
 export const MusicTrackSchema = z.object({
   src: MediaRefSchema,
   volume: z.number().min(0).max(1).default(0.18),
-  /** Lower the music while narration is playing. */
+  /**
+   * Lower the music while narration is playing: gain × `AUDIO_MIX.duckGain`, reached in
+   * `duckAttackMs` and released in `duckReleaseMs` (see ./audio.ts) — the SAME numbers in the
+   * Studio player (WebAudio) and the export mix (ffmpeg).
+   */
   ducking: z.boolean().default(true),
   fadeInMs: z.number().int().min(0).max(10000).default(500),
   fadeOutMs: z.number().int().min(0).max(10000).default(1500),

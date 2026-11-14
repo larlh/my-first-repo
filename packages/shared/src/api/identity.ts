@@ -579,7 +579,17 @@ export const consentRoutes = {
     minRole: 'admin',
     feature: 14,
     tag: 'Consent',
-    summary: 'Revoke a consent: the avatar/voice created with it is deleted',
+    /**
+     * Revoking removes EVERYTHING derived from the person, exactly like deleting the resource
+     * (`DELETE /api/photo-avatars/:id` / `DELETE /api/voice-clones/:id`): the avatar or voice
+     * row, its storage prefix (portrait, matte, cut-out, cached clips / sample.wav), the voice
+     * at the external provider, and the SOURCE ASSET (photo / voice sample) with its file.
+     * The consent record itself is kept, with `revokedAt` set, as the audit trail. Videos
+     * already rendered are not deleted; compositions that still reference the avatar / voice
+     * fail validation in `startRender` (UNPROCESSABLE) until edited.
+     */
+    summary:
+      'Revoke a consent: the avatar/voice created with it, its files and the source photo/sample are deleted',
     params: z.object({ consentId: idOf('consent') }),
     response: ConsentRecordSchema,
   }),

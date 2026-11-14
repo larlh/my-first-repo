@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { StockAssetMetaSchema, StockPhotorealAvatarMetaSchema } from '@parlante/shared';
 import { getStockAssetMeta, listStockAssets, listStockPhotorealAvatars } from './index';
 import fs from 'node:fs';
-import { getStockAssetData, stockPhotorealAvatarFiles } from './node/index';
+import {
+  getStockAssetData,
+  getStockPhotorealAvatarFile,
+  stockPhotorealAvatarFiles,
+} from './node/index';
 
 describe('stock assets', () => {
   it('have valid, unique metadata', () => {
@@ -40,5 +44,30 @@ describe('stock assets', () => {
       if (files.maskPath) expect(fs.existsSync(files.maskPath), files.maskPath).toBe(true);
     }
     expect(() => stockPhotorealAvatarFiles('real_nope')).toThrow();
+  });
+
+  it('serves portrait, matte, cut-out and thumbnail of every photorealistic stock avatar', async () => {
+    // Effective as soon as the catalogue has entries (it is filled by the avatar-engine work).
+    for (const avatar of listStockPhotorealAvatars()) {
+      const portrait = await getStockPhotorealAvatarFile(avatar.id, 'portrait');
+      const cutout = await getStockPhotorealAvatarFile(avatar.id, 'cutout');
+      const thumb = await getStockPhotorealAvatarFile(avatar.id, 'thumb');
+      expect(portrait.mimeType).toBe('image/png');
+      expect(Buffer.from(cutout.bytes.subarray(1, 4)).toString()).toBe('PNG');
+      expect([thumb.bytes[0], thumb.bytes[1]]).toEqual([0xff, 0xd8]);
+      expect(await getStockPhotorealAvatarFile(avatar.id, 'cutout')).toBe(cutout); // memoised
+      if (avatar.maskFile) {
+        expect((await getStockPhotorealAvatarFile(avatar.id, 'mask')).mimeType).toBe('image/png');
+      } else {
+        await expect(getStockPhotorealAvatarFile(avatar.id, 'mask')).rejects.toMatchObject({
+          code: 'NOT_FOUND',
+        });
+      }
+    }
+    for (const file of ['portrait', 'mask', 'cutout', 'thumb'] as const) {
+      await expect(getStockPhotorealAvatarFile('real_nope', file)).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    }
   });
 });

@@ -147,6 +147,12 @@ importers:
       '@dnd-kit/utilities':
         specifier: ^3.2.2
         version: 3.2.2(react@19.3.1)
+      '@fontsource-variable/bricolage-grotesque':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/instrument-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -348,9 +354,15 @@ importers:
       '@parlante/db':
         specifier: workspace:*
         version: link:../db
+      '@parlante/renderer':
+        specifier: workspace:*
+        version: link:../renderer
       '@parlante/shared':
         specifier: workspace:*
         version: link:../shared
+      '@parlante/stock-assets':
+        specifier: workspace:*
+        version: link:../stock-assets
       bullmq:
         specifier: ^6.7.6
         version: 6.7.6(ioredis@6.0.0)(pg@8.23.1)
@@ -423,6 +435,9 @@ importers:
       '@napi-rs/canvas':
         specifier: ^1.1.1
         version: 1.1.1
+      '@parlante/renderer':
+        specifier: workspace:*
+        version: link:../renderer
       '@parlante/shared':
         specifier: workspace:*
         version: link:../shared
@@ -1214,6 +1229,12 @@ packages:
 
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
+
+  '@fontsource-variable/bricolage-grotesque@5.3.0':
+    resolution: {integrity: sha512-TLi9Q4hJjS2UvoTMRSS2nHu6c4R56lAw60NR9QYtVRCHn0XtsFpiEhNffZ8Glsoxu6wEEwLKBP8lb94J52PNBA==}
+
+  '@fontsource-variable/instrument-sans@5.3.0':
+    resolution: {integrity: sha512-u4gKbDBTNFGkg997tfQn3eHOhHuquWUFTRT/rwzuKtrxX5P2ekfs2x+LgBPP4P32+cC+vUwF1Cr+IdRoPQbrGw==}
 
   '@fontsource/inter@5.3.0':
     resolution: {integrity: sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g==}
@@ -4874,6 +4895,10 @@ snapshots:
       react-dom: 19.3.1(react@19.3.1)
 
   '@floating-ui/utils@0.2.12': {}
+
+  '@fontsource-variable/bricolage-grotesque@5.3.0': {}
+
+  '@fontsource-variable/instrument-sans@5.3.0': {}
 
   '@fontsource/inter@5.3.0': {}
 

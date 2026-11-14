@@ -8,6 +8,13 @@
       "when": 1794615518981,
       "tag": "0000_curved_morlocks",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794617828766,
+      "tag": "0001_contract_closing",
+      "breakpoints": true
     }
   ]
 }

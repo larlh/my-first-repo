@@ -146,10 +146,18 @@ export async function refundCredits(
  * Adjust the reservation of a ref to its real cost once known. Charges the difference when the
  * job cost more (never below a zero balance) or refunds it when it cost less. Idempotent.
  * Returns the net amount charged for the ref after settling.
+ * `reason` labels the ledger entry: `render_adjustment` (default) for renders; other jobs pass
+ * `adjustment` (e.g. a translation that finished `partial` and is settled to the languages
+ * that completed) so the ledger never shows render adjustments on non-render work.
  */
 export async function settleCredits(
   db: DbOrTx,
-  input: { workspaceId: string; actualCost: number; description?: string } & LedgerRef,
+  input: {
+    workspaceId: string;
+    actualCost: number;
+    description?: string;
+    reason?: LedgerReason;
+  } & LedgerRef,
 ): Promise<number> {
   return inTransaction(db, async (tx) => {
     const charged = await netCharged(tx, input.workspaceId, input);
@@ -159,7 +167,7 @@ export async function settleCredits(
       tx,
       {
         workspaceId: input.workspaceId,
-        reason: 'render_adjustment',
+        reason: input.reason ?? 'render_adjustment',
         refType: input.refType,
         refId: input.refId,
         description: input.description ?? 'Adjustment to actual cost',

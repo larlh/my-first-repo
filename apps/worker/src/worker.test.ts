@@ -1,19 +1,23 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { UnrecoverableError, Worker } from 'bullmq';
 import { AppError, createComposition, creditsForRender, newId } from '@parlante/shared';
+import type { Composition, StoredError } from '@parlante/shared';
 import { baseEnvSchema, parseEnv } from '@parlante/shared/node';
 import {
+  avatars,
   chargeCredits,
   creditLedger,
   eq,
   getCreditBalance,
+  refundCredits,
   renderJobs,
   videos,
   webhookEndpoints,
 } from '@parlante/db';
 import { seedAccount } from '@parlante/db/testing';
-import { BullQueueClient } from '@parlante/jobs';
+import { BullQueueClient, createRedisConnection } from '@parlante/jobs';
 import { startWorker } from './bootstrap';
 import { concurrencyFor, enabledQueues, loadConfig } from './config';
 import systemJob from './jobs/system/index';
@@ -21,8 +25,11 @@ import { finalFailure, isFinalError } from './lib/errors';
 import { ffprobe, parseFfmpegTime, runFfmpeg, runProcess } from './lib/ffmpeg';
 import { defineJob } from './lib/job';
 import { loadJobs } from './lib/loader';
+import { markAvatarFailed, reportAvatarProgress } from './lib/avatar-status';
 import { scale, throttled } from './lib/progress';
+import { handleFailedJob, startWorkers, storedErrorFromFailedReason } from './lib/runner';
 import {
+  actualRenderCredits,
   isRenderCanceled,
   loadRenderJob,
   markRenderCompleted,
@@ -157,6 +164,77 @@ describe('worker process (real Redis, isolated prefix)', () => {
   });
 });
 
+describe('dead worker recovery (real Redis, isolated prefix)', () => {
+  it('fails a job whose worker died through onFinalFailure, without running the handler', async () => {
+    const prefix = `parlante-test-${randomBytes(4).toString('hex')}`;
+    const redisUrl = parseEnv(baseEnvSchema, {}).REDIS_URL;
+    const client = new BullQueueClient({ redisUrl, prefix });
+    // 1. A worker takes the job and "dies": closed by force while the handler is still running,
+    //    so the job stays active with a lock nobody renews.
+    const victimConnection = createRedisConnection(redisUrl);
+    let taken = () => {};
+    const active = new Promise<void>((resolve) => {
+      taken = resolve;
+    });
+    const victim = new Worker(
+      'system',
+      async () => {
+        taken();
+        await new Promise(() => undefined); // never finishes
+      },
+      // Same (short) stalled-check interval as the survivor: BullMQ debounces the check per
+      // queue with a key that lives one interval.
+      { connection: victimConnection, prefix, lockDuration: 1000, stalledInterval: 300 },
+    );
+    victim.on('error', () => undefined);
+    let handlerRuns = 0;
+    let recovered: (value: { payload: unknown; error: StoredError }) => void = () => {};
+    const finalFailure = new Promise<{ payload: unknown; error: StoredError }>((resolve) => {
+      recovered = resolve;
+    });
+    const definition = defineJob({
+      queue: 'system',
+      handler: async (_ctx, job) => {
+        handlerRuns += 1;
+        return { kind: 'pong' as const, echo: job.payload.echo, processedAt: 'never' };
+      },
+      onFinalFailure: async (_ctx, payload, error) => {
+        recovered({ payload, error });
+      },
+    });
+    let survivors: ReturnType<typeof startWorkers> | null = null;
+    try {
+      await client.enqueue('system', { kind: 'ping', echo: 'doomed' }, { jobId: 'doomed-1' });
+      await active;
+      await victim.close(true);
+      victimConnection.disconnect();
+
+      // 2. A healthy worker process comes up (the container restarted).
+      survivors = startWorkers(
+        { ...t.ctx, config: { ...t.ctx.config, QUEUE_PREFIX: prefix, REDIS_URL: redisUrl } },
+        [definition],
+        { lockDurationMs: 1000, stalledIntervalMs: 300, maxStalledCount: 0 },
+      );
+      const outcome = await Promise.race([
+        finalFailure,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+      ]);
+      expect(outcome).toEqual({
+        payload: { kind: 'ping', echo: 'doomed' },
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'The worker stopped while processing this job. Nothing was charged; try again.',
+        },
+      });
+      expect(handlerRuns).toBe(0);
+      expect((await client.getJob('system', 'doomed-1'))?.state).toBe('failed');
+    } finally {
+      await survivors?.close(1000);
+      await client.close();
+    }
+  }, 30_000);
+});
+
 describe('utilities', () => {
   it('creates and removes private temp directories with safe file names', async () => {
     const tmp = await createTempDir(t.ctx, 'render');
@@ -272,9 +350,8 @@ describe('utilities', () => {
 });
 
 describe('render status helpers', () => {
-  async function seedRender(credits = 20) {
+  async function seedRender(credits = 20, composition: Composition = createComposition()) {
     const { workspace, user } = await seedAccount(t.ctx.db, { credits });
-    const composition = createComposition();
     const videoId = newId('video');
     const renderJobId = newId('renderJob');
     await t.ctx.db.insert(videos).values({
@@ -324,7 +401,7 @@ describe('render status helpers', () => {
     expect((await loadRenderJob(t.ctx, ref))?.revision).toBe(3);
     expect(await loadRenderJob(t.ctx, { ...ref, workspaceId: newId('workspace') })).toBeNull();
 
-    await markRenderStarted(t.ctx, ref);
+    expect(await markRenderStarted(t.ctx, ref)).toBe(true);
     expect(await readVideo(ref.videoId)).toMatchObject({ status: 'rendering', progress: 0 });
     await reportRenderProgress(t.ctx, ref, 'avatars', 41.6, 93.4);
     expect(await readJob(ref.renderJobId)).toMatchObject({
@@ -336,18 +413,17 @@ describe('render status helpers', () => {
     expect((await readVideo(ref.videoId))?.progress).toBe(42);
 
     const durationMs = 45_000;
-    await markRenderCompleted(t.ctx, ref, {
+    const output = {
       durationMs,
-      resolution: '720p',
       videoKey: `ws/${workspace.id}/videos/${ref.videoId}/${ref.renderJobId}/video.mp4`,
       thumbnailKey: `ws/${workspace.id}/videos/${ref.videoId}/${ref.renderJobId}/thumb.jpg`,
       srtKey: `ws/${workspace.id}/videos/${ref.videoId}/${ref.renderJobId}/subtitles.srt`,
       vttKey: `ws/${workspace.id}/videos/${ref.videoId}/${ref.renderJobId}/subtitles.vtt`,
       providers: {
-        tts: { id: 'espeak', name: 'eSpeak NG (local)', quality: 'basic', local: true },
+        tts: { id: 'espeak', name: 'eSpeak NG (local)', quality: 'basic' as const, local: true },
       },
-      actualCredits: creditsForRender(durationMs, '720p'),
-    });
+    };
+    expect(await markRenderCompleted(t.ctx, ref, { ...output, resolution: '720p' })).toBe(true);
     expect(await readVideo(ref.videoId)).toMatchObject({
       status: 'completed',
       progress: 100,
@@ -361,14 +437,101 @@ describe('render status helpers', () => {
       creditsCharged: 2,
     });
     // Reserved 4, real cost 2 → 2 refunded.
+    expect(creditsForRender(durationMs, '720p')).toBe(2);
     expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(18);
     expect(t.queues.jobs('webhookDelivery')).toHaveLength(1);
+    // Terminal helpers are no-ops afterwards: no second webhook, no failure over a success.
+    expect(await markRenderCompleted(t.ctx, ref, { ...output, resolution: '720p' })).toBe(false);
+    expect(await markRenderFailed(t.ctx, ref, { code: 'INTERNAL', message: 'late' })).toBe(false);
+    expect((await readVideo(ref.videoId))?.status).toBe('completed');
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(18);
+    expect(t.queues.jobs('webhookDelivery')).toHaveLength(1);
+  });
+
+  it('settles photorealistic renders with the photoreal multiplier', async () => {
+    const photoreal = createComposition({
+      scenes: [
+        {
+          layers: [
+            {
+              type: 'avatar',
+              avatarId: 'avt_abcdefgh12345678',
+              box: { x: 0, y: 0, w: 0.5, h: 1 },
+            },
+          ],
+        },
+      ],
+    });
+    const { ref, workspace } = await seedRender(20, photoreal);
+    await markRenderStarted(t.ctx, ref);
+    const job = await loadRenderJob(t.ctx, ref);
+    if (!job) throw new Error('job');
+    // 45 s at 720p = 2 units; photoreal doubles it — the same formula startRender reserved with.
+    expect(actualRenderCredits(job, { durationMs: 45_000, resolution: '720p' })).toBe(4);
+    expect(
+      await markRenderCompleted(t.ctx, ref, {
+        durationMs: 45_000,
+        resolution: '720p',
+        videoKey: 'k/video.mp4',
+        thumbnailKey: 'k/thumb.jpg',
+        srtKey: 'k/subtitles.srt',
+        vttKey: 'k/subtitles.vtt',
+        providers: {},
+      }),
+    ).toBe(true);
+    // Reserved 4 and the real cost is 4: nothing refunded, nothing charged twice.
+    expect(await readJob(ref.renderJobId)).toMatchObject({
+      status: 'completed',
+      creditsCharged: 4,
+    });
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(16);
+  });
+
+  it('never completes, fails or re-charges a render the user cancelled', async () => {
+    const { ref, workspace } = await seedRender();
+    await markRenderStarted(t.ctx, ref);
+    // What the API's cancel does while the worker is encoding: cancel + refund + reset video.
+    await t.ctx.db
+      .update(renderJobs)
+      .set({ status: 'canceled', creditsCharged: 0 })
+      .where(eq(renderJobs.id, ref.renderJobId));
+    await refundCredits(t.ctx.db, {
+      workspaceId: workspace.id,
+      refType: 'renderJob',
+      refId: ref.renderJobId,
+    });
+    await t.ctx.db.update(videos).set({ status: 'draft' }).where(eq(videos.id, ref.videoId));
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(20);
+
+    expect(
+      await markRenderCompleted(t.ctx, ref, {
+        durationMs: 45_000,
+        resolution: '720p',
+        videoKey: 'k/video.mp4',
+        thumbnailKey: 'k/thumb.jpg',
+        srtKey: 'k/subtitles.srt',
+        vttKey: 'k/subtitles.vtt',
+        providers: {},
+      }),
+    ).toBe(false);
+    expect(await markRenderFailed(t.ctx, ref, { code: 'INTERNAL', message: 'aborted' })).toBe(
+      false,
+    );
+    expect((await readJob(ref.renderJobId))?.status).toBe('canceled');
+    expect(await readVideo(ref.videoId)).toMatchObject({ status: 'draft', videoKey: null });
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(20); // not charged again
+    expect(t.queues.jobs('webhookDelivery')).toHaveLength(0);
+    // A job cancelled before the worker picked it up is not started either.
+    expect(await markRenderStarted(t.ctx, ref)).toBe(false);
+    expect((await readJob(ref.renderJobId))?.status).toBe('canceled');
   });
 
   it('drives a failed render: error stored, full refund, webhook', async () => {
     const { ref, workspace } = await seedRender();
     await markRenderStarted(t.ctx, ref);
-    await markRenderFailed(t.ctx, ref, { code: 'PROVIDER_ERROR', message: 'TTS unavailable' });
+    expect(
+      await markRenderFailed(t.ctx, ref, { code: 'PROVIDER_ERROR', message: 'TTS unavailable' }),
+    ).toBe(true);
     expect(await readVideo(ref.videoId)).toMatchObject({
       status: 'failed',
       error: { code: 'PROVIDER_ERROR', message: 'TTS unavailable' },
@@ -381,9 +544,56 @@ describe('render status helpers', () => {
       .where(eq(creditLedger.refId, ref.renderJobId));
     expect(ledger.map((l) => l.delta).sort()).toEqual([-4, 4]);
     expect(t.queues.jobs('webhookDelivery')).toHaveLength(1);
-    // Idempotent: no double refund.
-    await markRenderFailed(t.ctx, ref, { code: 'PROVIDER_ERROR', message: 'TTS unavailable' });
+    // Idempotent: no double refund, no second webhook.
+    expect(
+      await markRenderFailed(t.ctx, ref, { code: 'PROVIDER_ERROR', message: 'TTS unavailable' }),
+    ).toBe(false);
     expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(20);
+    expect(t.queues.jobs('webhookDelivery')).toHaveLength(1);
+  });
+
+  it('recovers a render whose worker died: the final-failure hook fails and refunds it', async () => {
+    const { ref, workspace } = await seedRender();
+    await markRenderStarted(t.ctx, ref); // …and then the process is killed mid-render
+    const seen: StoredError[] = [];
+    const renderLike = defineJob({
+      queue: 'render',
+      handler: async () => {
+        throw new Error('never reached for a stalled job');
+      },
+      onFinalFailure: async (ctx, payload, error) => {
+        seen.push(error);
+        await markRenderFailed(ctx, payload, error);
+      },
+    });
+    const stalled = {
+      id: ref.renderJobId,
+      data: ref,
+      attemptsMade: 1,
+      opts: { attempts: 1 },
+      failedReason: 'job stalled more than allowable limit',
+    };
+    expect(await handleFailedJob(t.ctx, renderLike, stalled, new Error(stalled.failedReason))).toBe(
+      true,
+    );
+    expect(seen).toEqual([
+      {
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'The worker stopped while processing this job. Nothing was charged; try again.',
+      },
+    ]);
+    expect(await readJob(ref.renderJobId)).toMatchObject({
+      status: 'failed',
+      creditsCharged: 0,
+      error: { code: 'SERVICE_UNAVAILABLE' },
+    });
+    expect((await readVideo(ref.videoId))?.status).toBe('failed');
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(20);
+    expect(t.queues.jobs('webhookDelivery')).toHaveLength(1);
+    // Delivered again (BullMQ may emit twice): still one refund, one webhook.
+    await handleFailedJob(t.ctx, renderLike, stalled, new Error(stalled.failedReason));
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(20);
+    expect(t.queues.jobs('webhookDelivery')).toHaveLength(1);
   });
 
   it('does not overwrite a video whose current render is a newer job, and sees cancellations', async () => {
@@ -400,5 +610,113 @@ describe('render status helpers', () => {
       .set({ status: 'canceled' })
       .where(eq(renderJobs.id, ref.renderJobId));
     expect(await isRenderCanceled(t.ctx, ref)).toBe(true);
+  });
+});
+
+describe('final-failure hook', () => {
+  const calls: { payload: unknown; error: StoredError }[] = [];
+  const job = defineJob({
+    queue: 'photoAvatar',
+    handler: async () => {
+      throw new Error('unused');
+    },
+    onFinalFailure: async (_ctx, payload, error) => {
+      calls.push({ payload, error });
+    },
+  });
+  const payload = { avatarId: newId('avatar'), workspaceId: newId('workspace') };
+  const bull = (attemptsMade: number, failedReason: string) => ({
+    id: payload.avatarId,
+    data: payload,
+    attemptsMade,
+    opts: { attempts: 2 },
+    failedReason,
+  });
+
+  beforeEach(() => {
+    calls.length = 0;
+  });
+
+  it('runs only when no attempts are left, with the stored error', async () => {
+    // First of two attempts failed with a retryable error: BullMQ will retry → no hook.
+    expect(await handleFailedJob(t.ctx, job, bull(1, 'boom'), new Error('boom'))).toBe(false);
+    expect(calls).toHaveLength(0);
+    // Last attempt.
+    expect(await handleFailedJob(t.ctx, job, bull(2, 'boom'), new Error('boom'))).toBe(true);
+    expect(calls[0]).toEqual({ payload, error: { code: 'INTERNAL', message: 'boom' } });
+    // Final domain error on the first attempt (processJob throws UnrecoverableError).
+    const reason = 'UNPROCESSABLE: No face was found in the photo';
+    expect(await handleFailedJob(t.ctx, job, bull(1, reason), new UnrecoverableError(reason))).toBe(
+      true,
+    );
+    expect(calls[1]?.error).toEqual({
+      code: 'UNPROCESSABLE',
+      message: 'No face was found in the photo',
+    });
+  });
+
+  it('tolerates missing jobs, bad payloads, jobs without a hook and throwing hooks', async () => {
+    expect(await handleFailedJob(t.ctx, job, undefined, new Error('x'))).toBe(false);
+    expect(
+      await handleFailedJob(t.ctx, job, { ...bull(2, 'x'), data: { nope: true } }, new Error('x')),
+    ).toBe(false);
+    expect(await handleFailedJob(t.ctx, systemJob, bull(2, 'x'), new Error('x'))).toBe(false);
+    const throwing = defineJob({
+      queue: 'photoAvatar',
+      handler: async () => {
+        throw new Error('unused');
+      },
+      onFinalFailure: async () => {
+        throw new Error('db down');
+      },
+    });
+    expect(await handleFailedJob(t.ctx, throwing, bull(2, 'x'), new Error('x'))).toBe(false);
+    expect(storedErrorFromFailedReason(undefined)).toEqual({
+      code: 'INTERNAL',
+      message: 'The job failed',
+    });
+    expect(storedErrorFromFailedReason('NOT_A_CODE: hi').code).toBe('INTERNAL');
+  });
+});
+
+describe('avatar status helpers', () => {
+  it('persists progress and ETA while processing, then fails and refunds exactly once', async () => {
+    const { workspace } = await seedAccount(t.ctx.db, { credits: 20 });
+    const avatarId = newId('avatar');
+    await t.ctx.db.insert(avatars).values({
+      id: avatarId,
+      workspaceId: workspace.id,
+      name: 'Sintética',
+      origin: 'generated',
+      prompt: 'mujer de unos 40 años',
+    });
+    await chargeCredits(t.ctx.db, {
+      workspaceId: workspace.id,
+      amount: 8,
+      reason: 'generated_avatar',
+      refType: 'avatar',
+      refId: avatarId,
+    });
+    const ref = { avatarId, workspaceId: workspace.id };
+    const read = async () =>
+      (await t.ctx.db.select().from(avatars).where(eq(avatars.id, avatarId)))[0];
+
+    await reportAvatarProgress(t.ctx, ref, 41.6, 93.4);
+    expect(await read()).toMatchObject({ status: 'processing', progress: 42, etaSec: 93 });
+    await reportAvatarProgress(t.ctx, ref, 250);
+    expect(await read()).toMatchObject({ progress: 99, etaSec: null });
+    // Another workspace cannot touch it.
+    await reportAvatarProgress(t.ctx, { avatarId, workspaceId: newId('workspace') }, 5, 1);
+    expect((await read())?.progress).toBe(99);
+
+    const error = { code: 'UNPROCESSABLE' as const, message: 'No face found' };
+    expect(await markAvatarFailed(t.ctx, ref, error)).toBe(true);
+    expect(await read()).toMatchObject({ status: 'failed', error, etaSec: null });
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(20);
+    expect(await markAvatarFailed(t.ctx, ref, error)).toBe(false);
+    expect(await getCreditBalance(t.ctx.db, workspace.id)).toBe(20);
+    // Progress reports after the terminal state are ignored.
+    await reportAvatarProgress(t.ctx, ref, 10, 5);
+    expect(await read()).toMatchObject({ status: 'failed', progress: 99 });
   });
 });

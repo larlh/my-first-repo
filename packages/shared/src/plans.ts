@@ -38,6 +38,16 @@ export const PlanLimitsSchema = z.object({
   maxClonedVoices: z.number().int(),
   maxBatchRows: z.number().int(),
   maxTranslationTargets: z.number().int(),
+  /** Longest source video (seconds) accepted by `POST /api/translations`. */
+  maxTranslationSourceSec: z.number().int(),
+  /**
+   * Renders a workspace may have queued or running AT ONCE when they are requested one by one
+   * (Studio `POST /api/videos/:id/render` and public `POST /v1/videos`): one more is rejected
+   * with PLAN_LIMIT_EXCEEDED. It counts `render_jobs` in `queued`/`running` whose video has no
+   * `batch_job_id`. Batch fan-out is EXEMPT (a free plan may queue its 5 batch rows): those
+   * renders are bounded by `maxBatchRows` and serialised by the render queue concurrency.
+   * Enforced only by `startRender` in @parlante/jobs.
+   */
   maxConcurrentRenders: z.number().int(),
   maxApiKeys: z.number().int(),
   maxWebhookEndpoints: z.number().int(),
@@ -79,6 +89,7 @@ export const PLANS: Record<PlanId, Plan> = {
       maxClonedVoices: 1,
       maxBatchRows: 5,
       maxTranslationTargets: 1,
+      maxTranslationSourceSec: 300,
       maxConcurrentRenders: 1,
       maxApiKeys: 2,
       maxWebhookEndpoints: 2,
@@ -102,6 +113,7 @@ export const PLANS: Record<PlanId, Plan> = {
       maxClonedVoices: 5,
       maxBatchRows: 50,
       maxTranslationTargets: 5,
+      maxTranslationSourceSec: 1800,
       maxConcurrentRenders: 2,
       maxApiKeys: 10,
       maxWebhookEndpoints: 5,
@@ -125,6 +137,7 @@ export const PLANS: Record<PlanId, Plan> = {
       maxClonedVoices: 25,
       maxBatchRows: 500,
       maxTranslationTargets: 13,
+      maxTranslationSourceSec: 3600,
       maxConcurrentRenders: 4,
       maxApiKeys: 25,
       maxWebhookEndpoints: 10,

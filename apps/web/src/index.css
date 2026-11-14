@@ -1,1 +1,16 @@
 @import 'tailwindcss';
+
+/* UI typefaces (variable): Bricolage Grotesque for display, Instrument Sans for text. */
+@import '@fontsource-variable/bricolage-grotesque/standard.css';
+@import '@fontsource-variable/instrument-sans/wght.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+
+/* Fonts usable inside video compositions (canvas). */
+@import './fonts.css';
+
+@import './styles/tokens.css';
+@import './styles/base.css';
+
+/* Theme follows html[data-theme]; nested [data-theme] containers re-scope the tokens. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));

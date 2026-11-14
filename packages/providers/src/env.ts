@@ -49,11 +49,18 @@ export const providerEnvSchema = z.object({
   /** `local-neural` (default, no paid service) or `external` (optional HTTP endpoint). */
   LIPSYNC_PROVIDER: z.enum(['local-neural', 'external']).default('local-neural'),
   PORTRAIT_PROVIDER: z.enum(['local-neural']).default('local-neural'),
-  /** Base URL of services/avatar-engine (loopback). */
+  /** Base URL of services/avatar-engine (loopback by default; a service name under compose). */
   AVATAR_ENGINE_URL: z.string().url().default('http://127.0.0.1:8090'),
   /**
-   * Directory shared with the engine for exchanging files by path. Relative paths resolve from
-   * the repo root.
+   * Shared secret of the engine. Optional on loopback; REQUIRED whenever the engine listens on
+   * another interface (docker compose). When set, the `local-neural` providers send
+   * `Authorization: Bearer <token>` on every request (see `engineRequestHeaders`).
+   */
+  AVATAR_ENGINE_TOKEN: envOptionalString,
+  /**
+   * Directory shared with the engine for exchanging files by path — it must be the SAME
+   * absolute path in the Node processes and in the engine. Relative paths resolve from the
+   * repo root. Only the `local-neural` providers touch it (through `createEngineJobDir`).
    */
   AVATAR_ENGINE_WORK_DIR: z.string().default('./data/avatar-engine'),
   /** HTTPS endpoint of an external lip-sync service (only with LIPSYNC_PROVIDER=external). */
