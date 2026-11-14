@@ -1,0 +1,43 @@
+{
+  "name": "parlante",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Parlante — AI avatar video platform (monorepo)",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "services": "bash scripts/dev-services.sh",
+    "avatar-engine": "bash services/avatar-engine/run.sh",
+    "dev": "concurrently -k -n api,worker,web -c blue,magenta,green \"pnpm --filter @parlante/api dev\" \"pnpm --filter @parlante/worker dev\" \"pnpm --filter @parlante/web dev\"",
+    "dev:api": "pnpm --filter @parlante/api dev",
+    "dev:worker": "pnpm --filter @parlante/worker dev",
+    "dev:web": "pnpm --filter @parlante/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r test",
+    "db:generate": "pnpm --filter @parlante/db db:generate",
+    "db:migrate": "pnpm --filter @parlante/db db:migrate",
+    "db:seed": "pnpm --filter @parlante/db db:seed",
+    "db:test:clean": "pnpm --filter @parlante/db db:test:clean"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "concurrently": "^10.0.7",
+    "eslint": "^10.15.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}
