@@ -179,6 +179,7 @@ def run_generate(job: GenerateJob, ctx: JobContext | None = None) -> dict:
     from parlante_engine.core import perf as core_perf
 
     t_job = time.perf_counter()
+    # validates the request (cheap) before any model is loaded; rebuilt below with real token counts
     prompt: PromptPair = build_prompt(job.spec) if job.spec is not None else \
         prompt_from_description(job.description or "", job.gender)
     width, height = round_size(job.width, MIN_SIDE, MAX_SIDE), round_size(job.height, MIN_SIDE, MAX_SIDE)
@@ -197,6 +198,9 @@ def run_generate(job: GenerateJob, ctx: JobContext | None = None) -> dict:
 
     report(0.01, per_attempt + (0 if unet_ir_ready() else 15))
     pipe = PortraitPipeline(pipeline_paths())
+    count = pipe.tokenizer.count
+    prompt = build_prompt(job.spec, count) if job.spec is not None else \
+        prompt_from_description(job.description or "", job.gender, count)
     cancel_check()
     report(0.04, per_attempt)
     # progress share of each attempt: the first one is expected to pass

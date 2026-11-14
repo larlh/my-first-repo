@@ -80,17 +80,20 @@ BACKGROUNDS = {
 }
 
 _HEAD = "RAW photo, front view portrait of"
-_POSE = "facing the camera straight on, looking into the camera, lips closed, calm friendly expression"
-_FRAMING = "head and shoulders, centered, shoulders level, arms down"
-_QUALITY = "soft even studio lighting, sharp focus, natural skin texture, 85mm"
+#: never dropped: without them the portrait is useless for the animator
+_POSE = "facing the camera, looking into the camera, lips closed"
+_FRAMING = "head and shoulders, centered"
+#: dropped from the END when the prompt would not fit in one CLIP window (75 tokens)
+_OPTIONAL = ("calm friendly expression", "soft even studio lighting", "sharp focus", "natural skin texture")
+TOKEN_BUDGET = 75
 
+#: one CLIP window including the gender / age counter-terms (checked by the tests)
 NEGATIVE = (
-    "open mouth, teeth, laughing, tongue, tilted head, side view, looking away, hands, raised arm, "
-    "cleavage, low neckline, bare shoulders, nude, cartoon, painting, illustration, 3d render, anime, "
-    "doll, plastic skin, deformed, asymmetric eyes, cross-eyed, blurry, text, watermark, "
-    "multiple people, busy background, studio equipment, lamp, window"
+    "open mouth, teeth, laughing, tilted head, side view, looking away, hands, raised arm, cleavage, "
+    "bare shoulders, nude, cartoon, painting, illustration, 3d render, anime, doll, deformed, "
+    "asymmetric eyes, blurry, text, watermark, multiple people, busy background, studio equipment"
 )
-_NEGATIVE_GENDER = {"female": "man, male, beard", "male": "woman, female, makeup", "neutral": ""}
+_NEGATIVE_GENDER = {"female": "man, male, beard", "male": "woman, female", "neutral": ""}
 _NEGATIVE_AGE_YOUNG = "old, wrinkles"
 _NEGATIVE_AGE_OLD = "young, teenager"
 
@@ -145,6 +148,26 @@ def _clean(text: str | None, limit: int = 160) -> str:
     return text[:limit].rstrip(" ,")
 
 
+def approx_tokens(text: str) -> int:
+    """Estimate of the CLIP token count without the vocabulary: one per word, digit and
+    punctuation mark. Slightly low for rare words, so callers without the real tokenizer use a
+    smaller budget."""
+    return len(re.findall(r"[^\W\d_]+|\d|[^\w\s]|_", text, flags=re.UNICODE))
+
+
+def _assemble(required: list[str], optional: tuple[str, ...], count_tokens) -> str:
+    """Join the parts with commas, dropping optional parts from the end until the prompt fits
+    in one CLIP window. A prompt whose REQUIRED parts already overflow is returned whole (the
+    tokenizer then splits it into two balanced windows)."""
+    budget = TOKEN_BUDGET if count_tokens is not None else TOKEN_BUDGET - 4
+    counter = count_tokens or approx_tokens
+    parts = [p for p in required if p]
+    kept = list(optional)
+    while kept and counter(", ".join(parts + kept)) > budget:
+        kept.pop()
+    return ", ".join(parts + kept)
+
+
 def _age_negative(age: int | None) -> str:
     if age is None:
         return ""
@@ -159,8 +182,9 @@ def _join_negative(*parts: str) -> str:
     return ", ".join(p for p in parts if p)
 
 
-def build_prompt(spec: PortraitSpec) -> PromptPair:
-    """Structured description -> (positive, negative). Deterministic."""
+def build_prompt(spec: PortraitSpec, count_tokens=None) -> PromptPair:
+    """Structured description -> (positive, negative). Deterministic. `count_tokens` is the real
+    CLIP token counter when the tokenizer is loaded (an estimate is used otherwise)."""
     spec.validate()
     noun = _NOUN[spec.gender]
     who = []
@@ -186,9 +210,9 @@ def build_prompt(spec: PortraitSpec) -> PromptPair:
         parts.append(extra)
     clothing = _clean(spec.clothing, 100) or STYLES[spec.style][spec.gender]
     parts.append(f"wearing {clothing}")
-    parts += [_POSE, _FRAMING, BACKGROUNDS[spec.background], _QUALITY]
-    negative = _join_negative(NEGATIVE, _NEGATIVE_GENDER[spec.gender], _age_negative(spec.age))
-    return PromptPair(", ".join(parts), negative, spec.gender)
+    parts += [_POSE, _FRAMING, BACKGROUNDS[spec.background]]
+    negative = _join_negative(_NEGATIVE_GENDER[spec.gender], _age_negative(spec.age), NEGATIVE)
+    return PromptPair(_assemble(parts, _OPTIONAL, count_tokens), negative, spec.gender)
 
 
 # ---------------------------------------------------------------- free text (HTTP API)
@@ -316,10 +340,10 @@ def _described_age(text: str) -> int | None:
     return ages[0] if ages else None
 
 
-def prompt_from_description(description: str, gender: str | None = None) -> PromptPair:
-    """Free-text description (Spanish or English) -> presenter prompt. The pose, framing and
-    background constraints come BEFORE and AFTER the description so they survive truncation."""
-    description = _clean(description, 400)
+def prompt_from_description(description: str, gender: str | None = None, count_tokens=None) -> PromptPair:
+    """Free-text description (Spanish or English) -> presenter prompt, with the same pose,
+    framing and background constraints as the structured template."""
+    description = _clean(description, 300)
     if not description:
         raise EngineError("VALIDATION_ERROR", "prompt must describe the person.", "empty_prompt")
     check_adult(description)
@@ -332,10 +356,10 @@ def prompt_from_description(description: str, gender: str | None = None) -> Prom
     if not _PERSON_NOUN.search(english):
         subject = f"{_NOUN[g] if g != 'neutral' else 'adult person'}, {english}"
     article = "" if re.match(r"^(a|an|the)\b", subject) else ("an " if subject[:1] in "aeiou" else "a ")
-    parts = [f"{_HEAD} {article}{subject}", _POSE, _FRAMING, BACKGROUNDS["light-gray"]]
+    parts = [f"{_HEAD} {article}{subject}"]
     if not _CLOTHING_WORDS.search(english):
-        parts.append("modest professional clothes")
-    parts.append(_QUALITY)
-    positive = ", ".join(parts)
-    negative = _join_negative(NEGATIVE, _NEGATIVE_GENDER[g], _age_negative(_described_age(description)))
+        parts.append("wearing modest professional clothes")
+    parts += [_POSE, _FRAMING, BACKGROUNDS["light-gray"]]
+    positive = _assemble(parts, _OPTIONAL, count_tokens)
+    negative = _join_negative(_NEGATIVE_GENDER[g], _age_negative(_described_age(description)), NEGATIVE)
     return PromptPair(positive, negative, g)
