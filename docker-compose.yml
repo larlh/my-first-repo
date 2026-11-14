@@ -1,0 +1,117 @@
+# Parlante on your machine with Docker:   docker compose up --build
+#   web  http://localhost:8080      API docs  http://localhost:8080/docs
+# Without Docker use `pnpm services` + `pnpm dev` (see README).
+#
+# Set APP_SECRET (>= 32 chars) in a `.env` file next to this one before exposing it anywhere.
+x-node-env: &node-env
+  NODE_ENV: production
+  DATABASE_URL: postgres://parlante:parlante@postgres:5432/parlante
+  REDIS_URL: redis://redis:6379
+  APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env (>= 32 characters)}
+  PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
+  PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:8080}
+  WEB_ORIGIN: ${PUBLIC_WEB_URL:-http://localhost:8080}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  TRUST_PROXY: 'true'
+  STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+  STORAGE_LOCAL_DIR: /data/storage
+  AVATAR_ENGINE_URL: ${AVATAR_ENGINE_URL:-http://avatar-engine:8090}
+  AVATAR_ENGINE_WORK_DIR: /data/avatar-engine
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: parlante
+      POSTGRES_PASSWORD: parlante
+      POSTGRES_DB: parlante
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U parlante -d parlante']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - '127.0.0.1:5432:5432'
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - '127.0.0.1:6379:6379'
+
+  migrate:
+    build: { context: ., dockerfile: docker/Dockerfile.node }
+    command: ['pnpm', 'db:migrate']
+    environment: *node-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    build: { context: ., dockerfile: docker/Dockerfile.node }
+    command: ['pnpm', '--filter', '@parlante/api', 'start']
+    environment: *node-env
+    volumes:
+      - storage:/data/storage
+      - engine:/data/avatar-engine
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  worker:
+    build: { context: ., dockerfile: docker/Dockerfile.node }
+    command: ['pnpm', '--filter', '@parlante/worker', 'start']
+    environment: *node-env
+    volumes:
+      - storage:/data/storage
+      - engine:/data/avatar-engine
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: docker/Dockerfile.web }
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - '8080:80'
+    restart: unless-stopped
+
+  # Local neural avatar engine (photorealistic avatars). Opt-in: `docker compose --profile neural up`.
+  # Its Dockerfile is part of services/avatar-engine (master prompt §2b).
+  avatar-engine:
+    profiles: ['neural']
+    build: { context: services/avatar-engine }
+    environment:
+      AVATAR_ENGINE_WORK_DIR: /data/avatar-engine
+      AVATAR_ENGINE_MODELS_DIR: /models
+    volumes:
+      - engine:/data/avatar-engine
+      - models:/models
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  storage:
+  engine:
+  models:

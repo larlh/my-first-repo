@@ -10,6 +10,7 @@
   },
   "scripts": {
     "services": "bash scripts/dev-services.sh",
+    "avatar-engine": "bash services/avatar-engine/run.sh",
     "dev": "concurrently -k -n api,worker,web -c blue,magenta,green \"pnpm --filter @parlante/api dev\" \"pnpm --filter @parlante/worker dev\" \"pnpm --filter @parlante/web dev\"",
     "dev:api": "pnpm --filter @parlante/api dev",
     "dev:worker": "pnpm --filter @parlante/worker dev",

@@ -242,7 +242,7 @@ export const PHONEME_TO_VISEME: Readonly<Record<string, Viseme>> = {
   ʉ: 'U',
 };
 
-const STRIP_MARKS = /[ˈˌ'ˑ,!|.̀-ͯ]/g;
+const STRIP_MARKS = /[ˈˌ',!|.]|\p{M}/gu;
 const LENGTH_MARKS = /[ːˑ]/g;
 
 /**

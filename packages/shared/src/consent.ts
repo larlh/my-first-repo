@@ -14,10 +14,7 @@ export type ConsentRelationship = z.infer<typeof ConsentRelationshipSchema>;
  */
 export const CONSENT_STATEMENT_VERSION = '2026-01';
 
-export const CONSENT_STATEMENTS: Record<
-  ConsentKind,
-  Record<string, { es: string; en: string }>
-> = {
+export const CONSENT_STATEMENTS: Record<ConsentKind, Record<string, { es: string; en: string }>> = {
   photo_avatar: {
     '2026-01': {
       es: 'Declaro que soy la persona que aparece en esta fotografía, o que cuento con su autorización expresa y verificable, y consiento que Parlante la utilice para generar un avatar animado. Entiendo que no puedo crear avatares de terceros sin su permiso, ni usarlos para suplantar, difamar o engañar.',

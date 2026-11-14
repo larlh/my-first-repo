@@ -62,16 +62,33 @@ export function idOf(kind: IdKind) {
 }
 
 /**
- * Stock avatars live in code (packages/renderer), not in the DB. Their ids are `stock_<slug>`.
- * Photo avatars are DB rows with `avt_…` ids. A Composition stores either form in `avatarId`.
+ * Avatar ids — a Composition stores any of these forms in `avatarId`:
+ *   stock_<slug>  "instant" 2D parametric stock avatar, drawn by code (packages/renderer)
+ *   real_<slug>   photorealistic stock avatar: a synthetic person generated with the local
+ *                 engine and versioned as an image (packages/stock-assets)
+ *   avt_…         workspace avatar (DB row): created from a photo or generated from text;
+ *                 always photorealistic
  */
 export const STOCK_AVATAR_PREFIX = 'stock_';
+export const STOCK_PHOTOREAL_AVATAR_PREFIX = 'real_';
 export const AvatarIdSchema = z
   .string()
   .max(64)
-  .regex(/^(stock_[a-z0-9-]{1,40}|avt_[a-z0-9]{8,32})$/, 'Invalid avatar id');
+  .regex(/^(stock_[a-z0-9-]{1,40}|real_[a-z0-9-]{1,40}|avt_[a-z0-9]{8,32})$/, 'Invalid avatar id');
+/** True for "instant" 2D stock avatars (`stock_…`). */
 export function isStockAvatarId(id: string): boolean {
   return id.startsWith(STOCK_AVATAR_PREFIX);
+}
+/** True for photorealistic stock avatars (`real_…`). */
+export function isStockPhotorealAvatarId(id: string): boolean {
+  return id.startsWith(STOCK_PHOTOREAL_AVATAR_PREFIX);
+}
+/**
+ * How an avatar id is animated: `instant` = Canvas2D rig in real time (preview = export);
+ * `photoreal` = clip produced by the neural engine at render time (preview shows a stand-in).
+ */
+export function avatarRenderingOf(id: string): 'instant' | 'photoreal' {
+  return isStockAvatarId(id) ? 'instant' : 'photoreal';
 }
 
 /**

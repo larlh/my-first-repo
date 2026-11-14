@@ -154,7 +154,12 @@ export const CREDIT_COSTS = {
   render1080pMultiplier: 2,
   /** Per started minute of source video, per target language. */
   translationPerMinutePerLanguage: 2,
+  /** Preparing a photoreal avatar from a photo. */
   photoAvatar: 5,
+  /** Generating a synthetic photoreal avatar from text. */
+  generatedAvatar: 8,
+  /** Renders that animate photorealistic avatars (neural engine) cost this many times more. */
+  renderPhotorealMultiplier: 2,
   voiceClone: 10,
   /** AI script generation: free in basic (local) mode, 1 credit with an external LLM. */
   scriptPremium: 1,
@@ -162,12 +167,17 @@ export const CREDIT_COSTS = {
   interactiveSessionPremium: 2,
 } as const;
 
-export function creditsForRender(durationMs: number, resolution: Resolution): number {
+export function creditsForRender(
+  durationMs: number,
+  resolution: Resolution,
+  options: { photoreal?: boolean } = {},
+): number {
   const units = Math.max(1, Math.ceil(durationMs / 30_000));
   return (
     units *
     CREDIT_COSTS.renderPer30s *
-    (resolution === '1080p' ? CREDIT_COSTS.render1080pMultiplier : 1)
+    (resolution === '1080p' ? CREDIT_COSTS.render1080pMultiplier : 1) *
+    (options.photoreal ? CREDIT_COSTS.renderPhotorealMultiplier : 1)
   );
 }
 
@@ -185,6 +195,7 @@ export const LEDGER_REASONS = [
   'render_adjustment',
   'translation',
   'photo_avatar',
+  'generated_avatar',
   'voice_clone',
   'script',
   'interactive',

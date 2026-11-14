@@ -54,6 +54,11 @@ export function collectAvatarIds(composition: Composition): string[] {
   return [...ids];
 }
 
+/** True when any avatar layer uses a photorealistic avatar (`real_…` / `avt_…`). */
+export function usesPhotorealAvatars(composition: Composition): boolean {
+  return collectAvatarIds(composition).some((id) => !id.startsWith('stock_'));
+}
+
 /** Voice ids used by TTS scripts (unique). */
 export function collectVoiceIds(composition: Composition): string[] {
   const ids = new Set<string>();

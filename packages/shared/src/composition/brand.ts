@@ -12,11 +12,26 @@ export const BrandColorsSchema = z.object({
 });
 export type BrandColors = z.infer<typeof BrandColorsSchema>;
 
+/** Partial update of brand colours (no defaults: absent keys keep their stored value). */
+export const BrandColorsPatchSchema = z.object({
+  primary: ColorSchema.optional(),
+  secondary: ColorSchema.optional(),
+  accent: ColorSchema.optional(),
+  background: ColorSchema.optional(),
+  text: ColorSchema.optional(),
+});
+
 export const BrandFontsSchema = z.object({
   heading: FontFamilySchema.default('Poppins'),
   body: FontFamilySchema.default('Inter'),
 });
 export type BrandFonts = z.infer<typeof BrandFontsSchema>;
+
+/** Partial update of brand fonts (no defaults). */
+export const BrandFontsPatchSchema = z.object({
+  heading: FontFamilySchema.optional(),
+  body: FontFamilySchema.optional(),
+});
 
 /** The styling payload of a brand kit (what `applyBrandKit` needs). */
 export const BrandStyleSchema = z.object({

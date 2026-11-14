@@ -14,6 +14,7 @@
   "dependencies": {
     "@napi-rs/canvas": "^1.1.1",
     "@parlante/db": "workspace:*",
+    "@parlante/jobs": "workspace:*",
     "@parlante/providers": "workspace:*",
     "@parlante/renderer": "workspace:*",
     "@parlante/shared": "workspace:*",
@@ -21,7 +22,6 @@
     "@parlante/templates": "workspace:*",
     "bullmq": "^6.7.6",
     "csv-parse": "^7.0.3",
-    "drizzle-orm": "^0.45.4",
     "file-type": "^22.3.0",
     "image-size": "^2.1.0",
     "ioredis": "^6.0.0",

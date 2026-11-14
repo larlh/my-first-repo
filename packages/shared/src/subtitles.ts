@@ -57,7 +57,7 @@ function toMs(h: string | undefined, m: string, s: string, frac: string): number
  * Formatting tags (`<i>`, `{\an8}`) are stripped. Returns cues sorted by start time.
  */
 export function parseSubtitles(content: string): TimedText[] {
-  const lines = content.replace(/^﻿/, '').split(/\r?\n/);
+  const lines = content.replace(/^\uFEFF/, '').split(/\r?\n/);
   const cues: TimedText[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -124,5 +124,7 @@ export function parseTranscript(
   content: string,
   totalDurationMs = 0,
 ): TimedText[] {
-  return format === 'text' ? timePlainTranscript(content, totalDurationMs) : parseSubtitles(content);
+  return format === 'text'
+    ? timePlainTranscript(content, totalDurationMs)
+    : parseSubtitles(content);
 }
