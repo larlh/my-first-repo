@@ -28,10 +28,11 @@ export function ModeNotice({ provider, basic, premium, className }: ModeNoticePr
       tone={isBasic ? 'neutral' : 'saffron'}
       icon={isBasic ? <Cpu /> : <Sparkles />}
       title={isBasic ? t('kit.mode.basicTitle') : t('kit.mode.premiumTitle')}
-      action={<ProviderBadge provider={provider} size="sm" />}
       className={className}
     >
-      {isBasic ? basic : premium}
+      <p>{isBasic ? basic : premium}</p>
+      {/* Under the text, not beside it: the notice often lives in a narrow column. */}
+      <ProviderBadge provider={provider} size="sm" className="mt-2" />
     </Notice>
   );
 }

@@ -46,7 +46,7 @@ export function SceneCard({
         </p>
         <p className="nums font-mono text-xs text-fg-muted sm:mt-3">
           <span className="block">{format.clock(startMs)}</span>
-          <span className="block text-fg-subtle">
+          <span className="block font-sans text-fg-subtle">
             {silent ? t('scene.silent') : t('scene.approx', { time: format.duration(durationMs) })}
           </span>
         </p>

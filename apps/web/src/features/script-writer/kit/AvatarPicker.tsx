@@ -37,7 +37,7 @@ export function AvatarPicker({
     <fieldset className={cn('min-w-0', className)} disabled={disabled}>
       <legend className="mb-1.5 text-sm font-semibold">{legend}</legend>
       {hint && <p className="mb-2 text-sm text-fg-muted">{hint}</p>}
-      <div className="-m-1 grid max-h-72 grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4">
+      <div className="-m-1 grid max-h-72 grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2 overflow-y-auto p-1">
         {avatars.map((avatar) => {
           const checked = avatar.id === value;
           const photoreal = avatar.rendering === 'photoreal';

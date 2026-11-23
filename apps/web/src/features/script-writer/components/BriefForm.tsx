@@ -55,7 +55,7 @@ export function BriefForm({
   };
 
   return (
-    <Card className={cn('min-w-0', className)}>
+    <Card padded className={cn('min-w-0 rounded-xl sm:p-6', className)}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-5">
         <div>
           <p className="eyebrow text-fg-subtle">{t('brief.eyebrow')}</p>

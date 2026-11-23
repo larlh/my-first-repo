@@ -98,6 +98,7 @@ const es = {
     untitled: 'Ponle un título para poder crear el vídeo.',
     basedOn: 'Basado en «{{title}}»',
     stats: { scenes: 'Escenas', estimated: 'Duración estimada', target: 'Pediste' },
+    basicTitle: 'Escrito en modo básico',
     basic:
       'Este guion lo ha escrito la heurística local, no un modelo de lenguaje: úsalo como estructura y reescribe las frases a tu gusto.',
     scenes: 'Escenas del guion',
@@ -285,6 +286,7 @@ const en: typeof es = {
     untitled: 'Give it a title to create the video.',
     basedOn: 'Based on “{{title}}”',
     stats: { scenes: 'Scenes', estimated: 'Estimated length', target: 'You asked for' },
+    basicTitle: 'Written in basic mode',
     basic:
       'This script was written by the local heuristic, not a language model: use it as a structure and rewrite the sentences to taste.',
     scenes: 'Scenes of the script',

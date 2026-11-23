@@ -1,9 +1,9 @@
-import { Clapperboard, Link2, Plus, RotateCcw, TriangleAlert } from 'lucide-react';
+import { Clapperboard, Cpu, Link2, Plus, RotateCcw, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ProviderBadge } from '@/components/ProviderBadge';
 import { useFormat } from '@/lib/format';
 import { Button, Input } from '@/ui';
-import { ModeNotice, Notice } from '../kit';
+import { Notice } from '../kit';
 import {
   TITLE_MAX_CHARS,
   canCreateVideo,
@@ -96,11 +96,11 @@ export function ScriptEditor({
         </dl>
       </div>
 
-      <ModeNotice
-        provider={draft.basicMode ? draft.provider : null}
-        basic={t('script.basic')}
-        premium={null}
-      />
+      {draft.basicMode && (
+        <Notice icon={<Cpu />} title={t('script.basicTitle')}>
+          {t('script.basic')}
+        </Notice>
+      )}
 
       <ol className="flex min-w-0 flex-col gap-3" aria-label={t('script.scenes')}>
         {draft.scenes.map((scene, index) => (

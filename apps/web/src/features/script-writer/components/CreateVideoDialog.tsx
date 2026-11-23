@@ -20,7 +20,7 @@ import {
   Notice,
   VoiceSelect,
   defaultVoiceOf,
-  languageShortName,
+  languageInText,
   usableAvatars,
   useAvatars,
   useUiLocale,
@@ -115,7 +115,7 @@ export function CreateVideoDialog({
       description={t('create.description', {
         count: draft.scenes.length,
         time: format.duration(timing.totalMs),
-        language: languageShortName(draft.language, locale),
+        language: languageInText(draft.language, locale),
       })}
       footer={
         <>
@@ -153,7 +153,7 @@ export function CreateVideoDialog({
 
         <VoiceSelect
           label={t('create.voice')}
-          hint={t('create.voiceHint', { language: languageShortName(draft.language, locale) })}
+          hint={t('create.voiceHint', { language: languageInText(draft.language, locale) })}
           language={draft.language}
           value={voiceId}
           onValueChange={(next) => setVoiceId(next)}

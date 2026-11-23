@@ -399,8 +399,9 @@ describe('render job: success', () => {
         );
         expect(progress[i]?.percent).toBeGreaterThanOrEqual(progress[i - 1]?.percent ?? 0);
       }
-      // (BullMQ progress is throttled, so the closing 100 % may be dropped: the ROW says 100.)
-      expect(progress.at(-1)?.stage).toBe('finalize');
+      // (BullMQ progress is throttled to ~4 updates a second, so the short closing stages may
+      // be dropped there: what the user sees is the ROW, checked above — finalize, 100 %.)
+      expect(['frames', 'encode', 'finalize']).toContain(progress.at(-1)?.stage);
 
       // Credits: charged once, at the real cost. Webhook: video.completed queued.
       expect(await charged(ref)).toBe(1);

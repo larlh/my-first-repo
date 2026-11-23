@@ -17,7 +17,7 @@ import {
   TOOL_ROUTES,
   VoiceSelect,
   languageLabel,
-  languageShortName,
+  languageInText,
   useAvailableRoutes,
   useLanguageOptions,
   useUiLocale,
@@ -323,8 +323,8 @@ export default function NewTranslationPage() {
               <p className="text-sm text-fg-muted">
                 {t('new.summary', {
                   name: form.source.name,
-                  from: languageShortName(form.sourceLanguage, locale),
-                  to: form.targets.map((code) => languageShortName(code, locale)).join(', '),
+                  from: languageInText(form.sourceLanguage, locale),
+                  to: form.targets.map((code) => languageInText(code, locale)).join(', '),
                 })}
               </p>
             )}

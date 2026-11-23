@@ -48,6 +48,12 @@ export function languageShortName(code: string, locale: UiLocale): string {
     : (SPANISH_NAMES[code.slice(0, 2)] ?? languageName(code, 'es'));
 }
 
+/** The short name as it reads inside a sentence (Spanish does not capitalise languages). */
+export function languageInText(code: string, locale: UiLocale): string {
+  const name = languageShortName(code, locale);
+  return locale === 'es' ? name.toLowerCase() : name;
+}
+
 /** Options of a language `<Select>`, in catalogue order. */
 export function useLanguageOptions(): SelectOption<LanguageCode>[] {
   const locale = useUiLocale();

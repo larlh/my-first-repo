@@ -169,7 +169,7 @@ export default function InteractivePage() {
       />
 
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
-        <Card className="min-w-0">
+        <Card padded className="min-w-0 rounded-xl sm:p-6">
           <form onSubmit={submit} noValidate className="flex min-w-0 flex-col gap-5">
             <div>
               <p className="eyebrow text-fg-subtle">{t('setup.eyebrow')}</p>

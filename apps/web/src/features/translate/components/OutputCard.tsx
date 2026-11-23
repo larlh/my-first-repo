@@ -5,6 +5,7 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { toAppUrl } from '@/lib/api';
 import { Button, ProgressBar, cn } from '@/ui';
 import {
+  languageInText,
   languageLabel,
   languageShortName,
   useStoredErrorText,
@@ -109,8 +110,8 @@ export function OutputCard({ result, jobName, voiceName }: OutputCardProps) {
             </div>
           ) : status === 'processing' ? (
             <>
-              <p>{t('output.processing', { language: name })}</p>
-              <ProgressBar label={t('output.processing', { language: name })} value={null} />
+              <p>{t('output.processing', { language: languageInText(language, locale) })}</p>
+              <ProgressBar label={t('output.processing', { language: languageInText(language, locale) })} value={null} />
             </>
           ) : (
             <p>{t('output.pending')}</p>
