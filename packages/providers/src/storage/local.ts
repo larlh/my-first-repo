@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -53,7 +54,7 @@ export class LocalStorageProvider implements StorageProvider {
     const full = this.resolve(key);
     await fs.mkdir(path.dirname(full), { recursive: true });
     // Write to a temp file and rename so readers never see partial objects.
-    const tmp = `${full}.${process.pid}.${Date.now()}.tmp`;
+    const tmp = `${full}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
     try {
       if (body instanceof Uint8Array) {
         await fs.writeFile(tmp, body);

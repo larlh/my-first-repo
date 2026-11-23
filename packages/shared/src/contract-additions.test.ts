@@ -294,4 +294,45 @@ describe('storage keys (additions)', () => {
     ).toBe(true);
     expect(() => storageKeys.avatarClipCache(null, '../x', 'clip.mp4')).toThrow();
   });
+
+  it('sends the avatar engine state with the avatar catalogue (optional for producers)', () => {
+    const response = api.avatars.list.response;
+    // Producers that do not report it still validate; consumers always get the field.
+    expect(response.parse({ items: [] })).toEqual({ items: [], engine: null });
+    const engine = {
+      available: true,
+      reason: null,
+      device: 'cpu',
+      secondsPerVideoSecond: 12.5,
+    };
+    expect(response.parse({ items: [], engine }).engine).toEqual({
+      ...engine,
+      operations: { generate: false, prepare: false, animate: false },
+      models: [],
+      nonCommercial: false,
+      secondsPerPortrait: null,
+    });
+    expect(response.safeParse({ items: [], engine: { available: 'yes' } }).success).toBe(false);
+    // The public API listing keeps its own, unchanged shape.
+    expect(api.v1.listAvatars.response.parse({ items: [] })).toEqual({ items: [] });
+  });
+
+  it('accepts an own rendered video as the source of a translation (exactly one source)', () => {
+    const body = api.translations.create.body;
+    const base = { sourceLanguage: 'es', targetLanguages: ['en'] };
+    const asset = 'ast_abcdefgh12345678';
+    const video = 'vid_abcdefgh12345678';
+    // Existing clients (uploaded asset) keep working unchanged.
+    expect(body.parse({ ...base, sourceAssetId: asset })).toMatchObject({
+      sourceAssetId: asset,
+      voices: {},
+      options: { originalAudioVolume: 0.08, burnSubtitles: false },
+    });
+    expect(body.parse({ ...base, sourceVideoId: video }).sourceVideoId).toBe(video);
+    expect(body.safeParse(base).success).toBe(false);
+    expect(body.safeParse({ ...base, sourceAssetId: asset, sourceVideoId: video }).success).toBe(
+      false,
+    );
+    expect(body.safeParse({ ...base, sourceVideoId: asset }).success).toBe(false);
+  });
 });

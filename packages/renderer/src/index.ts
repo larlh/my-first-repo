@@ -13,6 +13,19 @@ export * from './subtitle-draw';
 export * from './media';
 export * from './matte';
 export * from './easing';
+export * from './animation';
+export { clearTextLayoutCache, layoutTextBlock, wrapText } from './text';
+export type { TextBlock, TextLine } from './text';
+export {
+  setCanvasFactory,
+  canCreateCanvas,
+  clearRenderCaches,
+  setRenderCacheBudget,
+  renderCacheStats,
+} from './cache';
+export type { CanvasFactory } from './cache';
+export { drawBackground, drawPlaceholder } from './background';
+export type { DrawTarget } from './background';
 export * from './fonts';
 export * from './assets';
 export * from './random';

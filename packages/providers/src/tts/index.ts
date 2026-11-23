@@ -5,6 +5,13 @@ import { createElevenLabsProvider } from './elevenlabs';
 import { createEspeakProvider } from './espeak';
 import { createOpenAiTtsProvider } from './openai';
 
+export { createElevenLabsProvider } from './elevenlabs';
+export { createEspeakProvider } from './espeak';
+export { ESPEAK_VOICES } from './espeak-voices';
+export { createOpenAiTtsProvider } from './openai';
+export { prepareSpeech } from './text';
+export { decodeWav, encodeWav } from './wav';
+
 /**
  * Owner: providers-speech.
  * Every TTS provider whose requirements are met is ACTIVE at the same time (their stock voices

@@ -33,3 +33,34 @@
 @import '@fontsource/jetbrains-mono/600.css';
 @import '@fontsource/jetbrains-mono/700.css';
 @import '@fontsource/jetbrains-mono/800.css';
+/*
+ * Italic faces (added by renderer-core): text layers with `style.italic` are drawn with the
+ * real italics, as the export does in Node. Roboto Slab ships none (slanted synthetically on
+ * both sides). Only @font-face rules: a file is downloaded when a composition uses it
+ * (`ensureCompositionFonts` from @parlante/renderer/browser).
+ */
+@import '@fontsource/inter/400-italic.css';
+@import '@fontsource/inter/500-italic.css';
+@import '@fontsource/inter/600-italic.css';
+@import '@fontsource/inter/700-italic.css';
+@import '@fontsource/inter/800-italic.css';
+@import '@fontsource/poppins/400-italic.css';
+@import '@fontsource/poppins/500-italic.css';
+@import '@fontsource/poppins/600-italic.css';
+@import '@fontsource/poppins/700-italic.css';
+@import '@fontsource/poppins/800-italic.css';
+@import '@fontsource/montserrat/400-italic.css';
+@import '@fontsource/montserrat/500-italic.css';
+@import '@fontsource/montserrat/600-italic.css';
+@import '@fontsource/montserrat/700-italic.css';
+@import '@fontsource/montserrat/800-italic.css';
+@import '@fontsource/playfair-display/400-italic.css';
+@import '@fontsource/playfair-display/500-italic.css';
+@import '@fontsource/playfair-display/600-italic.css';
+@import '@fontsource/playfair-display/700-italic.css';
+@import '@fontsource/playfair-display/800-italic.css';
+@import '@fontsource/jetbrains-mono/400-italic.css';
+@import '@fontsource/jetbrains-mono/500-italic.css';
+@import '@fontsource/jetbrains-mono/600-italic.css';
+@import '@fontsource/jetbrains-mono/700-italic.css';
+@import '@fontsource/jetbrains-mono/800-italic.css';

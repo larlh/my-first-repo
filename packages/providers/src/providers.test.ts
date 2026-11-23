@@ -8,6 +8,7 @@ import {
   ProviderNotImplementedError,
   createProvidersFromEnv,
   describeCapabilities,
+  notImplemented,
   providerEnvSchema,
   resolveChoice,
 } from './index';
@@ -31,7 +32,11 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<Buffer> {
 
 describe('registry', () => {
   it('selects local providers when no keys are configured', async () => {
-    const providers = createProvidersFromEnv({ STORAGE_LOCAL_DIR: dir });
+    // Port 9 (discard) is closed: the avatar engine is "stopped" whatever runs on this machine.
+    const providers = createProvidersFromEnv({
+      STORAGE_LOCAL_DIR: dir,
+      AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
+    });
     const caps = await describeCapabilities(providers);
     expect(CapabilitiesSchema.parse(caps)).toEqual(caps);
     expect(caps.active.tts.id).toBe('espeak');
@@ -40,9 +45,14 @@ describe('registry', () => {
     expect(caps.sttRequiresTranscript).toBe(true);
     expect(caps.active.lipsync).toMatchObject({ id: 'local-neural', local: true });
     expect(caps.active.portrait.id).toBe('local-neural');
-    // The engine client is still a stub: it must report itself unavailable, with a reason.
+    // A stopped engine never throws: it is reported as unavailable, with a reason for the user.
     expect(caps.avatarEngine.available).toBe(false);
     expect(caps.avatarEngine.reason).toMatch(/avatar engine/i);
+    expect(caps.avatarEngine.operations).toEqual({
+      generate: false,
+      prepare: false,
+      animate: false,
+    });
     expect(caps.active.storage.id).toBe('local');
     expect(caps.ttsProviders.map((p) => p.id)).toEqual(['espeak']);
     expect(providers.tts.get('espeak')).toBe(providers.tts.default);
@@ -91,11 +101,10 @@ describe('registry', () => {
     expect(resolveChoice<'a' | 'z'>('auto', [{ id: 'a', available: false }], 'z')).toBe('z');
   });
 
-  it('stubs throw a typed NOT_IMPLEMENTED AppError', async () => {
-    const providers = createProvidersFromEnv({ STORAGE_LOCAL_DIR: dir });
+  it('unimplemented provider methods throw a typed NOT_IMPLEMENTED AppError', () => {
     let caught: unknown;
     try {
-      await providers.moderation.check({ text: 'hola', context: 'script' });
+      notImplemented('voiceClone', 'some-provider', 'createVoice');
     } catch (err) {
       caught = err;
     }
@@ -104,8 +113,38 @@ describe('registry', () => {
     expect(caught).toMatchObject({
       code: 'NOT_IMPLEMENTED',
       status: 501,
-      capability: 'moderation',
+      capability: 'voiceClone',
+      providerId: 'some-provider',
+      method: 'createVoice',
     });
+  });
+
+  it('the AI providers of the zero-key setup answer instead of throwing NOT_IMPLEMENTED', async () => {
+    const providers = createProvidersFromEnv({
+      STORAGE_LOCAL_DIR: dir,
+      AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
+    });
+    expect(await providers.moderation.check({ text: 'hola', context: 'script' })).toMatchObject({
+      allowed: true,
+      provider: { id: 'local', quality: 'basic' },
+    });
+    expect(
+      await providers.llm.generateScript({
+        topic: 'La seguridad en el trabajo',
+        tone: 'professional',
+        durationSec: 30,
+        language: 'es',
+      }),
+    ).toMatchObject({ basicMode: true, provider: { id: 'local', quality: 'basic' } });
+    expect(
+      await providers.translation.translate({
+        texts: ['Hola'],
+        sourceLanguage: 'es',
+        targetLanguage: 'en',
+      }),
+    ).toMatchObject({ texts: ['Hello'], provider: { id: 'local', quality: 'basic' } });
+    await expect(providers.lipsync.status()).resolves.toMatchObject({ available: false });
+    await expect(providers.portrait.status()).resolves.toMatchObject({ available: false });
   });
 
   it('manual STT asks for a user transcript', async () => {

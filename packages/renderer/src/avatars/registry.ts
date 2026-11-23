@@ -1,16 +1,18 @@
 import { isStockAvatarId } from '@parlante/shared';
 import type { StockAvatarMeta } from '@parlante/shared';
 import { STOCK_AVATAR_CATALOG } from './stock/catalog';
-import { createPlaceholderRig } from './stock/placeholder';
+import { characterSpec } from './stock/characters';
+import { createCharacterRig } from './stock/rig';
 import type { AvatarRig, StockAvatarDefinition } from './types';
 
 /**
  * Registry of stock avatars. Owner: avatar-artist.
- * To give an avatar its real drawing, change its `createRig` here (and only here).
+ * Every catalogue entry gets a parametric character rig: its palette comes from the catalogue
+ * traits, its look (hair, clothes, face) from `stock/characters.ts`.
  */
 const DEFINITIONS: readonly StockAvatarDefinition[] = STOCK_AVATAR_CATALOG.map((meta) => ({
   meta,
-  createRig: () => createPlaceholderRig(meta),
+  createRig: () => createCharacterRig(meta.id, characterSpec(meta)),
 }));
 
 const byId = new Map(DEFINITIONS.map((d) => [d.meta.id, d]));

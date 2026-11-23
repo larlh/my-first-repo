@@ -453,6 +453,13 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+    devDependencies:
+      '@parlante/renderer':
+        specifier: workspace:*
+        version: link:../renderer
+      '@parlante/stock-assets':
+        specifier: workspace:*
+        version: link:../stock-assets
 
 packages:
 

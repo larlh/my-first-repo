@@ -1,60 +1,45 @@
-import { EMPTY_SCENE_RUNTIME, mediaRefKey } from '@parlante/shared';
-import type {
-  AvatarFraming,
-  Background,
-  Composition,
-  Fit,
-  Layer,
-  PhotoLandmarks,
-  RenderRuntime,
-  Scene,
-} from '@parlante/shared';
-import { photoAvatarPlacement } from './avatars/photo';
-import { computeAvatarState } from './avatars/state';
-import { clamp01, ease } from './easing';
+import type { Composition, RenderRuntime, Scene, SubtitleStyle } from '@parlante/shared';
+import { drawBackground } from './background';
+import { acquireScratch, cachedRaster, releaseScratch } from './cache';
+import { clamp01, ease, lerp } from './easing';
 import { canvasFont } from './fonts';
-import {
-  avatarClipTimeMs,
-  backgroundVideoRawMs,
-  layerActiveAt,
-  mediaTimeMs,
-  sceneInstantsAt,
-  videoLayerRawMs,
-} from './media';
+import { drawLayer } from './layers';
+import type { LayerTarget } from './layers';
+import { layersInPaintOrder, sceneInstantsAt } from './media';
+import type { SceneInstant } from './media';
 import { drawSubtitleCue } from './subtitle-draw';
-import { buildSubtitleCues, cueAt } from './subtitles';
+import { cachedSubtitleCues, cueAt } from './subtitles';
 import { computeTimeline } from './timeline';
 import type { Timeline } from './timeline';
-import type { Ctx2D, PixelBox, RenderAssets, RenderImage, RenderOptions } from './types';
+import type { Ctx2D, RenderAssets, RenderOptions } from './types';
+
+export { drawImageFit, fitRect, createGradientFill, setSmoothing } from './background';
 
 /* -------------------------------------------------------------------------------------------
  * renderFrame — THE entry point of the renderer. Draws the frame of `composition` at video
  * time `tMs` onto `ctx`. Pure and deterministic: same arguments ⇒ same pixels. Used verbatim
  * by the Studio live preview (browser) and by the export worker (Node).
  *
- * BASELINE implementation by the architect: correct structure (timeline → scene → background →
- * z-ordered layers → transition → subtitles → watermark) with simplified drawing. Owner:
- * renderer-core, who completes each `draw*` function (text wrapping and styles, all shapes,
- * gradients, layer animations, every transition type, subtitle presets, blur/dim, masks).
- * Keep the exported signature stable.
+ * Structure: timeline → scene(s) → background → z-ordered layers (pose, opacity, rotation)
+ * → scene transition → subtitles → watermark. The drawing lives in ./background (scene
+ * backgrounds), ./layers (one function per layer type), ./text, ./animation and
+ * ./subtitle-draw; this file decides WHAT is drawn at `tMs` and composes scenes.
  *
- * Two pieces are deliberately NOT private to this file, because other code must agree with
- * them exactly — keep routing through them when completing the drawing:
+ * Two pieces are deliberately NOT private to the renderer, because other code must agree with
+ * them exactly:
  *  - media clock (./media): which scene(s) are drawn and at which time every video is sampled
  *    (`sceneInstantsAt`, `mediaTimeMs`, `avatarClipTimeMs`), mirrored by `mediaPlaybackAt`
  *  - photoreal placement (`photoAvatarPlacement`): shared by the stand-in rig and the clip
  * ----------------------------------------------------------------------------------------- */
 
-interface Frame {
-  ctx: Ctx2D;
-  /** Output size in pixels. */
-  width: number;
-  height: number;
-  composition: Composition;
-  runtime: RenderRuntime;
-  assets: RenderAssets;
-  quality: 'preview' | 'final';
-}
+/**
+ * Watermark geometry, as fractions of the canvas height. It sits in the bottom-right corner;
+ * bottom subtitles keep at least `WATERMARK_CLEARANCE` from the bottom edge while it is on.
+ */
+const WATERMARK = { height: 0.044, inset: 0.02, fontSize: 0.024 } as const;
+export const WATERMARK_CLEARANCE = WATERMARK.inset * 2 + WATERMARK.height;
+/** Text of the plan watermark (free plan exports). */
+export const WATERMARK_TEXT = 'Parlante';
 
 export function renderFrame(
   ctx: Ctx2D,
@@ -67,15 +52,6 @@ export function renderFrame(
   const width = options.width ?? composition.canvas.width;
   const height = options.height ?? composition.canvas.height;
   const timeline: Timeline = options.timeline ?? computeTimeline(composition, runtime);
-  const frame: Frame = {
-    ctx,
-    width,
-    height,
-    composition,
-    runtime,
-    assets,
-    quality: options.quality ?? 'final',
-  };
   // One scene normally; during a transition the frozen previous scene, then the incoming one.
   const instants = sceneInstantsAt(composition, timeline, tMs);
   const current = instants[instants.length - 1];
@@ -87,311 +63,222 @@ export function renderFrame(
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, width, height);
 
-  for (const instant of instants) {
-    if (instant.frozen || instant.transitionProgress >= 1) {
-      drawScene(frame, instant.scene, instant.localMs, instant.speechMs);
-    } else {
-      // Incoming scene blended on top of the frozen previous one.
-      ctx.save();
-      ctx.globalAlpha = clamp01(ease('ease-in-out', instant.transitionProgress));
-      drawScene(frame, instant.scene, instant.localMs, instant.speechMs);
-      ctx.restore();
-    }
-  }
-
-  const showSubtitles = options.subtitles ?? composition.subtitles.enabled;
-  if (showSubtitles) drawSubtitles(frame, current.scene, current.speechMs);
-  if (options.watermark) drawWatermark(frame);
-  ctx.restore();
-}
-
-function drawScene(frame: Frame, scene: Scene, localMs: number, speechMs: number): void {
-  drawBackground(frame, scene.background, localMs);
-  const ordered = scene.layers
-    .map((layer, index) => ({ layer, index }))
-    .filter(({ layer }) => layerActiveAt(layer, localMs))
-    .sort((a, b) => a.layer.z - b.layer.z || a.index - b.index);
-  for (const { layer } of ordered) drawLayer(frame, scene, layer, localMs, speechMs);
-}
-
-function toPixels(frame: Frame, box: { x: number; y: number; w: number; h: number }): PixelBox {
-  return {
-    x: box.x * frame.width,
-    y: box.y * frame.height,
-    w: box.w * frame.width,
-    h: box.h * frame.height,
+  const target: LayerTarget = {
+    ctx,
+    width,
+    height,
+    assets,
+    runtime,
+    quality: options.quality ?? 'final',
+    aligned: true,
   };
+  const previous = instants.length > 1 ? instants[0] : undefined;
+  if (previous && current.transitionProgress < 1) {
+    drawTransition(target, previous, current);
+  } else {
+    drawScene(target, current);
+  }
+
+  const watermark = options.watermark === true;
+  const showSubtitles = options.subtitles ?? composition.subtitles.enabled;
+  if (showSubtitles) drawSubtitles(target, composition, current.scene, current.speechMs, watermark);
+  if (watermark) drawWatermark(target);
+  ctx.restore();
 }
 
-/** Draw `image` into `box` honouring the fit mode (cover crops, contain letterboxes). */
-export function drawImageFit(ctx: Ctx2D, image: RenderImage, box: PixelBox, fit: Fit): void {
-  if (fit === 'fill' || image.width === 0 || image.height === 0) {
-    ctx.drawImage(image.source, box.x, box.y, box.w, box.h);
-    return;
+function drawScene(target: LayerTarget, instant: SceneInstant): void {
+  const { scene, localMs, speechMs, timing } = instant;
+  drawBackground(target, scene.background, localMs);
+  for (const layer of layersInPaintOrder(scene, localMs)) {
+    drawLayer(target, scene, layer, localMs, speechMs, timing.durationMs);
   }
-  const scale =
-    fit === 'cover'
-      ? Math.max(box.w / image.width, box.h / image.height)
-      : Math.min(box.w / image.width, box.h / image.height);
-  const w = image.width * scale;
-  const h = image.height * scale;
+}
+
+/** Draw a scene shifted by whole pixels and clipped to the frame it occupies. */
+function drawSceneAt(target: LayerTarget, instant: SceneInstant, dx: number, dy: number): void {
+  const { ctx, width, height } = target;
   ctx.save();
+  ctx.translate(dx, dy);
   ctx.beginPath();
-  ctx.rect(box.x, box.y, box.w, box.h);
+  ctx.rect(0, 0, width, height);
   ctx.clip();
-  ctx.drawImage(image.source, box.x + (box.w - w) / 2, box.y + (box.h - h) / 2, w, h);
+  drawScene(target, instant);
   ctx.restore();
 }
 
-function drawBackground(frame: Frame, background: Background, localMs: number): void {
-  const { ctx, width, height } = frame;
-  const full: PixelBox = { x: 0, y: 0, w: width, h: height };
-  switch (background.type) {
-    case 'color':
-      ctx.fillStyle = background.color;
-      ctx.fillRect(0, 0, width, height);
-      return;
-    case 'gradient': {
-      const { gradient } = background;
-      let fill: CanvasGradient;
-      if (gradient.kind === 'radial') {
-        fill = ctx.createRadialGradient(
-          width / 2,
-          height / 2,
-          0,
-          width / 2,
-          height / 2,
-          Math.hypot(width, height) / 2,
-        );
-      } else {
-        const rad = (gradient.angle * Math.PI) / 180;
-        const dx = (Math.cos(rad) * width) / 2;
-        const dy = (Math.sin(rad) * height) / 2;
-        fill = ctx.createLinearGradient(
-          width / 2 - dx,
-          height / 2 - dy,
-          width / 2 + dx,
-          height / 2 + dy,
-        );
-      }
-      for (const stop of gradient.stops) fill.addColorStop(stop.offset, stop.color);
-      ctx.fillStyle = fill;
-      ctx.fillRect(0, 0, width, height);
-      return;
-    }
-    case 'image': {
-      const image = frame.assets.image(mediaRefKey(background.src));
-      if (image) drawImageFit(ctx, image, full, background.fit);
-      else drawPlaceholder(frame, full, 'image');
-      if (background.dim > 0) dim(frame, background.dim);
-      return;
-    }
-    case 'video': {
-      const source = frame.assets.video(mediaRefKey(background.src));
-      const t = mediaTimeMs(
-        backgroundVideoRawMs(background, localMs),
-        background.loop,
-        source?.durationMs ?? 0,
-      );
-      const image = source?.frameAt(t) ?? null;
-      if (image) drawImageFit(ctx, image, full, background.fit);
-      else drawPlaceholder(frame, full, 'video');
-      if (background.dim > 0) dim(frame, background.dim);
-      return;
-    }
-  }
-}
-
-function dim(frame: Frame, amount: number): void {
-  frame.ctx.save();
-  frame.ctx.globalAlpha = clamp01(amount);
-  frame.ctx.fillStyle = '#000000';
-  frame.ctx.fillRect(0, 0, frame.width, frame.height);
-  frame.ctx.restore();
-}
-
-/** Neutral stand-in for media that is not loaded (never throws, never blocks a render). */
-function drawPlaceholder(frame: Frame, box: PixelBox, label: string): void {
-  const { ctx } = frame;
-  ctx.save();
-  ctx.fillStyle = '#2a2f45';
-  ctx.fillRect(box.x, box.y, box.w, box.h);
-  ctx.strokeStyle = '#8c93b8';
-  ctx.lineWidth = Math.max(1, frame.height * 0.003);
-  ctx.setLineDash([frame.height * 0.012, frame.height * 0.012]);
-  ctx.strokeRect(box.x, box.y, box.w, box.h);
-  ctx.fillStyle = '#c3c8e6';
-  ctx.font = canvasFont('Inter', Math.max(10, Math.min(box.h * 0.2, frame.height * 0.03)), 500);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, box.x + box.w / 2, box.y + box.h / 2);
-  ctx.restore();
-}
-
-function drawLayer(
-  frame: Frame,
-  scene: Scene,
-  layer: Layer,
-  localMs: number,
-  speechMs: number,
-): void {
-  const { ctx } = frame;
-  const box = toPixels(frame, layer.box);
-  ctx.save();
-  ctx.globalAlpha *= layer.opacity;
-  if (layer.rotation !== 0) {
-    const cx = box.x + box.w / 2;
-    const cy = box.y + box.h / 2;
-    ctx.translate(cx, cy);
-    ctx.rotate((layer.rotation * Math.PI) / 180);
-    ctx.translate(-cx, -cy);
-  }
-  switch (layer.type) {
-    case 'avatar': {
-      const rig = frame.assets.avatar(layer.avatarId);
-      if (layer.shape !== 'none') {
-        if (layer.backdrop) {
-          ctx.fillStyle = layer.backdrop;
-          clipShape(ctx, box, layer.shape, frame.height);
-          ctx.fill();
-        }
-        clipShape(ctx, box, layer.shape, frame.height);
-        ctx.clip();
-      }
-      const clip = frame.assets.avatarClip(scene.id, layer.id);
-      const clipFrame = clip ? clip.frameAt(avatarClipTimeMs(clip, localMs, speechMs)) : null;
-      if (clip && clipFrame) {
-        // Photorealistic avatar: neural clip (with alpha), placed exactly like the stand-in.
-        drawAvatarClipFrame(ctx, clipFrame, box, layer.framing, clip.landmarks, layer.flip);
-      } else if (rig) {
-        const state = computeAvatarState({
-          runtime: frame.runtime.scenes[scene.id] ?? EMPTY_SCENE_RUNTIME,
-          speechMs,
-          sceneMs: localMs,
-          seed: `${scene.id}:${layer.id}`,
-        });
-        rig.draw(ctx, box, state, {
-          framing: layer.framing,
-          flip: layer.flip,
-          quality: frame.quality,
-        });
-      } else {
-        drawPlaceholder(frame, box, 'avatar');
-      }
-      break;
-    }
-    case 'text': {
-      const style = layer.style;
-      const sizePx = style.fontSize * frame.height;
-      ctx.font = canvasFont(style.fontFamily, sizePx, style.fontWeight, style.italic);
-      ctx.fillStyle = style.color;
-      ctx.textAlign = style.align;
-      ctx.textBaseline = 'middle';
-      const x =
-        style.align === 'left'
-          ? box.x
-          : style.align === 'right'
-            ? box.x + box.w
-            : box.x + box.w / 2;
-      const lines = (style.uppercase ? layer.text.toUpperCase() : layer.text).split('\n');
-      const lineHeight = sizePx * style.lineHeight;
-      const startY = box.y + box.h / 2 - ((lines.length - 1) * lineHeight) / 2;
-      lines.forEach((line, i) => ctx.fillText(line, x, startY + i * lineHeight, box.w));
-      break;
-    }
-    case 'image': {
-      const image = frame.assets.image(mediaRefKey(layer.src));
-      if (image) drawImageFit(ctx, image, box, layer.fit);
-      else drawPlaceholder(frame, box, 'image');
-      break;
-    }
-    case 'video': {
-      const source = frame.assets.video(mediaRefKey(layer.src));
-      const t = mediaTimeMs(videoLayerRawMs(layer, localMs), layer.loop, source?.durationMs ?? 0);
-      const image = source?.frameAt(t) ?? null;
-      if (image) drawImageFit(ctx, image, box, layer.fit);
-      else drawPlaceholder(frame, box, 'video');
-      break;
-    }
-    case 'shape': {
-      ctx.beginPath();
-      if (layer.shape === 'ellipse') {
-        ctx.ellipse(box.x + box.w / 2, box.y + box.h / 2, box.w / 2, box.h / 2, 0, 0, Math.PI * 2);
-      } else {
-        ctx.roundRect(box.x, box.y, box.w, box.h, layer.radius * frame.height);
-      }
-      if (layer.fill) {
-        ctx.fillStyle = layer.fill;
-        ctx.fill();
-      }
-      if (layer.stroke) {
-        ctx.strokeStyle = layer.stroke.color;
-        ctx.lineWidth = layer.stroke.width * frame.height;
-        ctx.stroke();
-      }
-      break;
-    }
-  }
-  ctx.restore();
-}
+/** Zoom transition: how far the outgoing scene grows and where the incoming one starts. */
+const ZOOM_OUTGOING_SCALE = 1.12;
+const ZOOM_INCOMING_SCALE = 0.72;
 
 /**
- * Draw a neural clip frame where `photoAvatarPlacement` puts it — the same rectangle the
- * stand-in rig uses for the same box, framing and landmarks — clipped to the layer box.
+ * Transition INTO `incoming` over the frozen last frame of `previous`. Each scene is drawn
+ * exactly once, previous first (so the media clock's order holds).
+ *  - fade:    cross-fade (the incoming scene is composited as one image, not layer by layer)
+ *  - slide-*: the incoming scene pushes the previous one out in the named direction
+ *  - wipe:    the incoming scene is revealed from left to right
+ *  - zoom:    the previous scene grows slightly while the incoming one scales up and fades in
  */
-function drawAvatarClipFrame(
-  ctx: Ctx2D,
-  image: RenderImage,
-  box: PixelBox,
-  framing: AvatarFraming,
-  landmarks: PhotoLandmarks | undefined,
-  flip: boolean,
-): void {
-  if (image.width === 0 || image.height === 0) return;
-  const dest = photoAvatarPlacement(image.width, image.height, box, framing, landmarks);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(box.x, box.y, box.w, box.h);
-  ctx.clip();
-  if (flip) {
-    ctx.translate(2 * (box.x + box.w / 2), 0);
-    ctx.scale(-1, 1);
+function drawTransition(target: LayerTarget, previous: SceneInstant, incoming: SceneInstant): void {
+  const { ctx, width, height } = target;
+  const type = incoming.scene.transition.type;
+  const p = clamp01(ease('ease-in-out', incoming.transitionProgress));
+
+  switch (type) {
+    case 'slide-left':
+    case 'slide-right':
+    case 'slide-up':
+    case 'slide-down': {
+      const horizontal = type === 'slide-left' || type === 'slide-right';
+      const sign = type === 'slide-left' || type === 'slide-up' ? -1 : 1;
+      const span = horizontal ? width : height;
+      const shift = Math.round(p * span) * sign;
+      const from = shift - sign * span;
+      drawSceneAt(target, previous, horizontal ? shift : 0, horizontal ? 0 : shift);
+      drawSceneAt(target, incoming, horizontal ? from : 0, horizontal ? 0 : from);
+      return;
+    }
+    case 'wipe': {
+      drawScene(target, previous);
+      const edge = Math.round(p * width);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, edge, height);
+      ctx.clip();
+      drawScene(target, incoming);
+      ctx.restore();
+      return;
+    }
+    case 'zoom': {
+      const grow = lerp(1, ZOOM_OUTGOING_SCALE, p);
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(grow, grow);
+      ctx.translate(-width / 2, -height / 2);
+      drawScene({ ...target, aligned: false }, previous);
+      ctx.restore();
+      const scale = lerp(ZOOM_INCOMING_SCALE, 1, p);
+      compositeScene(target, incoming, clamp01(p * 1.5), scale);
+      return;
+    }
+    case 'none':
+    case 'fade':
+    default:
+      drawScene(target, previous);
+      compositeScene(target, incoming, p, 1);
   }
-  ctx.drawImage(image.source, dest.x, dest.y, dest.w, dest.h);
-  ctx.restore();
 }
 
-function clipShape(
-  ctx: Ctx2D,
-  box: PixelBox,
-  shape: 'circle' | 'rounded',
-  canvasHeight: number,
+/** Draw a scene as ONE image with the given opacity and scale (about the frame centre). */
+function compositeScene(
+  target: LayerTarget,
+  instant: SceneInstant,
+  alpha: number,
+  scale: number,
 ): void {
-  ctx.beginPath();
-  if (shape === 'circle') {
-    const r = Math.min(box.w, box.h) / 2;
-    ctx.arc(box.x + box.w / 2, box.y + box.h / 2, r, 0, Math.PI * 2);
-  } else {
-    ctx.roundRect(box.x, box.y, box.w, box.h, canvasHeight * 0.03);
+  const { ctx, width, height } = target;
+  const scratch = acquireScratch(width, height);
+  if (!scratch) {
+    // No off-screen canvas on this platform: blend the scene's layers directly.
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    if (scale !== 1) {
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-width / 2, -height / 2);
+    }
+    drawScene({ ...target, aligned: scale === 1 }, instant);
+    ctx.restore();
+    return;
+  }
+  try {
+    drawScene({ ...target, ctx: scratch.ctx, aligned: true }, instant);
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    if (scale !== 1) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'low';
+      const w = width * scale;
+      const h = height * scale;
+      ctx.drawImage(scratch.canvas, (width - w) / 2, (height - h) / 2, w, h);
+    } else {
+      ctx.drawImage(scratch.canvas, 0, 0);
+    }
+    ctx.restore();
+  } finally {
+    releaseScratch(scratch);
   }
 }
 
-function drawSubtitles(frame: Frame, scene: Scene, speechMs: number): void {
-  const sceneRuntime = frame.runtime.scenes[scene.id];
+function drawSubtitles(
+  target: LayerTarget,
+  composition: Composition,
+  scene: Scene,
+  speechMs: number,
+  watermark: boolean,
+): void {
+  const sceneRuntime = target.runtime.scenes[scene.id];
   if (!sceneRuntime || sceneRuntime.words.length === 0) return;
-  const style = frame.composition.subtitles;
-  const cue = cueAt(buildSubtitleCues(sceneRuntime.words, style), speechMs);
-  if (cue) drawSubtitleCue(frame.ctx, cue, style, frame.width, frame.height, speechMs);
+  let style: SubtitleStyle = composition.subtitles;
+  const cue = cueAt(cachedSubtitleCues(sceneRuntime.words, style, composition.canvas), speechMs);
+  if (!cue) return;
+  if (watermark && style.position === 'bottom' && style.margin < WATERMARK_CLEARANCE) {
+    // Keep bottom subtitles clear of the watermark.
+    style = { ...style, margin: WATERMARK_CLEARANCE };
+  }
+  drawSubtitleCue(target.ctx, cue, style, target.width, target.height, speechMs);
 }
 
-function drawWatermark(frame: Frame): void {
-  const { ctx, width, height } = frame;
+function paintWatermark(
+  ctx: Ctx2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  height: number,
+): void {
+  const sizePx = WATERMARK.fontSize * height;
   ctx.save();
-  ctx.globalAlpha = 0.55;
-  ctx.font = canvasFont('Inter', height * 0.028, 700);
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'bottom';
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('Parlante', width - height * 0.025, height - height * 0.02);
+  ctx.fillStyle = 'rgba(11, 13, 23, 0.42)';
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, h / 2);
+  ctx.fill();
+  // Mark: a speech bubble made of a disc and a small tail.
+  const r = h * 0.26;
+  const cx = x + h * 0.55;
+  const cy = y + h / 2;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.08, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.75, cy + r * 0.45);
+  ctx.lineTo(cx - r * 1.05, cy + r * 1.25);
+  ctx.lineTo(cx - r * 0.05, cy + r * 0.9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.font = canvasFont('Inter', sizePx, 700);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(WATERMARK_TEXT, x + h * 1.02, cy + sizePx * 0.04);
   ctx.restore();
+}
+
+/** Plan watermark (free plan exports): a small translucent pill in the bottom-right corner. */
+function drawWatermark(target: LayerTarget): void {
+  const { ctx, width, height } = target;
+  const h = WATERMARK.height * height;
+  const sizePx = WATERMARK.fontSize * height;
+  ctx.save();
+  ctx.font = canvasFont('Inter', sizePx, 700);
+  const w = h * 1.02 + ctx.measureText(WATERMARK_TEXT).width + h * 0.45;
+  ctx.restore();
+  const x = width - WATERMARK.inset * height - w;
+  const y = height - WATERMARK.inset * height - h;
+  const raster = cachedRaster(
+    `watermark|${width}x${height}`,
+    { x: x - 1, y: y - 1, w: w + 2, h: h + 2 },
+    (c) => paintWatermark(c, x, y, w, h, height),
+  );
+  if (raster) ctx.drawImage(raster.canvas, raster.x, raster.y);
+  else paintWatermark(ctx, x, y, w, h, height);
 }

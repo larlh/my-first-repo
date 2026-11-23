@@ -73,35 +73,72 @@ export function photoAvatarPlacement(
 }
 
 /**
- * STAND-IN rig for photorealistic avatars (`real_…`, `avt_…`): animates the prepared portrait
- * in real time on Canvas2D (mouth driven by `state.mouth`, blink, subtle head motion). It is
- * what the Studio live preview and the interactive avatar show; exports replace it with the
- * neural clip (`RenderAssets.avatarClip`). The UI labels it as a preview.
+ * How far the stand-in may move, as fractions of the layer box (so the motion is the same
+ * number of pixels whatever the framing zoom). Kept to about a pixel or two at preview sizes:
+ * the stand-in must stay registered with the neural clip that replaces it in the export.
+ */
+export const PHOTO_STAND_IN_MOTION = {
+  /** Breathing: the portrait grows from its bottom edge; lift of its top, × box height. */
+  breath: 0.004,
+  /** Sideways sway for `head.turn` = ±1, × box width. */
+  sway: 0.004,
+  /** Downward dip for `head.nod` = 1 (stressed words), × box height. */
+  nod: 0.004,
+} as const;
+
+/** Largest half-height of the mouth shade, × the mouth width (corner to corner). */
+const MOUTH_SHADE_OPEN = 0.12;
+
+/**
+ * STAND-IN rig for photorealistic avatars (`real_…`, `avt_…`): what the Studio live preview
+ * and the interactive avatar show in real time. Exports replace it with the neural clip
+ * (`RenderAssets.avatarClip`), and the UI labels it as a preview.
+ *
+ * It is deliberately modest and never warps the photo — a face that is stretched or has a
+ * mouth painted over it reads as wrong long before it reads as alive:
+ *
+ *  - the cut-out is drawn exactly where `photoAvatarPlacement` puts it (the SAME geometry as
+ *    the exported clip), and only moves RIGIDLY and by a pixel or two: it breathes (grows a
+ *    hair from its bottom edge), sways and dips slightly on stressed words;
+ *  - speech shows as a soft shade between the lips whose size and width follow `state.mouth`
+ *    (so timing can be judged in the preview). It is a translucent shadow, not a drawn mouth,
+ *    and it is skipped when the landmarks are only `estimated` — better no cue than a cue in
+ *    the wrong place;
+ *  - no blink and no eye motion: those need the neural engine.
  *
  * `image` MUST be the avatar's CUT-OUT (`Avatar.cutoutUrl`: prepared portrait with its alpha
  * matte applied — or `applyAlphaMatte(platform, portrait, mask)`), not the raw portrait:
  * the person is then composited over the scene background exactly like the exported clip.
- * Placement comes from `photoAvatarPlacement` (shared with the clip) — keep using it.
- *
- * PLACEHOLDER implementation — draws the image with a simple mouth overlay so the pipeline
- * works end to end. Owner: avatar-artist.
  */
 export function createPhotoAvatarRig(
   id: string,
   image: RenderImage,
   rig: PhotoAvatarRig,
 ): AvatarRig {
+  const { mouthLeft, mouthRight } = rig.landmarks;
+  const mouthKnown = rig.landmarksSource !== 'estimated';
   return {
     id,
     kind: 'photo',
     draw(ctx: Ctx2D, box: PixelBox, state: AvatarState, options: AvatarDrawOptions): void {
-      const { x, y, w, h } = photoAvatarPlacement(
+      const place = photoAvatarPlacement(
         image.width,
         image.height,
         box,
         options.framing,
         rig.landmarks,
       );
+      if (!(place.w > 0) || !(place.h > 0)) return;
+
+      // Rigid micro-motion. The portrait only ever grows from its bottom edge and dips
+      // downwards, so it never uncovers a gap under the shoulders.
+      const grow = 1 + (PHOTO_STAND_IN_MOTION.breath * state.breath * box.h) / place.h;
+      const w = place.w * grow;
+      const h = place.h * grow;
+      const x = place.x - (w - place.w) / 2 + state.head.turn * PHOTO_STAND_IN_MOTION.sway * box.w;
+      const y =
+        place.y - (h - place.h) + Math.max(0, state.head.nod) * PHOTO_STAND_IN_MOTION.nod * box.h;
+
       ctx.save();
       ctx.beginPath();
       ctx.rect(box.x, box.y, box.w, box.h);
@@ -111,23 +148,31 @@ export function createPhotoAvatarRig(
         ctx.scale(-1, 1);
       }
       ctx.drawImage(image.source, x, y, w, h);
-      const { mouthLeft, mouthRight } = rig.landmarks;
-      const mx = x + ((mouthLeft.x + mouthRight.x) / 2) * w;
-      const my = y + ((mouthLeft.y + mouthRight.y) / 2) * h;
-      const mw = Math.abs(mouthRight.x - mouthLeft.x) * w;
-      if (state.mouth.open > 0.05) {
-        ctx.fillStyle = '#3a0f16';
-        ctx.beginPath();
-        ctx.ellipse(
-          mx,
-          my,
-          (mw / 2) * (0.8 + 0.2 * state.mouth.width),
-          mw * 0.3 * state.mouth.open,
-          0,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
+
+      const open = Math.min(1, Math.max(0, state.mouth.open));
+      if (mouthKnown && open > 0.03) {
+        const mx = x + ((mouthLeft.x + mouthRight.x) / 2) * w;
+        const my = y + ((mouthLeft.y + mouthRight.y) / 2) * h;
+        const mw = Math.hypot((mouthRight.x - mouthLeft.x) * w, (mouthRight.y - mouthLeft.y) * h);
+        const spread = Math.min(1, Math.max(-1, state.mouth.width));
+        const rx = mw * (0.3 + 0.07 * spread - 0.05 * state.mouth.round);
+        const ry = mw * MOUTH_SHADE_OPEN * open ** 0.7;
+        if (rx > 0.5 && ry > 0.25) {
+          const strength = Math.min(0.8, 0.35 + 0.6 * open);
+          ctx.translate(mx, my + ry * 0.25);
+          ctx.rotate(
+            Math.atan2((mouthRight.y - mouthLeft.y) * h, (mouthRight.x - mouthLeft.x) * w),
+          );
+          ctx.scale(1, ry / rx);
+          const shade = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+          shade.addColorStop(0, `rgba(38,10,14,${strength.toFixed(3)})`);
+          shade.addColorStop(0.45, `rgba(38,10,14,${(strength * 0.9).toFixed(3)})`);
+          shade.addColorStop(1, 'rgba(38,10,14,0)');
+          ctx.fillStyle = shade;
+          ctx.beginPath();
+          ctx.arc(0, 0, rx, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       ctx.restore();
     },

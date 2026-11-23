@@ -20,6 +20,7 @@ import {
   AvatarSchema,
   AvatarStyleSchema,
   BrandKitSchema,
+  CapabilitiesSchema,
   GenderSchema,
   PublicShareSchema,
   RenderJobSchema,
@@ -432,7 +433,15 @@ export const avatarRoutes = {
       style: AvatarStyleSchema.optional(),
       q: search,
     }),
-    response: listOf(AvatarSchema),
+    /**
+     * `engine`: live state of the photorealistic avatar engine (same object as
+     * `Capabilities.avatarEngine`), sent with the catalogue so the library can say in ONE call
+     * whether `photoreal` avatars can be created / rendered right now, how long it takes and
+     * whether a non-commercial model is in use. null only from producers that do not report it.
+     */
+    response: listOf(AvatarSchema).extend({
+      engine: CapabilitiesSchema.shape.avatarEngine.nullable().default(null),
+    }),
   }),
   get: route({
     method: 'GET',

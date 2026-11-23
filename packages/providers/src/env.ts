@@ -19,13 +19,28 @@ export const providerEnvSchema = z.object({
   S3_ACCESS_KEY_ID: envOptionalString,
   S3_SECRET_ACCESS_KEY: envOptionalString,
   S3_FORCE_PATH_STYLE: envBoolean(true),
+  /** Temporary credentials (AWS STS) need the session token next to the key pair. */
+  S3_SESSION_TOKEN: envOptionalString,
+  /**
+   * Endpoint written into SIGNED URLs when browsers reach the bucket under another host than
+   * the servers do (docker compose: servers use http://minio:9000, browsers
+   * http://localhost:9000). Defaults to S3_ENDPOINT.
+   */
+  S3_PUBLIC_ENDPOINT: envOptionalString,
 
   // ---- TTS
   TTS_PROVIDER: z.enum(['auto', 'espeak', 'elevenlabs', 'openai']).default('auto'),
   ELEVENLABS_API_KEY: envOptionalString,
   ELEVENLABS_MODEL: z.string().default('eleven_multilingual_v2'),
+  /** Origin of the ElevenLabs API (TTS and voice cloning); change it only for a proxy. */
+  ELEVENLABS_BASE_URL: z.string().url().default('https://api.elevenlabs.io'),
   OPENAI_API_KEY: envOptionalString,
   OPENAI_TTS_MODEL: z.string().default('gpt-4o-mini-tts'),
+  /**
+   * Base URL of the OpenAI API (TTS and Whisper), including `/v1`. Any server that speaks the
+   * same `audio/speech` and `audio/transcriptions` endpoints works (a proxy, a self-hosted one).
+   */
+  OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
 
   // ---- STT
   STT_PROVIDER: z.enum(['auto', 'manual', 'openai']).default('auto'),
@@ -36,6 +51,12 @@ export const providerEnvSchema = z.object({
   TRANSLATION_PROVIDER: z.enum(['auto', 'local', 'anthropic']).default('auto'),
   ANTHROPIC_API_KEY: envOptionalString,
   ANTHROPIC_MODEL: z.string().default('claude-opus-5-5'),
+  /**
+   * Server-side refusal fallbacks (`fallbacks: "default"`): when the model's safety classifiers
+   * decline a request, the API re-runs it on the model Anthropic recommends. Turn it off only
+   * for a model or deployment that rejects the parameter.
+   */
+  ANTHROPIC_FALLBACKS: envBoolean(true),
 
   // ---- voice cloning
   VOICE_CLONE_PROVIDER: z.enum(['auto', 'local', 'elevenlabs']).default('auto'),
@@ -63,9 +84,22 @@ export const providerEnvSchema = z.object({
    * repo root. Only the `local-neural` providers touch it (through `createEngineJobDir`).
    */
   AVATAR_ENGINE_WORK_DIR: z.string().default('./data/avatar-engine'),
+  /** Milliseconds between two polls of an engine job (progress and ETA granularity). */
+  AVATAR_ENGINE_POLL_MS: z.coerce.number().int().min(20).max(60_000).default(1000),
+  /** A RUNNING engine job without progress for this many seconds is cancelled and failed. */
+  AVATAR_ENGINE_STALL_SEC: z.coerce.number().int().min(1).max(86_400).default(900),
+  /**
+   * Side in pixels of generated portraits (the engine rounds to multiples of 64 in 384…768).
+   * 768 matches the stock library; 512 is about twice as fast and softer.
+   */
+  AVATAR_PORTRAIT_SIZE: z.coerce.number().int().min(256).max(1024).default(768),
   /** HTTPS endpoint of an external lip-sync service (only with LIPSYNC_PROVIDER=external). */
   LIPSYNC_ENDPOINT_URL: envOptionalString,
   LIPSYNC_API_KEY: envOptionalString,
+  /** Optional health URL of the external lip-sync service (GET, 2xx = available). */
+  LIPSYNC_STATUS_URL: envOptionalString,
+  /** Give up on an external lip-sync job after this many seconds (it is cancelled). */
+  LIPSYNC_TIMEOUT_SEC: z.coerce.number().int().min(10).max(86_400).default(1800),
 });
 
 export type ProviderEnv = z.infer<typeof providerEnvSchema>;

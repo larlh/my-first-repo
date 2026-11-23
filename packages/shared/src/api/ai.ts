@@ -63,23 +63,36 @@ export const scriptWriterRoutes = {
 
 const translationParams = z.object({ translationId: idOf('translationJob') });
 
-export const CreateTranslationBodySchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  /** Uploaded video Asset to translate. */
-  sourceAssetId: idOf('asset'),
-  sourceLanguage: LanguageCodeSchema,
-  targetLanguages: z.array(LanguageCodeSchema).min(1).max(13),
-  /**
-   * Required when the STT provider cannot transcribe (local mode — see
-   * `capabilities.sttRequiresTranscript`); optional otherwise (overrides STT).
-   */
-  transcript: z
-    .object({ format: TranscriptFormatSchema, content: z.string().min(1).max(500_000) })
-    .optional(),
-  /** Voice per target language; languages without an entry get a default stock voice. */
-  voices: z.partialRecord(LanguageCodeSchema, VoiceIdSchema).default({}),
-  options: TranslationOptionsSchema.default(() => TranslationOptionsSchema.parse({})),
-});
+export const CreateTranslationBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    /**
+     * Uploaded video Asset to translate. Exactly one of `sourceAssetId` / `sourceVideoId`.
+     */
+    sourceAssetId: idOf('asset').optional(),
+    /**
+     * Additive (phase 2): translate a COMPLETED video of the workspace instead of an upload.
+     * The API copies its rendered MP4 into a new Asset (`purpose: translation_source`), which
+     * is what the job and `TranslationJob.sourceAssetId` then refer to.
+     */
+    sourceVideoId: idOf('video').optional(),
+    sourceLanguage: LanguageCodeSchema,
+    targetLanguages: z.array(LanguageCodeSchema).min(1).max(13),
+    /**
+     * Required when the STT provider cannot transcribe (local mode — see
+     * `capabilities.sttRequiresTranscript`); optional otherwise (overrides STT).
+     */
+    transcript: z
+      .object({ format: TranscriptFormatSchema, content: z.string().min(1).max(500_000) })
+      .optional(),
+    /** Voice per target language; languages without an entry get a default stock voice. */
+    voices: z.partialRecord(LanguageCodeSchema, VoiceIdSchema).default({}),
+    options: TranslationOptionsSchema.default(() => TranslationOptionsSchema.parse({})),
+  })
+  .refine((b) => (b.sourceAssetId ? !b.sourceVideoId : !!b.sourceVideoId), {
+    message: 'Provide exactly one of sourceAssetId or sourceVideoId',
+    path: ['sourceAssetId'],
+  });
 
 export const translationRoutes = {
   list: route({

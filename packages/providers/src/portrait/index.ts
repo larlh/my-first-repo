@@ -1,25 +1,10 @@
 import type { PortraitProvider } from '@parlante/shared';
 import type { ProviderEnv } from '../env';
-import { notImplemented } from '../errors';
-import { ENGINE_UNAVAILABLE } from '../lipsync/index';
+import { createLocalNeuralPortraitProvider } from './local-neural';
 
-/**
- * `local-neural`: generates photorealistic portraits of synthetic people from text and
- * prepares portraits (face detection, crop, background matte) with the local engine.
- * STUB — owner: providers-ai. Same HTTP contract, plumbing (../engine.ts) and rules as the
- * lip-sync provider (POST /v1/portraits/generate, POST /v1/portraits/prepare);
- * `status()` = `engineStatusFromHealth(health, 'portrait')`.
- */
-export function createLocalNeuralPortraitProvider(_env: ProviderEnv): PortraitProvider {
-  return {
-    info: { id: 'local-neural', name: 'Motor neuronal local', quality: 'premium', local: true },
-    status: async () => ENGINE_UNAVAILABLE,
-    generate: () => notImplemented('portrait', 'local-neural', 'generate'),
-    prepare: () => notImplemented('portrait', 'local-neural', 'prepare'),
-  };
-}
+export { createLocalNeuralPortraitProvider } from './local-neural';
 
-/** Owner: providers-ai. Selected by PORTRAIT_PROVIDER. */
+/** Owner: providers-ai. Selected by PORTRAIT_PROVIDER (only `local-neural` exists). */
 export function createPortraitProvider(env: ProviderEnv): PortraitProvider {
   return createLocalNeuralPortraitProvider(env);
 }

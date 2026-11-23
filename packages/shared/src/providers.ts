@@ -176,6 +176,12 @@ export interface TranslationResult {
   /** Same length and order as the request. */
   texts: string[];
   provider: ProviderRef;
+  /**
+   * Additive, optional. Share (0..1) of the source WORDS the provider actually translated.
+   * Only basic providers set it (the local glossary leaves unknown words in the source
+   * language): callers can warn the user when it is low. Absent = fully translated.
+   */
+  coverage?: number;
 }
 
 export interface TranslationProvider extends BaseProvider {

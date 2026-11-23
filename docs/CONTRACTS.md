@@ -331,6 +331,9 @@ Tabla generada de `allRoutes()`; si añades una ruta, añade su fila.
 | `get`       | GET    | `/api/avatars/:avatarId`             | sesión  | 2   | One avatar                                                                                        | —                  |
 | `stockFile` | GET    | `/api/stock-avatars/:avatarId/:file` | pública | 2   | Portrait, matte, cut-out or thumbnail of a photorealistic stock avatar (cacheable) _(binario)_    | —                  |
 
+`list` responde `{ items, engine }`: `engine` es el mismo objeto que `Capabilities.avatarEngine`
+(estado en vivo del motor fotorrealista; campo aditivo, `null` si el productor no lo informa).
+
 #### `api.voices`
 
 | Ruta         | Método | Path                   | Auth   | F   | Resumen                                                                       | Errores de dominio              |
@@ -374,6 +377,11 @@ Tabla generada de `allRoutes()`; si añades una ruta, añade su fila.
 | `create` | POST   | `/api/translations`                | sesión ≥ editor | 12  | Queue a translation: transcript → translation → TTS dub → mix → subtitles, per target language _(202)_ | TRANSCRIPT_REQUIRED, INSUFFICIENT_CREDITS, PLAN_LIMIT_EXCEEDED, CONTENT_BLOCKED, UNPROCESSABLE |
 | `get`    | GET    | `/api/translations/:translationId` | sesión          | 12  | Translation job with per-language outputs (poll while processing)                                      | —                                                                                              |
 | `remove` | DELETE | `/api/translations/:translationId` | sesión ≥ editor | 12  | Delete a translation job and its outputs (cancels it when still running)                               | —                                                                                              |
+
+`create` acepta **exactamente uno** de `sourceAssetId` (vídeo subido) o `sourceVideoId` (campo
+aditivo: un vídeo propio ya renderizado; la API copia su MP4 a un asset `translation_source`, que
+es al que apuntan el job y `TranslationJob.sourceAssetId`). `remove` borra además el asset de
+origen cuando es `translation_source` y ninguna otra traducción lo usa.
 
 #### `api.batches`
 
@@ -426,6 +434,12 @@ Tabla generada de `allRoutes()`; si añades una ruta, añade su fila.
 | `getVideo`      | GET    | `/v1/videos/:videoId` | API key | 9   | Status, progress and output URLs of a video                                    | —                                                                                                                                      |
 | `deleteVideo`   | DELETE | `/v1/videos/:videoId` | API key | 9   | Delete a video and its files                                                   | —                                                                                                                                      |
 | `uploadAsset`   | POST   | `/v1/assets`          | API key | 9   | Upload an image, video or audio file to use in compositions _(multipart, 201)_ | PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, PLAN_LIMIT_EXCEEDED                                                                         |
+
+Además, el módulo `public-v1` sirve la documentación de la v1 fuera de la tabla (rutas ocultas,
+como `/openapi.json`; solo con `OPENAPI_ENABLED`): `GET /v1/openapi.json` (documento OpenAPI solo
+con `/v1/*`, derivado del general) y `GET /v1/docs` (Swagger UI). Todas las rutas `/v1/*` aplican
+un límite de peticiones **por clave** (60 / 120 / 300 por minuto según plan; cabeceras
+`RateLimit-*`, `429 RATE_LIMITED` con `Retry-After`) cuando `RATE_LIMIT_ENABLED` está activo.
 
 ## 6. Colas
 
@@ -501,7 +515,10 @@ worker  refundCredits(db, { …ref })                                          d
 
 Referencias: `renderJob` (motivo `render`), `translationJob`, `avatar` (`photo_avatar` /
 `generated_avatar`), `voice` (`voice_clone`). `settleCredits` etiqueta con `render_adjustment`
-salvo que se pase `reason` (p. ej. `adjustment` en una traducción parcial).
+salvo que se pase `reason` (p. ej. `adjustment` en una traducción parcial). Sin fila propia
+(síncronos, solo con LLM externo): `script` (motivo `script`, `refId` = id `evt_…` de la
+generación; se reembolsa si el LLM falla o responde en modo básico) e `interactiveSession`
+(motivo `interactive`, al crear la sesión).
 
 ## 8. Proveedores
 
@@ -618,7 +635,10 @@ En el worker (`apps/worker/src/lib`): `render-status.ts` (`loadRenderJob`, `mark
 `progress.ts` (`throttled`, `scale`), `tmp.ts` (`withTempDir`), `ffmpeg.ts`, `errors.ts`
 (`finalFailure`). En la API (`apps/api/src/lib`): `define-route.ts`, `auth.ts`, `consent.ts`
 (`consumeConsent`), `limits.ts` (`assertWithinLimit`), `uploads.ts` (`receiveUpload`),
-`binary.ts` (`sendPublicBinary`), `poster.ts` (`renderPoster`), `dto.ts`.
+`binary.ts` (`sendPublicBinary`), `poster.ts` (`renderPoster`), `dto.ts`, `moderation.ts`
+(`assertContentAllowed`: moderación con `CONTENT_BLOCKED` y `details.field` / `flags`), `person-data.ts`
+(`deleteAvatarCascade`, `deleteVoiceCascade`, `deleteExternalVoice`: el único borrado en cascada
+de avatar/voz, para revocar un consentimiento y para `DELETE` de photo-avatars / voice-clones).
 
 ## 12. Patrón de módulo de API
 

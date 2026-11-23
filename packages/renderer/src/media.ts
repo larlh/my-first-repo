@@ -77,6 +77,19 @@ export function layerActiveAt(layer: Layer, localMs: number): boolean {
   return localMs >= timing.startMs && (timing.endMs === null || localMs < timing.endMs);
 }
 
+/**
+ * Layers of `scene` drawn at scene-local time `localMs`, in PAINT ORDER: `z` ascending and,
+ * for equal `z`, array order. `renderFrame` paints — and asks its sources for frames — in
+ * exactly this order; `mediaPlaybackAt` lists media in it.
+ */
+export function layersInPaintOrder(scene: Scene, localMs: number): Layer[] {
+  return scene.layers
+    .map((layer, index) => ({ layer, index }))
+    .filter(({ layer }) => layerActiveAt(layer, localMs))
+    .sort((a, b) => a.layer.z - b.layer.z || a.index - b.index)
+    .map(({ layer }) => layer);
+}
+
 /** Position on a background video's clock, before looping / clamping to its length. */
 export function backgroundVideoRawMs(
   background: Extract<Background, { type: 'video' }>,
@@ -139,7 +152,8 @@ export interface MediaPlayback {
 
 /**
  * Every video `renderFrame(…, tMs, …)` will ask `RenderAssets` for, and at which media time.
- * Same order as painting (frozen previous scene first). Avatar clips are listed for every
+ * Same order as painting (frozen previous scene first; inside a scene the background, then
+ * the layers by `z`). Avatar clips are listed for every
  * visible avatar layer whose avatar is photorealistic-capable — i.e. for all avatar layers;
  * consumers ignore the ones they have no clip for.
  */
@@ -163,8 +177,7 @@ export function mediaPlaybackAt(
         volume: frozen ? 0 : scene.background.volume,
       });
     }
-    for (const layer of scene.layers) {
-      if (!layerActiveAt(layer, localMs)) continue;
+    for (const layer of layersInPaintOrder(scene, localMs)) {
       if (layer.type === 'video') {
         out.push({
           ...base,

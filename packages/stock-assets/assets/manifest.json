@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "bg-aurora",
+      "file": "backgrounds/bg-aurora.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 214647,
+      "sha256": "c82f2d45fa2cc94db14e536c09cbed032bd0fb4a1978c42af4eb639c3b8a00d9"
+    },
+    {
+      "id": "bg-sunset",
+      "file": "backgrounds/bg-sunset.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 210595,
+      "sha256": "a35d221dc089d20e066ae9c4b4ac16d9cbe8e05ede221ac6f1a5d45b8c7bb1b4"
+    },
+    {
+      "id": "bg-ocean",
+      "file": "backgrounds/bg-ocean.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 212097,
+      "sha256": "039883f14d6fe27b6512fc077aa66a2d7cdbc1d16fbf02187e7b1c87f0f92bff"
+    },
+    {
+      "id": "bg-mint",
+      "file": "backgrounds/bg-mint.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 122202,
+      "sha256": "c9c27cf15ca07c6ef20c376b5ff1de4b450dabe144c6ba859f2e8f5380d75a8c"
+    },
+    {
+      "id": "bg-paper",
+      "file": "backgrounds/bg-paper.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 342530,
+      "sha256": "88ffbb361b0ea90fa7e146aa422398bd7aaa2bfe91ea73bca8630fc92f47a5f4"
+    },
+    {
+      "id": "bg-midnight",
+      "file": "backgrounds/bg-midnight.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 195184,
+      "sha256": "f87818a7c4bb849f6b0a6e98c958589ffd35bae149ea5a76653ab0361356f5e4"
+    },
+    {
+      "id": "bg-dots",
+      "file": "backgrounds/bg-dots.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 243888,
+      "sha256": "e872de8f42236662e8a28182464cc0c89cb419295632b25f94a5a6a6b933d216"
+    },
+    {
+      "id": "bg-grid",
+      "file": "backgrounds/bg-grid.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 274825,
+      "sha256": "a6802b0c005637689b2a9552c2da8d45508bc8f7541ac92e61d4e4767bd9c0c7"
+    },
+    {
+      "id": "bg-waves",
+      "file": "backgrounds/bg-waves.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 141040,
+      "sha256": "82e75f50a1e8fb904e903f87003f945f3e6cc84bf4eda903894ec23020808775"
+    },
+    {
+      "id": "bg-confetti",
+      "file": "backgrounds/bg-confetti.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 263751,
+      "sha256": "d43e22af2293660cbe3c3b6eba889d8b46be7a71b9f632531a2be60263cdd750"
+    },
+    {
+      "id": "bg-diagonal",
+      "file": "backgrounds/bg-diagonal.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 173487,
+      "sha256": "56ca3f099a0be6d27677de7a8fd53224b8ed52411fe145424d379665fbdd7949"
+    },
+    {
+      "id": "bg-bokeh",
+      "file": "backgrounds/bg-bokeh.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 243427,
+      "sha256": "0dad5b012edb9d5e61ddf15292b2ada238addeebd0750f860a1c74c070e7c3b3"
+    },
+    {
+      "id": "bg-rays",
+      "file": "backgrounds/bg-rays.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 172532,
+      "sha256": "83bc8b46082d84c6036d2e628fbbc368d59de854492e1bbcf1d268c45eb3ccc1"
+    },
+    {
+      "id": "bg-studio-dark",
+      "file": "backgrounds/bg-studio-dark.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 204345,
+      "sha256": "d2017b656c2376884361a34144a70ac604916936e4110c873a03d44539fc0e57"
+    },
+    {
+      "id": "bg-studio-light",
+      "file": "backgrounds/bg-studio-light.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 119171,
+      "sha256": "cf877380243ccd13a736a507876cf95441d194ee7583cd4a356bf4129fff3efa"
+    },
+    {
+      "id": "bg-newsroom",
+      "file": "backgrounds/bg-newsroom.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 254104,
+      "sha256": "421dddf6d5f33dba45f09f2a7a08f9a3c5c7ccf9d693f39470d79acf38dca45a"
+    },
+    {
+      "id": "bg-office",
+      "file": "backgrounds/bg-office.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 164427,
+      "sha256": "3ee4fdfe8dc1ea0cd8929f45b80f17bda03ba0aee20feec9e7116ed8479b5ca3"
+    },
+    {
+      "id": "bg-stage",
+      "file": "backgrounds/bg-stage.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1920,
+      "height": 1920,
+      "durationMs": null,
+      "bytes": 217298,
+      "sha256": "2c3f758bf3de9b6afa80e9ce654b93c93b7b5be8f342369459638f36ac10319a"
+    },
+    {
+      "id": "music-ambient-dawn",
+      "file": "music/music-ambient-dawn.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 48000,
+      "bytes": 780439,
+      "sha256": "fd0fbb4e2685628ec8e1ee075ab1c8489032bfb966a71afc0c73475aa401f803",
+      "samples": 2304000,
+      "pcmSha256": "96ab67262dd7bca0573775ad88cf228ea5d4b3e6c7e8397a1ab266468325983d"
+    },
+    {
+      "id": "music-corporate-rise",
+      "file": "music/music-corporate-rise.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 38400,
+      "bytes": 651227,
+      "sha256": "29c872f20d6fe6d5badbe9a0a6ee08799b6f22a66098dddf00eebea13c19321a",
+      "samples": 1843200,
+      "pcmSha256": "368e8cdfa3bd4fd9f3700622b7169da6d75e7e21709739a8e807263cf66660f1"
+    },
+    {
+      "id": "music-lofi-study",
+      "file": "music/music-lofi-study.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 48000,
+      "bytes": 808784,
+      "sha256": "3253c32c95d1907b7d7462cb63569b2125eae01525fb321ec4ee6382c7411a37",
+      "samples": 2304000,
+      "pcmSha256": "d2feb468972d1858fd3258096af095365a3d4cb9163253549ac17686ad5ccada"
+    },
+    {
+      "id": "music-tech-pulse",
+      "file": "music/music-tech-pulse.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 32000,
+      "bytes": 542960,
+      "sha256": "7a37316b3290347a5eb5443251a513cc66bb4dd8c3229d4e076ed169d88a0d94",
+      "samples": 1536000,
+      "pcmSha256": "7869406728f90f88ed32c10c6f84e64c2d5397cb0dfd14993e1be7e6bf338637"
+    },
+    {
+      "id": "music-news-desk",
+      "file": "music/music-news-desk.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 38400,
+      "bytes": 650509,
+      "sha256": "b4434470beafcec241a6e178b025edf6b38fbc710859513195ccc1134624f465",
+      "samples": 1843200,
+      "pcmSha256": "33feafb962646c41e30a98679b2ed6a111e8bb5b8bdf41be1f32103841961f79"
+    },
+    {
+      "id": "music-warm-acoustic",
+      "file": "music/music-warm-acoustic.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 42667,
+      "bytes": 724471,
+      "sha256": "543a3bc5f0a39213487db0ed89be23626783efbca55df5b116f57bc39f9eb57f",
+      "samples": 2048000,
+      "pcmSha256": "d1b185a43a9a4e0398a17ef2966c7218a96991d6dbd19d2006c2baa9f2973903"
+    },
+    {
+      "id": "music-happy-day",
+      "file": "music/music-happy-day.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 34133,
+      "bytes": 582842,
+      "sha256": "c13bd5d2669e4d5986f2b88a07ff73e23ad125d7e80e00556c0b2e979fa6b555",
+      "samples": 1638400,
+      "pcmSha256": "aab1fa39645f86cf6c7cc09abc7e2d86003ef63f681e5396bdbbb6088bf41c23"
+    },
+    {
+      "id": "music-cinematic-hope",
+      "file": "music/music-cinematic-hope.m4a",
+      "mimeType": "audio/mp4",
+      "width": null,
+      "height": null,
+      "durationMs": 53333,
+      "bytes": 869648,
+      "sha256": "51aaab92653c6f334fb2972053e1f707a38ded3661ddb174114d955f6fd30985",
+      "samples": 2560000,
+      "pcmSha256": "09ef6784ace7668f2f0e9dd440270e7d9a96a4a3a305e7a95e0d289a4b845515"
+    }
+  ]
+}

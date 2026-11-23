@@ -4,10 +4,18 @@ import path from 'node:path';
 import { GlobalFonts, createCanvas, loadImage } from '@napi-rs/canvas';
 import type { Canvas } from '@napi-rs/canvas';
 import type { Composition, RenderRuntime } from '@parlante/shared';
+import { setCanvasFactory } from '../cache';
 import { listFontFiles } from '../fonts';
 import { matteCanvas } from '../matte';
 import { renderFrame } from '../render-frame';
 import type { Ctx2D, RenderAssets, RenderImage, RenderOptions, RenderPlatform } from '../types';
+import { createFrameRenderer as createFrameRendererWith } from './frames';
+import type { FrameRenderer, FrameRendererOptions } from './frames';
+
+export { prepareMediaAt } from './frames';
+export type { FrameRenderer, FrameRendererOptions } from './frames';
+export { createRawVideoSource, isPreparable, openAvatarClipSource, openVideoSource } from './video';
+export type { OpenVideoOptions, PreparableVideoSource, RawVideoSourceOptions } from './video';
 
 /* -------------------------------------------------------------------------------------------
  * Node adapter (@napi-rs/canvas, Skia). Import from `@parlante/renderer/node` — never from
@@ -21,7 +29,8 @@ let fontsRegistered: number | null = null;
 
 /**
  * Register every bundled @fontsource file (woff2) under its family name. All subsets of a
- * family share the name, so Latin, Cyrillic and Greek text resolve to the same family.
+ * family share the name, so Latin, Cyrillic and Greek text resolve to the same family; glyphs
+ * a family lacks come from Inter through the family list of `canvasFont`, like in a browser.
  * Idempotent; returns the number of font files registered.
  */
 export function registerNodeFonts(): number {
@@ -77,6 +86,9 @@ export function canvasAsImage(canvas: NodeCanvas): RenderImage {
   };
 }
 
+// Off-screen canvases for the renderer core (group opacity, transitions, raster caches).
+setCanvasFactory(createNodeCanvas);
+
 export const nodePlatform: RenderPlatform = {
   name: 'node',
   createCanvas: createNodeCanvas,
@@ -86,7 +98,61 @@ export const nodePlatform: RenderPlatform = {
   },
 };
 
-/** Raw RGBA pixels of a canvas (what the worker pipes to ffmpeg as `-f rawvideo -pix_fmt rgba`). */
+/**
+ * Renderer bound to one composition and one reused canvas, for exporting consecutive frames
+ * as raw RGBA (see ./frames). Registers the bundled fonts.
+ */
+export function createFrameRenderer(options: FrameRendererOptions): FrameRenderer {
+  registerNodeFonts();
+  return createFrameRendererWith(options, createNodeCanvas);
+}
+
+/**
+ * Decoded images by key, so the same file is decoded once however many layers, scenes or
+ * renders use it. Failed loads are not cached.
+ */
+export class NodeImageCache {
+  private readonly entries = new Map<string, Promise<RenderImage>>();
+
+  constructor(private readonly maxEntries = 128) {}
+
+  /** Image for `key`, decoding `source` (bytes or a local path) the first time. */
+  load(
+    key: string,
+    source: Uint8Array | string | (() => Promise<Uint8Array | string>),
+  ): Promise<RenderImage> {
+    const cached = this.entries.get(key);
+    if (cached) {
+      this.entries.delete(key);
+      this.entries.set(key, cached);
+      return cached;
+    }
+    const loading = (async () =>
+      loadNodeImage(typeof source === 'function' ? await source() : source))();
+    this.entries.set(key, loading);
+    loading.catch(() => {
+      if (this.entries.get(key) === loading) this.entries.delete(key);
+    });
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    return loading;
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
+
+/**
+ * Raw RGBA pixels of a canvas (what ffmpeg reads as `-f rawvideo -pix_fmt rgba`).
+ *
+ * For a single frame. To export many, use `createFrameRenderer(...).frame(i)`: the buffer
+ * returned here is native memory that is only released after the event loop turns, so a
+ * loop that calls this for every frame without yielding grows by 4 MB (720p) per frame.
+ */
 export function canvasToRgba(canvas: NodeCanvas): Buffer {
   return canvas.data();
 }

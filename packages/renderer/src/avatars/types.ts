@@ -11,7 +11,12 @@ export interface AvatarState {
   nextViseme: Viseme;
   /** 0 = fully `viseme`, 1 = fully `nextViseme`. */
   blend: number;
-  /** Convenience: `VISEME_MOUTH_SHAPES` of viseme/nextViseme already blended. */
+  /**
+   * The mouth to draw: canonical viseme parameters (`VISEME_MOUTH_SHAPES`) after
+   * co-articulation — continuous in time, eased between cues and softened by the neighbouring
+   * sounds. Rigs draw THIS; `viseme` / `nextViseme` / `blend` describe the same transition
+   * coarsely (labels, debugging, simple rigs).
+   */
   mouth: MouthShape;
   /** Eyelids: 0 = open, 1 = closed. */
   blink: number;
@@ -25,6 +30,17 @@ export interface AvatarState {
   speaking: boolean;
   /** Scene-local time in ms, for any further deterministic idle motion. */
   timeMs: number;
+  /**
+   * Eyebrow raise, -1..1 (0 = relaxed, 1 = fully raised on an emphasised word). Optional so
+   * hand-built states stay valid; `computeAvatarState` always sets it. Rigs treat a missing
+   * value as 0.
+   */
+  brow?: number;
+  /**
+   * Smile, 0..1: the friendly resting expression (stronger while idle, lighter while the
+   * mouth articulates). `computeAvatarState` always sets it; rigs default it to a soft smile.
+   */
+  smile?: number;
 }
 
 export interface AvatarDrawOptions {

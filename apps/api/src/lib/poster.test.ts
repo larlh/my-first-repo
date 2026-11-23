@@ -132,8 +132,9 @@ describe('sendPublicBinary', () => {
   it('serves stock bytes through contract routes as public, cacheable content', async () => {
     const stockAsset = await t.call(api.assets.stockFile, { params: { stockId: 'bg-aurora' } });
     expect(stockAsset.status).toBe(200);
-    expect(stockAsset.raw.rawPayload.subarray(1, 4).toString()).toBe('PNG');
-    expect(stockAsset.headers['content-type']).toBe('image/png');
+    // Stock backgrounds are committed as JPEG (packages/stock-assets/assets/backgrounds).
+    expect([...stockAsset.raw.rawPayload.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+    expect(stockAsset.headers['content-type']).toBe('image/jpeg');
     expect(stockAsset.headers['cache-control']).toBe('public, max-age=86400');
     expect(stockAsset.headers['x-content-type-options']).toBe('nosniff');
     expect(stockAsset.headers['cross-origin-resource-policy']).toBe('cross-origin');
