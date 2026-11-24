@@ -364,8 +364,14 @@ describe('translation job — real run with local providers', () => {
     // Queue progress (throttled) starts with the transcription and is tagged with the language.
     expect(progress[0]?.stage).toBe('transcribing');
     expect(progress.some((p) => p.stage !== 'transcribing')).toBe(true);
+    // Per-language stages carry their language. The closing report (`finalizing` at 100 %) covers
+    // the whole job, so it has none; whether the recorder sees it depends on timing.
+    const closing = (p: (typeof progress)[number]) =>
+      p.stage === 'finalizing' && p.percent === 100 && p.language === undefined;
     expect(
-      progress.filter((p) => p.stage !== 'transcribing').every((p) => p.language === 'en'),
+      progress
+        .filter((p) => p.stage !== 'transcribing' && !closing(p))
+        .every((p) => p.language === 'en'),
     ).toBe(true);
     // What clients poll is the ROW: stage, progress and the state of each language.
     expect(during?.job).toMatchObject({ status: 'processing', stage: 'translating' });
