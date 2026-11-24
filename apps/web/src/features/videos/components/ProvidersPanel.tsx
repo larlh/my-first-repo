@@ -10,6 +10,12 @@ import type { ProvenanceEntry } from '../lib/video';
 /** Capabilities that shape what a viewer hears and sees in a render. */
 const RENDER_CAPABILITIES: readonly Capability[] = ['tts', 'lipsync'];
 
+/** How the lips of a photorealistic avatar were driven (`ProviderRef.mode` of the render). */
+const LIP_DRIVERS = ['audio', 'visemes', 'mixed'] as const;
+type LipDriver = (typeof LIP_DRIVERS)[number];
+const isLipDriver = (mode: string | undefined): mode is LipDriver =>
+  (LIP_DRIVERS as readonly string[]).includes(mode ?? '');
+
 function ProvenanceList({ entries }: { entries: readonly ProvenanceEntry[] }) {
   const { t } = useTranslation('videos');
   return (
@@ -21,6 +27,11 @@ function ProvenanceList({ entries }: { entries: readonly ProvenanceEntry[] }) {
         >
           <span className="text-sm font-medium">{t(`providers.capability.${capability}`)}</span>
           <ProviderBadge provider={provider} size="sm" />
+          {capability === 'lipsync' && isLipDriver(provider.mode) && (
+            <span className="w-full text-xs text-fg-muted" data-testid="lip-driver">
+              {t(`providers.lipDriver.${provider.mode}`)}
+            </span>
+          )}
         </li>
       ))}
     </ul>

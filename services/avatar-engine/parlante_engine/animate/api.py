@@ -44,8 +44,10 @@ class AnimateRequest(Request):
     # ---- additive, optional (ignored by older engines) ----
     #: Word timeline of the narration: nods and brow raises follow word onsets.
     words: Optional[list[WordCue]] = Field(default=None, max_length=100_000)
-    #: `auto` = viseme timeline when given, otherwise the audio-driven model.
-    driver: Literal["auto", "visemes", "audio"] = "auto"
+    #: `visemes` = timeline rig; `audio` = lips follow the sound; `auto` = the best driver this
+    #: engine has (GET /health -> animation.autoDriver); absent = the legacy rule (timeline when
+    #: given, otherwise the audio-driven model).
+    driver: Optional[Literal["auto", "visemes", "audio"]] = None
     #: Same request + seed => identical frames. Default: derived from the request itself.
     seed: Optional[int] = Field(default=None, ge=0, le=2**31 - 1)
 
@@ -64,20 +66,22 @@ def animate(body: AnimateRequest) -> JSONResponse:
     job = AnimateJob(portrait, mask, audio, out, fps=body.fps, max_size=body.maxSize, visemes=visemes,
                      words=[w.model_dump() for w in body.words] if body.words else None, driver=body.driver,
                      seed=body.seed)
-    driver = choose_driver(job)
+    if body.driver == "visemes" and not visemes:
+        raise EngineError("VALIDATION_ERROR", "driver 'visemes' needs a viseme timeline.", "visemes_required")
     if not reg.capability_ready("animate"):
         raise EngineError("SERVICE_UNAVAILABLE", "Animation weights are missing. Run "
                           "`python scripts/download_models.py` in services/avatar-engine.", "weights_missing")
-    if driver == "audio" and not reg.capability_ready("animate-audio"):
-        raise EngineError("SERVICE_UNAVAILABLE", "This request has no viseme timeline and the audio-driven model "
-                          "is not downloaded (run `python scripts/download_models.py --with-audio`).",
-                          "weights_missing")
-    duration = wav_duration_seconds(audio)
+    duration = wav_duration_seconds(audio)             # also checks that the file really is a WAV
     if duration <= 0:
         raise EngineError("UNPROCESSABLE", "The audio file is empty.", "audio_empty")
     if duration > s.max_clip_seconds:
         raise EngineError("PAYLOAD_TOO_LARGE", f"Audio longer than {s.max_clip_seconds} s.", "audio_too_long")
-    spf = perf.seconds_per_frame(driver) or perf.seconds_per_frame("visemes")
+    driver = choose_driver(job)                        # "auto" listens to the file: silence needs no model
+    if driver == "audio" and not reg.capability_ready("animate-audio"):
+        raise EngineError("SERVICE_UNAVAILABLE", "This request cannot be animated without the audio-driven model "
+                          "(no viseme timeline, or driver 'audio' was asked for) and it is not downloaded: run "
+                          "`python scripts/download_models.py` in services/avatar-engine.", "weights_missing")
+    spf = perf.seconds_per_frame("visemes" if driver == "visemes" else "audio") or perf.seconds_per_frame("visemes")
     eta = spf * frame_count(duration * 1000.0, body.fps) if spf else None
     manager = get_job_manager()
     handle = manager.submit("animate", lambda ctx: run_animation(job, ctx), eta_hint=eta, client_ref=body.clientRef)

@@ -93,6 +93,15 @@ export const EngineHealthSchema = z.object({
    * (requests WITHOUT `visemes` fail with SERVICE_UNAVAILABLE while it is false).
    */
   drivers: z.object({ visemes: z.boolean(), audio: z.boolean() }).optional(),
+  /**
+   * Additive, optional: how `driver: "auto"` animates right now, and an opaque `key` that
+   * changes whenever the pixels `animate` produces for the same request would change (driver
+   * choice, its tuning, the weights it uses). Clients that cache clips make it part of their
+   * cache key. `autoDriver` is `audio` when the audio-driven model is usable — the engine then
+   * either always uses it or, by default, scores both mouth tracks against the sound of each
+   * clip and keeps the better one (the job result says which) — and `visemes` when it is not.
+   */
+  animation: z.object({ autoDriver: z.enum(['visemes', 'audio']), key: z.string() }).optional(),
 });
 export type EngineHealth = z.infer<typeof EngineHealthSchema>;
 
@@ -134,9 +143,14 @@ export const EngineAnimateRequestSchema = z.object({
   /** Word timeline of the narration: head nods and brow raises follow word onsets. */
   words: z.array(WordCueSchema).optional(),
   /**
-   * `visemes` = deterministic animation from the viseme timeline (default when `visemes` is
-   * sent); `audio` = audio-driven model, for audio without a timeline (default otherwise);
-   * `auto` = that default.
+   * Which driver moves the lips.
+   *  - `visemes`: deterministic rig driven by the viseme timeline (needs `visemes`).
+   *  - `audio`:   the lips follow the SOUND of `audioPath` (audio-driven model; needs its extra
+   *               weights). `visemes`, when sent, are only a hint for bilabial closures.
+   *  - `auto`:    the best driver available on this engine (`EngineHealth.animation`): with both
+   *               usable, the one whose mouth track follows the sound of this clip better. It
+   *               never fails for a missing optional model — it falls back.
+   *  - absent:    unchanged legacy rule — `visemes` when a timeline is sent, `audio` otherwise.
    */
   driver: z.enum(['auto', 'visemes', 'audio']).optional(),
   /** Same request + seed ⇒ identical frames. Default: derived from portrait + timeline. */
@@ -187,6 +201,9 @@ export const EngineJobResultSchema = z.discriminatedUnion('kind', [
     fps: z.number(),
     frameCount: z.number().int(),
     model: z.string(),
+    /* ---- additive, optional ---- */
+    /** Driver that actually produced the clip (what `auto` resolved to). */
+    driver: z.enum(['visemes', 'audio']).optional(),
   }),
 ]);
 export type EngineJobResult = z.infer<typeof EngineJobResultSchema>;

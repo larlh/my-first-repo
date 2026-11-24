@@ -2,6 +2,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { envBoolean, envOptionalString, findRepoRoot } from '@parlante/shared/node';
 import { DEFAULT_WHISPER_MODEL, WHISPER_MODEL_IDS } from './stt/whisper-models';
+import { DEFAULT_KOKORO_VARIANT, KOKORO_VARIANT_IDS } from './tts/neural-models';
 
 /**
  * Environment variables that select and configure providers. `auto` (the default) means: use
@@ -30,7 +31,13 @@ export const providerEnvSchema = z.object({
   S3_PUBLIC_ENDPOINT: envOptionalString,
 
   // ---- TTS
-  TTS_PROVIDER: z.enum(['auto', 'espeak', 'elevenlabs', 'openai']).default('auto'),
+  /**
+   * Provider whose voices are the DEFAULT of new content. `auto` → an external one when its
+   * key is set, else the local neural voices when they are installed (`pnpm voices:setup`),
+   * else eSpeak. `neural` prefers the local neural voices even when a key is set. Every
+   * provider whose requirements are met stays active whatever this says.
+   */
+  TTS_PROVIDER: z.enum(['auto', 'espeak', 'elevenlabs', 'openai', 'neural']).default('auto'),
   ELEVENLABS_API_KEY: envOptionalString,
   ELEVENLABS_MODEL: z.string().default('eleven_multilingual_v2'),
   /** Origin of the ElevenLabs API (TTS and voice cloning); change it only for a proxy. */
@@ -42,6 +49,22 @@ export const providerEnvSchema = z.object({
    * same `audio/speech` and `audio/transcriptions` endpoints works (a proxy, a self-hosted one).
    */
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+
+  // ---- local neural voices (Kokoro and Piper, docs/MODELS.md)
+  /** Directory of the voice models. Relative paths resolve from the repo root. */
+  VOICE_MODEL_DIR: z.string().default('./data/models'),
+  /** Precision of the Kokoro weights to load (install it with `pnpm voices:setup`). */
+  VOICE_KOKORO_VARIANT: z.enum(KOKORO_VARIANT_IDS).default(DEFAULT_KOKORO_VARIANT),
+  /** CPU threads of the voice models. 0 = every core, up to 4. */
+  VOICE_THREADS: z.coerce.number().int().min(0).max(64).default(0),
+  /**
+   * Where ONNX Runtime runs the voice models. `cpu` is what was measured and tested. `dml`
+   * (DirectML, Windows) and `cuda` ask the runtime for a GPU and fall back to the CPU when it
+   * cannot be used; NOT verified (docs/MODELS.md).
+   */
+  VOICE_DEVICE: z.enum(['cpu', 'dml', 'cuda']).default('cpu'),
+  /** Unload the voice models after this many seconds without use (0 = keep them in memory). */
+  VOICE_IDLE_UNLOAD_SEC: z.coerce.number().int().min(0).max(86_400).default(900),
 
   // ---- STT
   /**

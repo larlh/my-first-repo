@@ -207,7 +207,13 @@ export RATE_LIMIT_MAX="${E2E_RATE_LIMIT_MAX:-100000}"
 # Local providers only, whatever keys the machine has: the run must not depend on (or spend
 # money at) an external service. The neural engine is not started by this runner; scripts that
 # need it say so through E2E_AVATAR_ENGINE_URL.
-export TTS_PROVIDER=espeak STT_PROVIDER=manual LLM_PROVIDER=local TRANSLATION_PROVIDER=local
+# TTS_PROVIDER=neural is what a fresh installation gets from the default (`auto`) when it has
+# no API key: the local neural voices installed on this machine (`pnpm voices:setup`) when
+# there are any, eSpeak NG otherwise — and, unlike `auto`, it never prefers an external
+# provider whose key happens to be in the environment. The scripts read which voice they got
+# from the API. E2E_TTS_PROVIDER=espeak runs the stack on the reserve voice alone.
+export TTS_PROVIDER="${E2E_TTS_PROVIDER:-neural}"
+export STT_PROVIDER=manual LLM_PROVIDER=local TRANSLATION_PROVIDER=local
 export VOICE_CLONE_PROVIDER=local MODERATION_PROVIDER=local
 export AVATAR_ENGINE_URL="${E2E_AVATAR_ENGINE_URL:-http://127.0.0.1:9}"
 export AVATAR_ENGINE_WORK_DIR="${E2E_AVATAR_ENGINE_WORK_DIR:-$WORK_DIR/engine}"

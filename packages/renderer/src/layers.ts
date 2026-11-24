@@ -14,7 +14,8 @@ import type {
 } from '@parlante/shared';
 import { layerPoseAt } from './animation';
 import type { LayerPose } from './animation';
-import { photoAvatarPlacement } from './avatars/photo';
+import { photoAvatarPlacement, photoSideFade } from './avatars/photo';
+import type { PhotoSideFade } from './avatars/photo';
 import { computeAvatarState } from './avatars/state';
 import { drawPlaceholder, fitRect, setSmoothing } from './background';
 import type { DrawTarget } from './background';
@@ -441,6 +442,63 @@ function drawAvatarClipFrame(
   ctx.restore();
 }
 
+/** Smoothstep samples of the alpha ramp of a faded edge (0 = transparent … 1 = opaque). */
+const FADE_STOPS = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1] as const;
+
+/**
+ * Draw a photorealistic avatar picture (`draw` paints it for the layer `box`, clipped to it)
+ * with its visible vertical edges faded out: the picture goes to an off-screen canvas the size
+ * of the box, its alpha is multiplied by a horizontal ramp, and the result is composited once.
+ * Without off-screen canvases the picture is drawn directly (hard edges, as before).
+ */
+function drawWithSideFade(
+  ctx: Ctx2D,
+  box: PixelBox,
+  fade: PhotoSideFade,
+  draw: (ctx: Ctx2D) => void,
+): void {
+  const x0 = Math.floor(box.x);
+  const y0 = Math.floor(box.y);
+  const width = Math.ceil(box.x + box.w) - x0;
+  const height = Math.ceil(box.y + box.h) - y0;
+  const scratch = width > 0 && height > 0 ? acquireScratch(width, height) : null;
+  if (!scratch) {
+    draw(ctx);
+    return;
+  }
+  try {
+    const c = scratch.ctx;
+    c.save();
+    c.translate(-x0, -y0);
+    draw(c);
+    c.restore();
+    // Alpha ramp across the box: 0 at a faded edge, eased to 1 `fade width` further in.
+    const ramp = c.createLinearGradient(0, 0, width, 0);
+    const offset = box.x - x0;
+    const stop = (x: number, alpha: number) => {
+      ramp.addColorStop(Math.min(1, Math.max(0, (x + offset) / width)), `rgba(0,0,0,${alpha})`);
+    };
+    if (fade.left) {
+      const { from, to } = fade.left;
+      for (const u of FADE_STOPS) stop(from + (to - from) * u, u * u * (3 - 2 * u));
+    } else {
+      stop(-offset, 1);
+    }
+    if (fade.right) {
+      const { from, to } = fade.right;
+      for (const u of [...FADE_STOPS].reverse()) stop(from + (to - from) * u, u * u * (3 - 2 * u));
+    } else {
+      stop(width - offset, 1);
+    }
+    c.globalCompositeOperation = 'destination-in';
+    c.fillStyle = ramp;
+    c.fillRect(0, 0, width, height);
+    ctx.drawImage(scratch.canvas, x0, y0);
+  } finally {
+    releaseScratch(scratch);
+  }
+}
+
 function paintAvatar(
   ctx: Ctx2D,
   target: LayerTarget,
@@ -463,9 +521,25 @@ function paintAvatar(
     ctx.clip();
   }
   const rig = clipFrame ? null : target.assets.avatar(layer.avatarId);
+  // Photorealistic pictures (neural clip and stand-in alike) fade where their vertical edges
+  // would otherwise cut the shoulders straight — the same geometry for both.
+  const fadeFor = (place: PixelBox | null): PhotoSideFade | null =>
+    place
+      ? photoSideFade(place, box, {
+          windowed: layer.shape !== 'none',
+          canvasWidth: target.width,
+          flip: layer.flip,
+        })
+      : null;
   if (clipFrame) {
     // Photorealistic avatar: neural clip (with alpha), placed exactly like the stand-in.
-    drawAvatarClipFrame(ctx, clipFrame, box, layer.framing, landmarks, layer.flip);
+    const paint = (c: Ctx2D) =>
+      drawAvatarClipFrame(c, clipFrame, box, layer.framing, landmarks, layer.flip);
+    const fade = fadeFor(
+      photoAvatarPlacement(clipFrame.width, clipFrame.height, box, layer.framing, landmarks),
+    );
+    if (fade) drawWithSideFade(ctx, box, fade, paint);
+    else paint(ctx);
   } else if (rig) {
     const state = computeAvatarState({
       runtime: target.runtime.scenes[scene.id] ?? EMPTY_SCENE_RUNTIME,
@@ -473,11 +547,15 @@ function paintAvatar(
       sceneMs: localMs,
       seed: `${scene.id}:${layer.id}`,
     });
-    rig.draw(ctx, box, state, {
-      framing: layer.framing,
-      flip: layer.flip,
-      quality: target.quality,
-    });
+    const paint = (c: Ctx2D) =>
+      rig.draw(c, box, state, {
+        framing: layer.framing,
+        flip: layer.flip,
+        quality: target.quality,
+      });
+    const fade = fadeFor(rig.placement ? rig.placement(box, layer.framing) : null);
+    if (fade) drawWithSideFade(ctx, box, fade, paint);
+    else paint(ctx);
   } else {
     drawPlaceholder(ctx, box, 'avatar', target.height);
   }

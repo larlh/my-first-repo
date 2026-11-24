@@ -55,6 +55,13 @@ export const ProviderRefSchema = z.object({
   quality: ProviderQualitySchema,
   /** True when it runs on this machine without network access or keys. */
   local: z.boolean(),
+  /**
+   * How the provider worked for THIS result, when it has more than one way (additive,
+   * optional; absent on provider descriptions). Lip-sync: `audio` = the mouth followed the
+   * sound itself, `visemes` = it followed the phoneme timeline of the voice, `mixed` = clips
+   * of one video were driven in different ways.
+   */
+  mode: z.string().min(1).max(40).optional(),
 });
 export type ProviderRef = z.infer<typeof ProviderRefSchema>;
 
@@ -518,6 +525,33 @@ export const VoiceProfileSchema = z.object({
 });
 export type VoiceProfile = z.infer<typeof VoiceProfileSchema>;
 
+/**
+ * Why a stock voice of a LOCAL NEURAL provider cannot be used yet: its model files are not on
+ * this machine. UIs translate the code and show `command`, which installs them.
+ */
+export const VOICE_INSTALL_REASON_CODES = ['voice_not_installed', 'voice_incomplete'] as const;
+export const VoiceInstallReasonCodeSchema = z.enum(VOICE_INSTALL_REASON_CODES);
+export type VoiceInstallReasonCode = z.infer<typeof VoiceInstallReasonCodeSchema>;
+
+export const VoiceUnavailableSchema = z.object({
+  reasonCode: VoiceInstallReasonCodeSchema,
+  /** Command to run on the server machine, e.g. `pnpm voices:setup --languages de`. */
+  command: z.string(),
+});
+export type VoiceUnavailable = z.infer<typeof VoiceUnavailableSchema>;
+
+/**
+ * What the pitch control of a voice really does. `resampled` = the provider has no pitch
+ * parameter and changes it by playing the audio faster or slower (tempo compensated), which
+ * moves the timbre along with the pitch: UIs say so instead of pretending it is a clean shift.
+ */
+export const VoicePitchRangeSchema = z.object({
+  minSemitones: z.number().min(-12).max(0),
+  maxSemitones: z.number().min(0).max(12),
+  resampled: z.boolean(),
+});
+export type VoicePitchRange = z.infer<typeof VoicePitchRangeSchema>;
+
 export const VoiceSchema = z.object({
   id: VoiceIdSchema,
   kind: z.enum(['stock', 'cloned']),
@@ -546,6 +580,21 @@ export const VoiceSchema = z.object({
   profile: VoiceProfileSchema.nullable(),
   error: StoredErrorSchema.nullable(),
   createdAt: IsoDateSchema.nullable(),
+  /**
+   * Present only on a stock voice whose model is NOT installed on this server (local neural
+   * voices before `pnpm voices:setup`): it is listed so the library can explain how to get it,
+   * but it cannot synthesize. `GET /api/voices` leaves such voices out unless asked
+   * (`availability=all`). Absent = usable.
+   */
+  unavailable: VoiceUnavailableSchema.optional(),
+  /**
+   * True on the voice this server recommends for NEW content in its language and gender (a
+   * multilingual voice: in every language). With `TTS_PROVIDER=auto` that is an installed
+   * local neural voice when there is one, otherwise the eSpeak voice. Use `pickDefaultVoice`.
+   */
+  isDefault: z.boolean().optional(),
+  /** Pitch range the voice honours; absent = the whole -12…+12 range, natively. */
+  pitchRange: VoicePitchRangeSchema.optional(),
 });
 export type Voice = z.infer<typeof VoiceSchema>;
 

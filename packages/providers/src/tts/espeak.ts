@@ -168,7 +168,7 @@ interface WordHit {
 }
 
 /** Index of the token that contains display position `index` (or the next one after it). */
-function tokenAt(prepared: PreparedSpeech, index: number): number {
+export function tokenAt(prepared: PreparedSpeech, index: number): number {
   const tokens = prepared.tokens;
   let lo = 0;
   let hi = tokens.length - 1;
@@ -181,7 +181,7 @@ function tokenAt(prepared: PreparedSpeech, index: number): number {
 }
 
 /** Display position a word event of eSpeak refers to, or -1 when it is inside markup only. */
-function displayIndex(segment: SpeechSegment, textIndex: number): number {
+export function displayIndex(segment: SpeechSegment, textIndex: number): number {
   const map = segment.map;
   for (let i = Math.min(textIndex, map.length - 1); i < map.length; i += 1) {
     const value = map[i] ?? -1;

@@ -90,6 +90,38 @@ def test_time_estimate_grows_with_resolution_and_steps(work_dir, monkeypatch, tm
         config.reset_settings_cache()
 
 
+def test_time_estimates_stay_ordered_when_measurements_were_taken_under_different_loads(work_dir, monkeypatch,
+                                                                                        tmp_path):
+    """Regression: a 512-px job timed on a busy machine (1.5 s per evaluation) next to a 768-px job
+    timed on a calm one (2.1 s) made the published estimate for 640 px larger than for 768 px."""
+    import json
+
+    from parlante_engine.core import config
+    from parlante_engine.portrait import service
+
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / ".perf-portrait.json").write_text(json.dumps({
+        "sizes": {"512x512": {"secondsPerUnetEval": 1.535}, "768x768": {"secondsPerUnetEval": 2.109},
+                  "384x384": {"secondsPerUnetEval": 0.824}, "576x576": {"secondsPerUnetEval": 0.767},
+                  "bogus": {"secondsPerUnetEval": "n/a"}},
+        "machineFactor": 2.363}))
+    monkeypatch.setenv("AVATAR_ENGINE_MODELS_DIR", str(models))
+    config.reset_settings_cache()
+    try:
+        est = service.performance_summary()["estimatedSeconds"]
+        assert 0 < est["512x512"] < est["640x640"] < est["768x768"]
+        best = service.performance_summary()["bestCaseSeconds"]
+        assert best["512x512"] < best["640x640"] < best["768x768"]
+        # the machine factor is the median of the measured / modelled ratios, not the last job's
+        ratios = sorted(v / service._modelled_eval_seconds(s, s)
+                        for s, v in ((512, 1.535), (768, 2.109), (384, 0.824), (576, 0.767)))
+        assert service._machine_factor(service.load_perf()) == pytest.approx(0.5 * (ratios[1] + ratios[2]))
+        assert service._machine_factor({}) == 1.0 and service._machine_factor({"machineFactor": 1.7}) == 1.7
+    finally:
+        config.reset_settings_cache()
+
+
 # ---------------------------------------------------------------- tokenizer (needs vocab files)
 @pytest.fixture(scope="module")
 def tokenizer():

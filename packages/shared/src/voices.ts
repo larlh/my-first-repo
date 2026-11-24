@@ -53,3 +53,72 @@ export function defaultVoiceId(language: string, gender: 'female' | 'male' = 'fe
     LOCAL_VOICES[0];
   return makeStockVoiceId(LOCAL_TTS_PROVIDER_ID, voice?.providerVoiceId ?? 'es-f1');
 }
+
+/**
+ * Local NEURAL voice providers (packages/providers/src/tts): open models that run on this
+ * machine. Their voices only work once their files are installed (`pnpm voices:setup`).
+ */
+export const NEURAL_TTS_PROVIDER_IDS = ['kokoro', 'piper'] as const;
+export type NeuralTtsProviderId = (typeof NEURAL_TTS_PROVIDER_IDS)[number];
+
+export function isNeuralTtsProvider(providerId: string): providerId is NeuralTtsProviderId {
+  return (NEURAL_TTS_PROVIDER_IDS as readonly string[]).includes(providerId);
+}
+
+/** The part of a `Voice` DTO the default-voice rules look at. */
+export interface DefaultVoiceCandidate {
+  id: string;
+  kind: 'stock' | 'cloned';
+  language: string;
+  multilingual?: boolean | undefined;
+  gender: Gender;
+  status: 'processing' | 'ready' | 'failed';
+  unavailable?: unknown;
+  isDefault?: boolean | undefined;
+}
+
+/** True when a voice of the catalogue can synthesize right now. */
+export function isVoiceUsable(voice: Pick<DefaultVoiceCandidate, 'status' | 'unavailable'>) {
+  return voice.status === 'ready' && voice.unavailable === undefined;
+}
+
+/**
+ * The voice to put in NEW content (blank video, script writer, avatar sheet, interactive
+ * avatar…) for a language, out of the catalogue `GET /api/voices` returned. The server marks
+ * its recommendations with `isDefault` (an installed local neural voice when `TTS_PROVIDER` is
+ * `auto` and one exists; see `markDefaultVoices` in the API) and lists the voices in its order
+ * of preference: this function only reads both.
+ *
+ *  - with a `gender`: the default of that gender, so an avatar keeps a matching voice
+ *  - without: the first default of the language in the server's order — the one of the
+ *    preferred provider, female before male inside a provider
+ *
+ * Returns null when the catalogue has no default for the language (not loaded yet, or a
+ * server that predates the flag): callers fall back to `defaultVoiceId`.
+ */
+export function pickDefaultVoice<T extends DefaultVoiceCandidate>(
+  voices: readonly T[],
+  language: string,
+  gender?: 'female' | 'male',
+): T | null {
+  const base = language.slice(0, 2).toLowerCase();
+  return (
+    voices.find(
+      (voice) =>
+        voice.isDefault === true &&
+        voice.kind === 'stock' &&
+        isVoiceUsable(voice) &&
+        (gender === undefined || voice.gender === gender) &&
+        (voice.multilingual === true || voice.language.slice(0, 2).toLowerCase() === base),
+    ) ?? null
+  );
+}
+
+/** `pickDefaultVoice(...)?.id`, or the always-available local voice when there is none. */
+export function pickDefaultVoiceId(
+  voices: readonly DefaultVoiceCandidate[],
+  language: string,
+  gender?: 'female' | 'male',
+): string {
+  return pickDefaultVoice(voices, language, gender)?.id ?? defaultVoiceId(language, gender);
+}

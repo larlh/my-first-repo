@@ -5,7 +5,8 @@ rendered pixels), bilabial closure, blink count, head travel, temporal stability
     python scripts/eval_clip.py clip.mp4 [--runtime runtime.json --seed N] [--audio speech.wav]
 
 With --runtime (viseme driver) the commanded tracks are rebuilt from the timeline + seed; with
---audio (audio driver) mouth opening is compared with the loudness envelope of the speech.
+--audio mouth opening is compared with the loudness envelope of the speech (correlation, lag in
+ms, closure in pauses and on bilabials: `lip_metrics.audio_lip_metrics`).
 """
 from __future__ import annotations
 
@@ -112,15 +113,13 @@ def main() -> int:
                                       "max": round(float(np.max(at_mbp)), 3) if at_mbp else None}
         res["lipRatioAtOpenVowelA"] = {"n": len(at_a), "mean": round(float(np.mean(at_a)), 3) if at_a else None}
     if a.audio:
+        # the same audio-to-lips figures as scripts/compare_drivers.py (see lip_metrics.py)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import lip_metrics
+
+        cues = json.loads(Path(a.runtime).read_text()).get("visemes") if a.runtime else None
         wav = decode_audio(Path(a.audio), 16000)
-        hop = 16000 / fps
-        env = np.array([np.sqrt(np.mean(wav[int(i * hop):int((i + 1) * hop)] ** 2) + 1e-12)
-                        if int(i * hop) < len(wav) else 0.0 for i in range(n)])
-        res["corrLoudnessVsMeasuredOpen"] = corr(env, lip)
-        res["bestLagFramesLoudness"] = best_lag(lip, env)
-        silent = env < 0.05 * env.max()
-        res["lipRatioInSilence"] = round(float(lip[silent].mean()), 3) if silent.any() else None
-        res["lipRatioInSpeech"] = round(float(lip[~silent].mean()), 3) if (~silent).any() else None
+        res["audio"] = lip_metrics.audio_lip_metrics(lip, wav, fps, cues, len(wav) / 16.0)
     print(json.dumps(res, indent=1))
     if a.out:
         Path(a.out).write_text(json.dumps(res, indent=1))

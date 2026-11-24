@@ -135,15 +135,39 @@ export async function describeDictation(
 }
 
 /**
+ * TTS providers that have voices to offer right now. A local neural provider is always
+ * active (it lists its voices as "not installed"), but it only counts here once one of its
+ * voices is installed; providers whose list is stable are not asked (an external one would
+ * cost a network call).
+ */
+async function ttsProvidersWithVoices(providers: Providers): Promise<Capabilities['ttsProviders']> {
+  const usable = await Promise.all(
+    providers.tts.all().map(async (provider) => {
+      if (!provider.volatileVoices) return true;
+      try {
+        return (await provider.listVoices()).some((voice) => voice.unavailable === undefined);
+      } catch {
+        return false;
+      }
+    }),
+  );
+  return providers.tts
+    .all()
+    .filter((_, index) => usable[index])
+    .map((provider) => provider.info);
+}
+
+/**
  * Snapshot for `GET /api/capabilities`: which provider is active per capability, plus the live
  * state of the photorealistic avatar engine (never throws: an unreachable engine is reported
  * as unavailable).
  */
 export async function describeCapabilities(providers: Providers): Promise<Capabilities> {
-  const [lipsync, portrait, dictation] = await Promise.all([
+  const [lipsync, portrait, dictation, ttsProviders] = await Promise.all([
     statusOrUnavailable(providers.lipsync.status()),
     statusOrUnavailable(providers.portrait.status()),
     describeDictation(providers.dictation),
+    ttsProvidersWithVoices(providers),
   ]);
   const engine = mergeEngineStatus(lipsync, portrait);
   return {
@@ -158,7 +182,7 @@ export async function describeCapabilities(providers: Providers): Promise<Capabi
       moderation: providers.moderation.info,
       storage: providers.storage.info,
     },
-    ttsProviders: providers.tts.all().map((p) => p.info),
+    ttsProviders,
     sttRequiresTranscript: providers.stt.requiresUserTranscript,
     avatarEngine: engine,
     dictation,

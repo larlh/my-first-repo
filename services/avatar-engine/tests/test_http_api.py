@@ -28,6 +28,42 @@ def test_health_matches_contract(client):
     assert {"liveportrait-onnx", "mediapipe-blazeface-onnx", "mediapipe-facemesh-onnx"} <= ids
     assert all(m["license"] for m in body["models"])
     assert body["device"] in ("cpu", "gpu") and isinstance(body["drivers"]["audio"], bool)
+    # what "auto" resolves to today, and a key clients put in their clip caches
+    assert body["animation"]["autoDriver"] in ("visemes", "audio")
+    assert body["animation"]["autoDriver"] == "audio" or not body["drivers"]["audio"]
+    assert body["animation"]["key"].split("-")[0].split(".")[0] in ("fit", "audio", "visemes")
+    # every telemetry switch is in place in the running server
+    assert body["privacy"] == {"onnxruntimeTelemetryDisabled": True, "openvinoTelemetryBlocked": True,
+                               "huggingFaceHubOffline": True, "hardenedBeforeLibraries": True}
+    assert body["backend"]["gpuNote"] is None or isinstance(body["backend"]["gpuNote"], str)
+
+
+def test_animation_driver_field(client, work_dir):
+    """`driver` is optional; its values are validated before anything is queued."""
+    import struct
+    import wave
+
+    (work_dir / "p.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    with wave.open(str(work_dir / "a.wav"), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(struct.pack("<h", 0) * 1600)
+    base = {"portraitPath": str(work_dir / "p.png"), "audioPath": str(work_dir / "a.wav"),
+            "outputDir": str(work_dir / "out")}
+    r = client.post("/v1/animations", json={**base, "driver": "telepathy"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert any(i["path"] == "driver" for i in r.json()["error"]["details"]["issues"])
+    # the viseme driver cannot work without a timeline: said at once, with a reason
+    r = client.post("/v1/animations", json={**base, "driver": "visemes"})
+    assert r.status_code == 400 and r.json()["error"]["reason"] == "visemes_required"
+    # accepted values get past validation (202 with weights, 503 without: never a 400)
+    for driver in ("auto", "audio", None):
+        body = dict(base) if driver is None else {**base, "driver": driver}
+        r = client.post("/v1/animations", json=body)
+        assert r.status_code in (202, 503), r.text
+        if r.status_code == 202:
+            client.delete(f"/v1/jobs/{r.json()['jobId']}")
 
 
 @pytest.mark.parametrize("path,body", [

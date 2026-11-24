@@ -33,11 +33,13 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<Buffer> {
 describe('registry', () => {
   it('selects local providers when no keys are configured', async () => {
     // Port 9 (discard) is closed: the avatar engine is "stopped" whatever runs on this machine.
-    // Same for the speech model: `dir` holds none, whatever is installed in ./data/models.
+    // Same for the speech model and the neural voices: `dir` holds none, whatever is installed
+    // in ./data/models.
     const providers = createProvidersFromEnv({
       STORAGE_LOCAL_DIR: dir,
       AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
       DICTATION_MODEL_DIR: dir,
+      VOICE_MODEL_DIR: dir,
     });
     const caps = await describeCapabilities(providers);
     expect(CapabilitiesSchema.parse(caps)).toEqual(caps);
@@ -64,6 +66,7 @@ describe('registry', () => {
   it('auto-selects external adapters when their keys are present', async () => {
     const providers = createProvidersFromEnv({
       STORAGE_LOCAL_DIR: dir,
+      VOICE_MODEL_DIR: dir, // no neural voices here, whatever this machine has installed
       ANTHROPIC_API_KEY: 'test-key',
       ELEVENLABS_API_KEY: 'test-key',
       OPENAI_API_KEY: 'test-key',

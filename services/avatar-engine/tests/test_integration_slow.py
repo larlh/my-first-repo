@@ -164,6 +164,54 @@ def test_generator_backend_is_faithful_to_f32_reference(rendered):
     mse = float(np.mean((fast.astype(np.float64) - ref.astype(np.float64)) ** 2))
     psnr = 99.0 if mse == 0 else 10 * np.log10(1.0 / mse)
     assert psnr > 45.0, f"hybrid backend deviates from the f32 reference: PSNR {psnr:.1f} dB"
+    # The split layout of the GPU path (stages in ONNX Runtime, GridSample on the CPU provider) is
+    # the same f32 arithmetic cut in five pieces: on the CPU provider it must reproduce the whole
+    # graph almost exactly. (Only the CUDA kernels themselves cannot be checked without a GPU.)
+    split = Generator(backend="ort-split")
+    assert "onnxruntime:CPUExecutionProvider" in split.backend and "GridSample" in split.backend
+    out = split.raw(avatar.f_s, x_d[None], avatar.x_s[None])
+    mse = float(np.mean((out.astype(np.float64) - ref.astype(np.float64)) ** 2))
+    psnr_split = 150.0 if mse == 0 else 10 * np.log10(1.0 / mse)
+    assert psnr_split > 80.0, f"split layout deviates from the whole graph: PSNR {psnr_split:.1f} dB"
+
+
+def test_auto_driver_measures_both_mouth_tracks_and_silence_needs_no_audio_model(rendered):
+    """`driver: "auto"` with the audio weights: the audio model runs, both mouth tracks are scored
+    against the sound and the result says which one was kept and why. A silent clip is animated
+    with the mouth at rest without loading the audio model at all."""
+    from parlante_engine.animate import service
+    from parlante_engine.animate.service import AnimateJob, run_animation
+    from parlante_engine.core.registry import get_registry
+
+    work, prep = rendered["work"], rendered["prep"]
+    portrait, mask = Path(prep["portraitPath"]), Path(prep["maskPath"])
+    silent = work / "in" / "silence.wav"
+    with wave.open(str(silent), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x00" * 8000)
+    res = run_animation(AnimateJob(portrait, mask, silent, work / "clip_silent", fps=FPS, driver="auto", seed=5))
+    assert res["driver"] == "visemes" and res["stats"]["driverReason"] == "silent"
+    assert "audioSetupSeconds" not in res["stats"] and res["frameCount"] == 13
+    if not get_registry().capability_ready("animate-audio"):
+        # without the optional model `auto` falls back instead of failing
+        res = run_animation(AnimateJob(portrait, mask, work / "in" / "speech.wav", work / "clip_auto", fps=FPS,
+                                       visemes=CUES, driver="auto", seed=5, max_frames=4))
+        assert res["driver"] == "visemes" and res["stats"]["driverReason"] == "audio_weights_missing"
+        pytest.skip("audio-driver weights not downloaded: the comparison itself was not exercised")
+    res = run_animation(AnimateJob(portrait, mask, work / "in" / "speech.wav", work / "clip_auto", fps=FPS,
+                                   visemes=CUES, driver="auto", seed=5, max_frames=4))
+    stats = res["stats"]
+    assert stats["driverRequested"] == "auto" and set(stats["fit"]) == {"visemes", "audio", "margin"}
+    assert (res["driver"], stats["driverReason"]) == service.pick_by_fit(stats["fit"]["visemes"], stats["fit"]["audio"])
+    assert set(stats["audioSetupSeconds"]) == {"featuresLoad", "features", "motionLoad", "motion"}
+    assert res["model"] == service.MODEL_NAME[res["driver"]]
+    # the audio driver on its own: lips from the sound, the rest from the seeded rig
+    res = run_animation(AnimateJob(portrait, mask, work / "in" / "speech.wav", work / "clip_audio", fps=FPS,
+                                   visemes=CUES, driver="audio", seed=5, max_frames=4))
+    assert res["driver"] == "audio" and res["stats"]["audioMotion"] == "lips"
+    assert res["stats"]["audioLipDrive"] == "calibrated" and 0.85 <= res["stats"]["audioArticulationGain"] <= 1.75
 
 
 # ---------------------------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import {
   FONT_FAMILY_NAMES,
   applyBrandKit,
   avatarRenderingOf,
-  defaultVoiceId,
+  pickDefaultVoiceId,
   mediaRefKey,
 } from '@parlante/shared';
 import type { Background, Fit, MediaRef, Scene, Script } from '@parlante/shared';
@@ -151,7 +151,8 @@ function ScriptSection({ scene }: { scene: Scene }) {
         script: {
           kind: 'tts',
           text: script.kind === 'audio' ? script.transcript : '',
-          voiceId: base?.voiceId ?? defaultVoiceId('es'),
+          // No narrator yet: the voice the server recommends (a local neural one if installed).
+          voiceId: base?.voiceId ?? pickDefaultVoiceId(library.voices.items, 'es'),
           language: base?.language ?? 'es',
           speed: base?.speed ?? 1,
           pitch: base?.pitch ?? 0,
@@ -282,16 +283,25 @@ function ScriptSection({ scene }: { scene: Scene }) {
           />
           <Slider
             label={t('voice.pitch')}
-            min={-12}
-            max={12}
+            // A voice may honour a shorter range than the document allows (neural voices).
+            min={voice?.pitchRange?.minSemitones ?? -12}
+            max={voice?.pitchRange?.maxSemitones ?? 12}
             step={1}
-            value={script.pitch}
+            value={Math.min(
+              voice?.pitchRange?.maxSemitones ?? 12,
+              Math.max(voice?.pitchRange?.minSemitones ?? -12, script.pitch),
+            )}
             formatValue={(value) => t('voice.semitones', { count: value })}
             onValueChange={(pitch) =>
               patch({ type: 'scene.scriptPatch', sceneId: scene.id, patch: { pitch } }, 'pitch')
             }
             onValueCommit={seal}
           />
+          {voice?.pitchRange?.resampled && (
+            <p className="-mt-1 text-xs text-pretty text-fg-muted" data-testid="pitch-note">
+              {t('voice.pitchResampled', { max: voice.pitchRange.maxSemitones })}
+            </p>
+          )}
           <Button
             size="sm"
             variant="ghost"

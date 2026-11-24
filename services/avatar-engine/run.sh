@@ -4,7 +4,7 @@
 #   bash services/avatar-engine/run.sh            # start (default http://127.0.0.1:8090)
 #   bash services/avatar-engine/run.sh --setup    # install + download only, do not start
 # Environment (see README.md): AVATAR_ENGINE_URL, AVATAR_ENGINE_WORK_DIR, AVATAR_ENGINE_MODELS_DIR,
-# AVATAR_ENGINE_THREADS, AVATAR_ENGINE_SKIP_DOWNLOAD=1, AVATAR_ENGINE_DOWNLOAD_ARGS="--with-audio".
+# AVATAR_ENGINE_THREADS, AVATAR_ENGINE_SKIP_DOWNLOAD=1, AVATAR_ENGINE_DOWNLOAD_ARGS="--minimal" | "--no-audio".
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 

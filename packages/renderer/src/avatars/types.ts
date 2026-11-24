@@ -60,6 +60,12 @@ export interface AvatarRig {
   readonly id: string;
   readonly kind: 'stock' | 'photo';
   draw(ctx: Ctx2D, box: PixelBox, state: AvatarState, options: AvatarDrawOptions): void;
+  /**
+   * Photo rigs only (optional): the rectangle their picture occupies for `box` and `framing`
+   * (`photoAvatarPlacement`), before any micro-motion. The layer painter uses it to fade the
+   * picture's vertical edges exactly as it does for the neural clip (`photoSideFade`).
+   */
+  placement?(box: PixelBox, framing: AvatarFraming): PixelBox;
 }
 
 /** A stock avatar: catalogue metadata + a factory for its rig. */

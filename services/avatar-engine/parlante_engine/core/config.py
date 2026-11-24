@@ -76,6 +76,14 @@ class Settings:
     sharpen: float
     #: Bearer token; mandatory when the server listens on a non-loopback interface.
     token: str | None
+    #: What `driver: "auto"` does when both drivers are usable: "fit" (keep the mouth track that
+    #: follows the sound of the clip better) | "audio" | "visemes".
+    auto_driver: str = "fit"
+    #: Audio driver: "lips" = only the lips come from the audio model | "full" = eyes and head too.
+    audio_motion: str = "lips"
+    #: Audio driver: gain on the lip displacement, and how many ms the lips run ahead of the sound.
+    audio_lip_gain: float = 1.0
+    audio_lip_advance_ms: float = 0.0
 
 
 def load_settings() -> Settings:
@@ -104,6 +112,10 @@ def load_settings() -> Settings:
         job_ttl_seconds=_int("AVATAR_ENGINE_JOB_TTL_SECONDS", 3600, 60, 86400),
         sharpen=_float("AVATAR_ENGINE_SHARPEN", 0.6, 0.0, 1.5),
         token=os.environ.get("AVATAR_ENGINE_TOKEN", "").strip() or None,
+        auto_driver=_choice("AVATAR_ENGINE_AUTO_DRIVER", "fit", ("fit", "audio", "visemes")),
+        audio_motion=_choice("AVATAR_ENGINE_AUDIO_MOTION", "lips", ("lips", "full")),
+        audio_lip_gain=_float("AVATAR_ENGINE_AUDIO_LIP_GAIN", 1.0, 0.5, 2.0),
+        audio_lip_advance_ms=_float("AVATAR_ENGINE_AUDIO_LIP_ADVANCE_MS", 0.0, -200.0, 200.0),
         startup_benchmark=os.environ.get("AVATAR_ENGINE_STARTUP_BENCHMARK", "1").strip() not in ("0", "false", "no"),
     )
 

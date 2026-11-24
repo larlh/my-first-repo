@@ -5,7 +5,9 @@ import type {
   PhotoLandmarks,
   ProviderRef,
   ScriptTone,
+  VoicePitchRange,
   VoiceProfile,
+  VoiceUnavailable,
 } from './entities';
 import type { DictationReasonCode, EngineReasonCode, Gender } from './entities';
 import type { LanguageCode } from './languages';
@@ -46,6 +48,13 @@ export interface ProviderVoice {
   gender: Gender;
   description: string;
   tags: string[];
+  /**
+   * Local neural providers: set when the model files of this voice are not installed. The
+   * voice is still listed (so the UI can say how to install it) but `synthesize` rejects it.
+   */
+  unavailable?: VoiceUnavailable;
+  /** Pitch range the voice honours (absent = the whole range, natively). */
+  pitchRange?: VoicePitchRange;
 }
 
 export interface TTSRequest {
@@ -77,6 +86,12 @@ export interface TTSResult {
 
 export interface TTSProvider extends BaseProvider {
   listVoices(): Promise<ProviderVoice[]>;
+  /**
+   * True when what `listVoices` answers can change at any moment and asking is free (local
+   * neural voices: `unavailable` follows the files on disk). Callers must not cache the list.
+   * Absent = the list is stable and may be reused for a few minutes.
+   */
+  readonly volatileVoices?: boolean;
   /**
    * Synthesize speech. Providers without native phoneme timing MUST still return visemes and
    * words so lip-sync and subtitles always work: they call `estimateSpeechTimeline(text,
@@ -263,6 +278,13 @@ export interface EngineStatus {
   nonCommercial?: boolean;
   /** Measured seconds to generate one portrait, or null if unknown. */
   secondsPerPortrait?: number | null;
+  /**
+   * Lip-sync only (additive, optional): opaque key of HOW the engine animates right now
+   * (`EngineHealth.animation.key`: driver that `auto` resolves to, its tuning, its weights).
+   * It changes whenever the same request would yield different pixels, so clip caches include
+   * it. Absent / null = the engine does not say.
+   */
+  animationKey?: string | null;
 }
 
 export interface EngineProgress {
@@ -283,6 +305,9 @@ export interface EngineProgress {
  * When `signal` aborts, the provider cancels the engine job (DELETE /v1/jobs/:id) and throws.
  */
 
+/** How a lip-sync provider drives the mouth (see `LipSyncRequest.driver`). */
+export type LipSyncDriver = 'auto' | 'visemes' | 'audio';
+
 export interface LipSyncRequest {
   /** Prepared portrait (PNG) of the avatar: local file path readable by the provider. */
   portraitPath: string;
@@ -292,6 +317,14 @@ export interface LipSyncRequest {
   audioPath: string;
   /** Viseme timeline of the narration (optional hint; engines may work from audio alone). */
   visemes?: VisemeCue[];
+  /** Word timeline of the narration (additive, optional): nods and brow raises on word onsets. */
+  words?: WordCue[];
+  /**
+   * What moves the lips (additive, optional): `visemes` = the timeline, `audio` = the sound of
+   * `audioPath` itself, `auto` = the best the provider has. Absent = the provider's legacy
+   * default (timeline when given). Providers without a choice ignore it.
+   */
+  driver?: LipSyncDriver;
   /** Frames per second of the clip (30). */
   fps: number;
   /** Largest side of the output frames in pixels (the engine may clamp it). */
@@ -329,6 +362,10 @@ export interface LipSyncResult {
   fps: number;
   frameCount: number;
   provider: ProviderRef;
+  /** Driver that produced the clip, when the provider has several (additive, optional). */
+  driver?: Exclude<LipSyncDriver, 'auto'>;
+  /** Model that produced the clip, as the provider names it (additive, optional). */
+  model?: string;
 }
 
 /**
@@ -551,6 +588,11 @@ export interface Providers {
     /** Resolve the provider of a stock voice id prefix (`espeak`, `elevenlabs`…). */
     get(providerId: string): TTSProvider | null;
     all(): TTSProvider[];
+    /**
+     * Providers in the order their voices are preferred as the DEFAULT voice of new content
+     * (best first). Optional (additive): registries without it prefer `default` alone.
+     */
+    ranked?(): TTSProvider[];
   };
   stt: STTProvider;
   llm: LLMProvider;

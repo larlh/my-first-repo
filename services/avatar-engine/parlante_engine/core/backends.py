@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 from functools import lru_cache
 from pathlib import Path
@@ -36,11 +37,68 @@ def limit_threads() -> None:
         pass
 
 
+#: Why the GPU is not used (None when it is, or when nobody asked): shown by /health and the self-test.
+_cuda_note: str | None = None
+
+
+def _tiny_model_bytes() -> bytes:
+    """A one-node ONNX graph (Relu on [1,4]) to probe an execution provider with."""
+    from onnx import TensorProto, helper
+
+    graph = helper.make_graph([helper.make_node("Relu", ["x"], ["y"])], "probe",
+                              [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 4])],
+                              [helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 4])])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 9
+    return model.SerializeToString()
+
+
+def probe_cuda() -> tuple[bool, str | None]:
+    """Is the CUDA execution provider REALLY usable? -> (usable, why not).
+
+    `onnxruntime-gpu` lists the provider even when the CUDA / cuDNN libraries or the driver are
+    missing; a session then silently falls back to the CPU. So a tiny session is created and the
+    provider it actually runs on is checked. NOT VERIFIED on a GPU (the build machine has none):
+    the logic is unit-tested with a stand-in runtime."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        return False, ("this onnxruntime build has no CUDA provider (install onnxruntime-gpu in place of "
+                       "onnxruntime; see README, GPU)")
+    preload = getattr(ort, "preload_dlls", None)
+    if callable(preload):
+        try:
+            preload()              # CUDA / cuDNN installed as pip wheels (onnxruntime-gpu[cuda,cudnn])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("onnxruntime.preload_dlls() failed: %s", exc)
+    try:
+        so = ort.SessionOptions()
+        so.log_severity_level = 3
+        sess = ort.InferenceSession(_tiny_model_bytes(), so, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+        active = sess.get_providers()
+        sess.run(None, {"x": np.zeros((1, 4), np.float32)})
+    except Exception as exc:  # noqa: BLE001
+        return False, f"the CUDA provider failed to start: {exc}"
+    if not active or active[0] != "CUDAExecutionProvider":
+        return False, ("the CUDA provider is installed but could not be initialised (NVIDIA driver, CUDA or "
+                       "cuDNN libraries missing or of another version; see README, GPU): running on the CPU")
+    return True, None
+
+
 @lru_cache(maxsize=1)
 def cuda_available() -> bool:
+    global _cuda_note
     if get_settings().device == "cpu":
         return False
-    return "CUDAExecutionProvider" in ort.get_available_providers()
+    usable, why = probe_cuda()
+    wanted = get_settings().device == "gpu" or "CUDAExecutionProvider" in ort.get_available_providers()
+    _cuda_note = why if (wanted and not usable) else None
+    if _cuda_note:
+        log.warning("GPU not used: %s", _cuda_note)
+    return usable
+
+
+def cuda_note() -> str | None:
+    cuda_available()
+    return _cuda_note
 
 
 @lru_cache(maxsize=1)
@@ -145,10 +203,12 @@ def release_memory() -> None:
     import gc
 
     gc.collect()
+    if not sys.platform.startswith("linux"):
+        return                      # malloc_trim is a glibc call
     try:
         import ctypes
         ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except Exception:  # noqa: BLE001 - not glibc: nothing to do
+    except Exception:  # noqa: BLE001 - not glibc (musl): nothing to do
         pass
 
 
@@ -160,4 +220,5 @@ def describe() -> dict:
         "onnxruntimeProviders": ort.get_available_providers(),
         "openvino": openvino_available(),
         "gpuVerified": False,
+        "gpuNote": cuda_note(),
     }

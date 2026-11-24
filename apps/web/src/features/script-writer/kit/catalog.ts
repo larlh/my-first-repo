@@ -1,4 +1,4 @@
-import { defaultVoiceId } from '@parlante/shared';
+import { defaultVoiceId, isVoiceUsable, pickDefaultVoice } from '@parlante/shared';
 import type { Avatar, LanguageCode, Voice } from '@parlante/shared';
 import { api, useApiQuery } from '@/lib/api';
 
@@ -24,17 +24,19 @@ export function usableAvatars(avatars: readonly Avatar[]): Avatar[] {
 }
 
 export function usableVoices(voices: readonly Voice[]): Voice[] {
-  return voices.filter((voice) => voice.status === 'ready');
+  return voices.filter((voice) => isVoiceUsable(voice));
 }
 
 /**
- * The voice a picker starts with for a language: the stock default of that language when the
- * server offers it, else a voice whose own language matches, else the first one.
+ * The voice a picker starts with for a language: the one the server recommends for it (an
+ * installed local neural voice when there is one, see `pickDefaultVoice`), else the stock
+ * local voice of that language, else a voice whose own language matches, else the first one.
  */
 export function defaultVoiceOf(voices: readonly Voice[], language: string): Voice | null {
   const ready = usableVoices(voices);
   const base = language.slice(0, 2);
   return (
+    pickDefaultVoice(ready, base) ??
     ready.find((voice) => voice.id === defaultVoiceId(base)) ??
     ready.find((voice) => voice.language.slice(0, 2) === base) ??
     ready[0] ??

@@ -204,6 +204,78 @@ export async function apiCall(context, method, route, body) {
   return { status: response.status(), json, text, headers: response.headers() };
 }
 
+/* ---------- voices ---------- */
+
+/** A notice nobody can miss in the output (skipped steps, a missing optional install). */
+export function notice(lines) {
+  const rows = Array.isArray(lines) ? lines : [lines];
+  const width = Math.max(...rows.map((row) => row.length));
+  console.log(`\n  ╔${'═'.repeat(width + 2)}╗`);
+  for (const row of rows) console.log(`  ║ ${row.padEnd(width)} ║`);
+  console.log(`  ╚${'═'.repeat(width + 2)}╝\n`);
+}
+
+const NEURAL_VOICE_PROVIDERS = new Set(['kokoro', 'piper']);
+let neuralNoticeShown = false;
+
+/**
+ * The voices THIS stack gives to new content, read from `GET /api/voices` the way the web app
+ * does (`Voice.isDefault`): an installed local neural voice when there is one (`pnpm
+ * voices:setup`, `TTS_PROVIDER=auto`), otherwise eSpeak NG. The suites take the voice they
+ * expect from here, so they pass on both kinds of machine; when no neural voice is installed
+ * the checks that need one are skipped and a boxed notice says so (once per script).
+ *
+ *   neural                 true when the default Spanish voice is a local neural one
+ *   pick(language, gender) the default voice DTO for a language (and gender)
+ *   provider(language)     its provider ({ id, name, quality, local })
+ */
+export async function voiceSetup(context) {
+  const list = await apiCall(context, 'GET', '/api/voices');
+  assert.equal(list.status, 200, `GET /api/voices → ${list.status}`);
+  const items = list.json.items;
+  const pick = (language, gender) => {
+    const base = language.slice(0, 2);
+    const speaks = (voice) => voice.multilingual || voice.language.slice(0, 2) === base;
+    const usable = (voice) =>
+      voice.kind === 'stock' && voice.status === 'ready' && !voice.unavailable && speaks(voice);
+    const voice =
+      items.find((v) => usable(v) && v.isDefault && (!gender || v.gender === gender)) ??
+      items.find((v) => usable(v) && (!gender || v.gender === gender));
+    assert.ok(voice, `no usable ${gender ?? ''} voice for ${language} in GET /api/voices`);
+    return voice;
+  };
+  const neural = NEURAL_VOICE_PROVIDERS.has(pick('es').provider.id);
+  if (!neural && !neuralNoticeShown) {
+    neuralNoticeShown = true;
+    notice([
+      'VOCES NEURONALES NO DISPONIBLES en esta pila: se usa la voz de reserva (eSpeak NG).',
+      'Las comprobaciones de la voz neuronal SE SALTAN.',
+      'Para cubrirlas: `pnpm voices:setup` y no fijar E2E_TTS_PROVIDER (o `auto`).',
+    ]);
+  }
+  return { neural, items, pick, provider: (language) => pick(language).provider };
+}
+
+/** RMS level (0..1), peak and length of a PCM16 WAV with the canonical 44-byte header. */
+export function wavLevel(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const sampleRate = view.getUint32(24, true);
+  let sum = 0;
+  let peak = 0;
+  const samples = Math.floor((bytes.byteLength - 44) / 2);
+  for (let i = 0; i < samples; i += 1) {
+    const value = view.getInt16(44 + i * 2, true) / 32768;
+    sum += value * value;
+    peak = Math.max(peak, Math.abs(value));
+  }
+  return {
+    rms: Math.sqrt(sum / Math.max(1, samples)),
+    peak,
+    seconds: samples / sampleRate,
+    sampleRate,
+  };
+}
+
 /** Credits of the active workspace, as the API reports them. */
 export async function creditsOf(context) {
   return (await workspaceOf(context)).credits;

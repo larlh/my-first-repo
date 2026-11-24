@@ -7,8 +7,16 @@ Backends
           and the two GridSample nodes stay in ONNX Runtime (OpenVINO's ONNX frontend rejects
           5-D GridSample). Measured on the build machine (4 vCPU Xeon, AMX): 0.95 s/frame and
           63.5 dB PSNR against the f32 reference, versus 4.6 s/frame for plain ONNX Runtime.
-  ort     Original graph in ONNX Runtime: CPU fallback (no OpenVINO) and the CUDA path.
-          The CUDA path is implemented but NOT verified (no GPU on the build machine).
+  ort     Original graph in ONNX Runtime: CPU fallback (no OpenVINO).
+  cuda    NOT verified (no GPU on the build machine). Two layouts, tried in this order:
+            whole  the original graph on the CUDA provider. Needs a provider whose GridSample
+                   kernel accepts 5-D input; stock onnxruntime-gpu builds have rejected it.
+            split  the same three convolutional stages on the CUDA provider and the two
+                   GridSample nodes on the CPU provider (f32) — what the hybrid does, with
+                   ONNX Runtime in place of OpenVINO. Its plumbing IS verified on the CPU
+                   provider (tests/test_integration_slow.py), only the CUDA kernels are not.
+          `AVATAR_ENGINE_CUDA_GENERATOR=whole|split` forces one; `python -m
+          parlante_engine.selftest` times both on the user's GPU.
 The split graphs are derived files (data only), cached in <models_dir>/derived/.
 """
 from __future__ import annotations
@@ -148,19 +156,45 @@ def build_split(log_fn=log.info) -> Path:
         return out
 
 
+class _Port:
+    """Stand-in for an OpenVINO port so ONNX Runtime stages plug into the hybrid generator."""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def get_names(self) -> set[str]:
+        return {self.name}
+
+
+class _OrtStage:
+    """One convolutional stage in ONNX Runtime (CUDA provider when usable, else CPU), with the
+    interface the hybrid generator expects from `OvModel`."""
+
+    def __init__(self, path: Path, threads: int):
+        self.sess = backends.ort_session(path, threads, allow_gpu=True)
+        self.inputs = [_Port(i.name) for i in self.sess.get_inputs()]
+        self.outputs = [_Port(o.name) for o in self.sess.get_outputs()]
+        self.backend = "onnxruntime:" + self.sess.get_providers()[0]
+
+    def infer(self, feed: dict) -> dict:
+        res = self.sess.run(None, {port.name: np.asarray(value) for port, value in feed.items()})
+        return dict(zip(self.outputs, res))
+
+
 class _HybridGenerator:
-    def __init__(self, threads: int):
+    def __init__(self, threads: int, stage_backend: str = "openvino"):
         d = build_split()
         self.plan = json.loads((d / "plan.json").read_text())
         self.stages = {}
         for s in "ABC":
-            model = backends.OvModel(d / f"stage{s}.onnx", threads)
+            model = (backends.OvModel(d / f"stage{s}.onnx", threads) if stage_backend == "openvino"
+                     else _OrtStage(d / f"stage{s}.onnx", threads))
             want_in = self.plan[f"{s}_in"]
             want_out = self.plan[f"{s}_out"] if s != "C" else self.plan["final"]
             ins = [next(n for n in want_in if n in port.get_names()) for port in model.inputs]
             outs = [next(n for n in want_out if n in port.get_names()) for port in model.outputs]
             self.stages[s] = (model, ins, outs)
-        self.gs1 = backends.ort_session(d / "gs1.onnx", threads)
+        self.gs1 = backends.ort_session(d / "gs1.onnx", threads)       # always the CPU provider
         self.gs2 = backends.ort_session(d / "gs2.onnx", threads)
         self.backend = "hybrid(" + self.stages["B"][0].backend + "+onnxruntime:GridSample)"
         self.last_times: dict = {}
@@ -195,10 +229,35 @@ class Generator:
     """feature_3d [1,32,16,64,64], kp_driving [1,21,3], kp_source [1,21,3] -> RGB uint8 [512,512,3]."""
 
     def __init__(self, threads: int | None = None, backend: str | None = None):
+        """`backend`: "openvino" | "onnxruntime" | "cuda" (default: `backends.heavy_backend()`),
+        or an explicit layout "ort-whole" / "ort-split" (self-test, tests)."""
         threads = threads or get_settings().threads
         backend = backend or backends.heavy_backend()
-        self._impl = _HybridGenerator(threads) if backend == "openvino" else _OrtGenerator(threads)
+        if backend == "cuda":
+            backend = {"whole": "ort-whole", "split": "ort-split"}.get(
+                os.environ.get("AVATAR_ENGINE_CUDA_GENERATOR", "").strip().lower(), "cuda")
+        if backend == "openvino":
+            self._impl = _HybridGenerator(threads)
+        elif backend == "ort-split":
+            self._impl = _HybridGenerator(threads, stage_backend="onnxruntime")
+        elif backend == "cuda":
+            self._impl = self._cuda_generator(threads)
+        else:
+            self._impl = _OrtGenerator(threads)
         self.backend = self._impl.backend
+
+    @staticmethod
+    def _cuda_generator(threads: int):
+        """Whole graph on the GPU when its GridSample kernel takes 5-D input, else the split layout."""
+        try:
+            impl = _OrtGenerator(threads)
+            rng = np.random.default_rng(0)
+            kp = (rng.random((1, 21, 3)) - 0.5).astype(np.float32)
+            impl((rng.standard_normal((1, 32, 16, 64, 64)) * 0.3).astype(np.float32), kp + 0.01, kp)
+            return impl
+        except Exception as exc:  # noqa: BLE001 - e.g. "GridSample: only 4-D tensors are supported"
+            log.warning("whole-graph generator failed on the GPU (%s); using the split layout", exc)
+            return _HybridGenerator(threads, stage_backend="onnxruntime")
 
     def raw(self, feature_3d: np.ndarray, kp_driving: np.ndarray, kp_source: np.ndarray) -> np.ndarray:
         """Float output [1,3,512,512] in 0..1 (used by fidelity tests)."""

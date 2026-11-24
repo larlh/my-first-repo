@@ -504,6 +504,11 @@ export const voiceRoutes = {
       gender: GenderSchema.optional(),
       provider: z.string().max(24).optional(),
       q: search,
+      /**
+       * `all` also lists the local neural voices whose model is not installed on the server
+       * (`Voice.unavailable` says why and how to install them). Default: only usable voices.
+       */
+      availability: z.enum(['installed', 'all']).optional(),
     }),
     response: listOf(VoiceSchema),
   }),

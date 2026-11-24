@@ -6,6 +6,7 @@ import { AI_GENERATED_METADATA, AUDIO_MIX, createComposition } from '@parlante/s
 import type { MediaInfo } from '@parlante/shared/node';
 import { computeTimeline } from '@parlante/renderer';
 import { ffprobe, runFfmpeg } from '../../lib/ffmpeg';
+import { RENDER_LIPSYNC_DRIVER, clipModelKey, mergeClipProvider } from './avatars';
 import { encodeArgs } from './encode';
 import {
   ENVELOPE_RATE,
@@ -402,6 +403,45 @@ describe('soundtrack mix with real ffmpeg', () => {
     );
     expect(Math.abs(onset / 48 - 1000)).toBeLessThan(6);
   }, 60_000);
+});
+
+describe('avatar clip cache identity', () => {
+  const model = (id: string, downloaded = true) => ({
+    id,
+    role: 'animation' as const,
+    downloaded,
+    license: 'MIT',
+    commercialUse: true,
+  });
+
+  it('keeps the bare model id for engines that do not report how they animate', () => {
+    expect(clipModelKey(null)).toBeNull();
+    expect(clipModelKey({ models: [] })).toBeNull();
+    expect(clipModelKey({ models: [model('liveportrait-onnx')] })).toBe('liveportrait-onnx');
+    expect(clipModelKey({ models: [model('missing', false), model('b')] })).toBe('b');
+    expect(clipModelKey({ models: [model('a')], animationKey: null })).toBe('a');
+  });
+
+  it('follows the engine: another driver or tuning behind `auto` is another clip', () => {
+    expect(RENDER_LIPSYNC_DRIVER).toBe('auto');
+    const audio = clipModelKey({ models: [model('lp')], animationKey: 'audio-lips.v1' });
+    const visemes = clipModelKey({ models: [model('lp')], animationKey: 'visemes.v1' });
+    expect(audio).toBe('lp|auto|audio-lips.v1');
+    expect(visemes).not.toBe(audio);
+    expect(audio).not.toBe(clipModelKey({ models: [model('lp')] }));
+  });
+
+  it('names the lip driver of a video, and says so when its clips differ', () => {
+    const engine = { id: 'local-neural', name: 'Engine', quality: 'premium', local: true } as const;
+    const audio = { ...engine, mode: 'audio' };
+    const visemes = { ...engine, mode: 'visemes' };
+    expect(mergeClipProvider(null, audio)).toEqual(audio);
+    expect(mergeClipProvider(audio, audio)).toEqual(audio);
+    expect(mergeClipProvider(audio, visemes)).toEqual({ ...engine, mode: 'mixed' });
+    expect(mergeClipProvider({ ...engine, mode: 'mixed' }, audio).mode).toBe('mixed');
+    // A provider that does not say how it worked stays as it is.
+    expect(mergeClipProvider(engine, engine)).toEqual(engine);
+  });
 });
 
 describe('export arguments and bookkeeping', () => {

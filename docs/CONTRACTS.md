@@ -21,7 +21,8 @@
   (crypto, env, SSRF, claves de storage, ffmpeg). Nunca de rutas internas.
 - **Ids**: `<prefijo>_<16 caracteres>` (`newId('video')` → `vid_…`); valida con `idOf('video')`.
   Avatares: `stock_<slug>` (2D instantáneo), `real_<slug>` (stock fotorrealista), `avt_…`
-  (del workspace). Voces: `<proveedor>:<id>` (stock) o `vcl_…` (clonada).
+  (del workspace). Voces: `<proveedor>:<id>` (stock: `espeak:es-f1`, `kokoro:ef_dora`,
+  `piper:de_DE-thorsten-medium`…) o `vcl_…` (clonada).
 - **Errores**: una sola forma `{ error: { code, message, details? } }`; se lanza
   `new AppError(code, message, details)` en cualquier capa. Códigos y estado HTTP en
   `errors.ts` (`ERROR_CODES`): 400 `VALIDATION_ERROR` `BAD_REQUEST` · 401 `UNAUTHENTICATED`
@@ -39,6 +40,10 @@
   la persiste (caducan).
 - **Honestidad de proveedores**: todo resultado de IA lleva `provider: ProviderRef`
   (`quality: 'basic' | 'premium'`, `local`). La UI nunca presenta el modo básico como premium.
+  `ProviderRef.mode?` (aditivo, opcional) dice **cómo** trabajó un proveedor que tiene más de
+  una forma de hacerlo; hoy lo usa el lip-sync de un render: `audio` (los labios siguieron el
+  sonido), `visemes` (siguieron la línea de tiempo de fonemas) o `mixed` (clips del mismo vídeo
+  con conductores distintos). La ficha del vídeo lo muestra bajo «Avatar y labios».
 
 ## 1. Composition
 
@@ -114,6 +119,17 @@ escena ni al vídeo). La narración empieza `paddingStartMs` después de la esce
   todos los rigs; `blendMouthShapes` interpola.
 - `phonemeToViseme(fonema)` (IPA + mnemónicos de eSpeak; tabla `PHONEME_TO_VISEME`, ampliable
   de forma aditiva).
+- **De dónde salen los tiempos** (todos cumplen el mismo contrato de `TTSResult`):
+  - `espeak`: de los eventos de fonema y palabra del propio sintetizador.
+  - `kokoro` / `piper` (voces neuronales locales): de las **duraciones que el modelo predice
+    para cada símbolo de entrada** antes de generar el audio (Kokoro las devuelve; en Piper se
+    expone el tensor al cargar el grafo). Cada símbolo es un fonema, un espacio o un signo y
+    pertenece a una palabra del guion, así que visemas y palabras corresponden al audio real,
+    no a una estimación (`packages/providers/src/tts/neural-synth.ts`; error medido frente a
+    la energía del audio en MODELS.md). En Kokoro cada símbolo se coloca 75 ms antes de lo que
+    suman sus duraciones (`KOKORO_TIMELINE_LEAD_MS`): el sonido sale antes de lo que dice la
+    cuenta de tramas, y sin esa corrección la boca iba 50–80 ms por detrás del audio (medido).
+  - externos sin tiempos: el estimador de abajo.
 - Cuando no hay tiempos de fonema — **un único estimador compartido**:
   - `estimateSpeechTimeline(text, durationMs, language?)` → `{ visemes, words }`. Lo usan los
     adaptadores TTS externos (ElevenLabs, OpenAI).
@@ -162,7 +178,7 @@ omitirlos y el consumidor siempre los recibe.
 | Workspace / miembros | `WorkspaceSchema`, `MemberSchema`, `InviteSchema` (+ `InviteCreatedSchema` con token una sola vez)               | Roles `owner > admin > editor > viewer` (`roleAtLeast`).                                                                                                                                                                                                                                                          |
 | Capacidades          | `CapabilitiesSchema`                                                                                             | `active` por capacidad; `sttRequiresTranscript`; `avatarEngine { available, reason, device, secondsPerVideoSecond, operations{generate,prepare,animate}, models[], nonCommercial, secondsPerPortrait }`. La UI muestra aviso visible si `nonCommercial`.                                                          |
 | Avatar               | `AvatarSchema`                                                                                                   | `kind` stock/photo/generated; `rendering` instant/photoreal; `status`, **`progress`, `etaSec`** (persistidos por el job); `imageUrl`, `maskUrl`, **`cutoutUrl`**, `thumbnailUrl`, `rig` (landmarks sobre el retrato preparado), `prompt`, `seed`, `model`. `real_…` → URLs de `GET /api/stock-avatars/:id/:file`. |
-| Voz                  | `VoiceSchema`                                                                                                    | `multilingual` (+ `languages?`): el filtro por idioma las incluye siempre. `profile` para clonado local.                                                                                                                                                                                                          |
+| Voz                  | `VoiceSchema`                                                                                                    | `multilingual` (+ `languages?`): el filtro por idioma las incluye siempre. `profile` para clonado local. Opcionales (voces neuronales): `unavailable { reasonCode, command }`, `isDefault`, `pitchRange` — ver «Campos aditivos de las voces neuronales».                                                         |
 | Voz sintetizada      | `SynthesizedSpeechSchema`                                                                                        | `audioUrl` (WAV) + `runtime` + `provider`.                                                                                                                                                                                                                                                                        |
 | Vídeo                | `VideoSummarySchema` (listados) / `VideoSchema` (detalle)                                                        | `status`, `progress`, `renderStage`, `renderEtaSec`, `usesPhotorealAvatars` también en el listado. Detalle: `composition`, `revision`/`renderedRevision`, `videoUrl`, **`downloadUrl`** (adjunto con nombre), `srtUrl`, `vttUrl`, `providers`.                                                                    |
 | Render job           | `RenderJobSchema`                                                                                                | Etapas `prepare → audio → avatars → frames → encode → finalize`.                                                                                                                                                                                                                                                  |
@@ -184,6 +200,24 @@ Campos aditivos de la fase 3 (motor): `Capabilities.avatarEngine.reasonCode` (mo
 código traducible, §8) y `Avatar.quality` (`{ passed, issues[], attempts } | null`, veredicto
 del control de calidad automático: un avatar puede estar `ready` con `passed: false` y la UI
 debe decirlo junto al avatar).
+
+Campos aditivos de las voces neuronales (todos **opcionales**: ausente = comportamiento de
+siempre):
+
+- `Voice.unavailable { reasonCode: 'voice_not_installed' | 'voice_incomplete', command }`: la voz
+  está en el catálogo pero su modelo no está en este equipo. No puede sintetizar
+  (`POST /api/tts/synthesize` → 503 `SERVICE_UNAVAILABLE` con `details.reason` = ese código y
+  `details.command`). `GET /api/voices` **no la lista** salvo con `availability=all` (la
+  biblioteca de voces lo pide para explicar cómo instalarla); los selectores nunca la ven.
+  `isVoiceUsable(voice)` = `status === 'ready'` y sin `unavailable`.
+- `Voice.isDefault`: la voz que este servidor recomienda para contenido **nuevo** en su idioma
+  y género (una multilingüe: en todos). La decide la API (`markDefaultVoices`) recorriendo los
+  proveedores en el orden de `providers.tts.ranked()`. Se lee con **`pickDefaultVoice(voices,
+idioma, género?)`** / `pickDefaultVoiceId` (cae a `defaultVoiceId`, la voz local congelada, si
+  el catálogo no marca ninguna). Nunca se reescribe un documento guardado: solo se usa al crear.
+- `Voice.pitchRange { minSemitones, maxSemitones, resampled }`: rango de tono que la voz respeta;
+  `resampled: true` = no tiene control de tono propio y lo cambia remuestreando (el timbre
+  cambia a la vez): la UI acota el control y lo dice.
 
 ## 5. API: tabla de rutas
 
@@ -373,6 +407,13 @@ con la API en marcha cambia `available` sin reiniciar.
 | `list`       | GET    | `/api/voices`          | sesión | 3   | Stock voices of every active TTS provider plus cloned voices of the workspace | —                               |
 | `get`        | GET    | `/api/voices/:voiceId` | sesión | 3   | One voice                                                                     | —                               |
 | `synthesize` | POST   | `/api/tts/synthesize`  | sesión | 3   | Text → WAV + viseme/word timeline (voice preview and Studio live preview)     | CONTENT_BLOCKED, PROVIDER_ERROR |
+
+`list` admite `availability=installed|all` (por defecto `installed`: solo voces que pueden
+sintetizar ahora) y devuelve las voces en el **orden de preferencia del servidor** (proveedores
+de `tts.ranked()` primero), con `isDefault` marcado sobre el catálogo completo antes de aplicar
+ningún filtro. `synthesize` responde 503 `SERVICE_UNAVAILABLE` (`details.reason`:
+`voice_not_installed` / `voice_incomplete` / `voice_runtime_unavailable`) cuando la voz neuronal
+pedida no está instalada o su modelo no carga.
 
 #### `api.templates`
 
@@ -603,18 +644,18 @@ generación; se reembolsa si el LLM falla o responde en modo básico) e `interac
 `providers.ts` (interfaces) · `packages/providers` (implementaciones) ·
 `createProviders(env)` → `Providers`.
 
-| Capacidad     | Interfaz                                                                                              | Local (por defecto)                                                                                                                   | Externos                | Selección                                                                                                           |
-| ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `tts`         | `TTSProvider { listVoices, synthesize }` → WAV PCM16 mono + visemas + palabras                        | `espeak`                                                                                                                              | `elevenlabs`, `openai`  | Todos los que tengan clave están activos a la vez; `TTS_PROVIDER` elige el predeterminado. `providers.tts.get(id)`. |
-| `stt`         | `STTProvider { requiresUserTranscript, transcribe }`                                                  | `manual` (el usuario aporta la transcripción → `TRANSCRIPT_REQUIRED`) y `local-whisper` (Whisper en CPU, si el modelo está instalado) | `openai`                | `STT_PROVIDER`: `auto` = `openai` con clave → `local-whisper` con el modelo instalado → `manual`                    |
-| `dictation`   | `DictationProvider { status, transcribe }` (opcional en `Providers`)                                  | `local-whisper` — **siempre local**, sea cual sea `STT_PROVIDER`                                                                      | — (no hay, a propósito) | `DICTATION_MODEL`, `DICTATION_MODEL_DIR`, `DICTATION_THREADS`, `DICTATION_IDLE_UNLOAD_SEC`                          |
-| `llm`         | `LLMProvider { generateScript, chat }`                                                                | `local` (heurística, `basicMode: true`)                                                                                               | `anthropic`             | `LLM_PROVIDER`                                                                                                      |
-| `translation` | `TranslationProvider { translate }`                                                                   | `local`                                                                                                                               | `anthropic`             | `TRANSLATION_PROVIDER`                                                                                              |
-| `voiceClone`  | `VoiceCloneProvider { createVoice, deleteVoice }`                                                     | `local` (perfil de voz)                                                                                                               | `elevenlabs`            | `VOICE_CLONE_PROVIDER`                                                                                              |
-| `lipsync`     | `LipSyncProvider { status, animate }`                                                                 | `local-neural` (motor)                                                                                                                | `external`              | `LIPSYNC_PROVIDER`                                                                                                  |
-| `portrait`    | `PortraitProvider { status, generate, prepare }`                                                      | `local-neural` (motor)                                                                                                                | —                       | `PORTRAIT_PROVIDER`                                                                                                 |
-| `moderation`  | `ModerationProvider { check }`                                                                        | `local` (lista de bloqueo)                                                                                                            | —                       | `MODERATION_PROVIDER`                                                                                               |
-| `storage`     | `StorageProvider` (put, get, getStream, stat, delete, deletePrefix, downloadTo, localPath, signedUrl) | `local` (disco)                                                                                                                       | `s3`                    | `STORAGE_PROVIDER`                                                                                                  |
+| Capacidad     | Interfaz                                                                                              | Local (por defecto)                                                                                                                   | Externos                | Selección                                                                                                                                                             |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tts`         | `TTSProvider { listVoices, synthesize }` → WAV PCM16 mono + visemas + palabras                        | `kokoro` y `piper` (voces neuronales en CPU, tras `pnpm voices:setup`) y `espeak` (siempre, reserva)                                  | `elevenlabs`, `openai`  | Todos los que cumplen sus requisitos están activos a la vez; `TTS_PROVIDER` solo ordena de quién son las voces por defecto (`tts.ranked()`). `providers.tts.get(id)`. |
+| `stt`         | `STTProvider { requiresUserTranscript, transcribe }`                                                  | `manual` (el usuario aporta la transcripción → `TRANSCRIPT_REQUIRED`) y `local-whisper` (Whisper en CPU, si el modelo está instalado) | `openai`                | `STT_PROVIDER`: `auto` = `openai` con clave → `local-whisper` con el modelo instalado → `manual`                                                                      |
+| `dictation`   | `DictationProvider { status, transcribe }` (opcional en `Providers`)                                  | `local-whisper` — **siempre local**, sea cual sea `STT_PROVIDER`                                                                      | — (no hay, a propósito) | `DICTATION_MODEL`, `DICTATION_MODEL_DIR`, `DICTATION_THREADS`, `DICTATION_IDLE_UNLOAD_SEC`                                                                            |
+| `llm`         | `LLMProvider { generateScript, chat }`                                                                | `local` (heurística, `basicMode: true`)                                                                                               | `anthropic`             | `LLM_PROVIDER`                                                                                                                                                        |
+| `translation` | `TranslationProvider { translate }`                                                                   | `local`                                                                                                                               | `anthropic`             | `TRANSLATION_PROVIDER`                                                                                                                                                |
+| `voiceClone`  | `VoiceCloneProvider { createVoice, deleteVoice }`                                                     | `local` (perfil de voz)                                                                                                               | `elevenlabs`            | `VOICE_CLONE_PROVIDER`                                                                                                                                                |
+| `lipsync`     | `LipSyncProvider { status, animate }`                                                                 | `local-neural` (motor)                                                                                                                | `external`              | `LIPSYNC_PROVIDER`                                                                                                                                                    |
+| `portrait`    | `PortraitProvider { status, generate, prepare }`                                                      | `local-neural` (motor)                                                                                                                | —                       | `PORTRAIT_PROVIDER`                                                                                                                                                   |
+| `moderation`  | `ModerationProvider { check }`                                                                        | `local` (lista de bloqueo)                                                                                                            | —                       | `MODERATION_PROVIDER`                                                                                                                                                 |
+| `storage`     | `StorageProvider` (put, get, getStream, stat, delete, deletePrefix, downloadTo, localPath, signedUrl) | `local` (disco)                                                                                                                       | `s3`                    | `STORAGE_PROVIDER`                                                                                                                                                    |
 
 Reglas para quien implementa:
 
@@ -635,6 +676,31 @@ Reglas para quien implementa:
   segmentos con tiempos; si el modelo no está instalado, `requiresUserTranscript` vale `true` y
   se comporta como `manual`. `STT_PROVIDER=auto` se resuelve al arrancar (reiniciar API y worker
   tras instalar el modelo); el dictado comprueba el disco en cada petición.
+- **Voces neuronales locales** (`packages/providers/src/tts/`): `neural.ts` (proveedores
+  `kokoro` y `piper`, `quality: 'premium'`, `local: true`), `neural-synth.ts` (texto → trozos →
+  una inferencia por trozo → WAV + línea de tiempo), `neural-phonemes.ts` (fonemas del eSpeak
+  WASM por palabra y su paso al alfabeto de cada modelo), `neural-chunks.ts` (troceo por frases
+  y pausas), `neural-backends.ts` (tensores de Kokoro y de Piper), `neural-engine.ts` +
+  `neural-worker.mjs` (un hilo `worker_threads` por proceso con las sesiones de ONNX Runtime,
+  cola con concurrencia 1, como mucho 3 grafos cargados, descarga por inactividad),
+  `onnx-graph.ts` (expone las duraciones de un grafo de Piper), `neural-models.ts` (archivos
+  con revisión y SHA-256), `neural-voices.ts` (catálogo de voces) y `neural-setup.ts`
+  (instalador de `pnpm voices:setup`). Nada se descarga en ejecución.
+  - Siempre están **activos**: sin modelos, `listVoices` devuelve cada voz con `unavailable`
+    y `synthesize` lanza `SERVICE_UNAVAILABLE` (`details.reason`). `TTSProvider.volatileVoices`
+    (opcional) indica que su lista sigue al disco y no debe cachearse: instalar una voz la hace
+    aparecer sin reiniciar.
+  - `Providers.tts.ranked?()` (opcional): proveedores en orden de preferencia para las voces
+    por defecto. `auto` = externo con clave → neuronales instalados → eSpeak; `neural` =
+    neuronales instalados → eSpeak; `espeak` = solo eSpeak. `tts.default` = el primero.
+    `Capabilities.ttsProviders` solo incluye un proveedor neuronal cuando tiene alguna voz
+    instalada.
+  - Velocidad: parámetro nativo de ambos modelos. Tono: ninguno lo tiene; se cambia
+    remuestreando (±4 semitonos, `ProviderVoice.pitchRange.resampled`), compensando el tempo.
+  - Perfil de voz local (`voice-clone/local.ts`): se apoya en la voz neuronal instalada del
+    mismo idioma y género cuyo tono está más cerca del de la muestra (`ttsProviderId` =
+    `kokoro` / `piper`, `profile.baseVoiceId` = esa voz); sin ninguna, en la de eSpeak. Sigue
+    siendo `quality: 'basic'`: no reproduce el timbre.
 - Moderación: `context` = `script | chat | name | translation | avatar_prompt`. El último
   bloquea además descripciones de personas reales identificables.
 - `EngineStatus` (lip-sync y retratos): `available`, `reason`, `device`,
@@ -665,7 +731,7 @@ son los proveedores `local-neural`. Modelos y licencias: [`MODELS.md`](MODELS.md
 | `GET /health`                 | `EngineHealth { status, version, device, capabilities{generate,prepare,animate}, models[{id, role, downloaded, license, commercialUse}], secondsPerVideoSecond, secondsPerPortrait? }` |
 | `POST /v1/portraits/generate` | `{ prompt, seed, width, height, outputDir, clientRef? }` → 202 `EngineJob`                                                                                                             |
 | `POST /v1/portraits/prepare`  | `{ imagePath, landmarks?, outputDir, clientRef? }` → 202 `EngineJob`                                                                                                                   |
-| `POST /v1/animations`         | `{ portraitPath, maskPath, audioPath, visemes?, fps, maxSize, outputDir, clientRef? }` → 202 `EngineJob`                                                                               |
+| `POST /v1/animations`         | `{ portraitPath, maskPath, audioPath, visemes?, fps, maxSize, outputDir, clientRef?, driver?, words? }` → 202 `EngineJob`                                                              |
 | `GET /v1/jobs/:jobId`         | `EngineJob { jobId, status, progress 0..1, etaSec, result, error }`                                                                                                                    |
 | `DELETE /v1/jobs/:jobId`      | cancela                                                                                                                                                                                |
 
@@ -682,7 +748,21 @@ son los proveedores `local-neural`. Modelos y licencias: [`MODELS.md`](MODELS.md
   `prepare { portraitPath, maskPath, width, height, landmarks, landmarksSource, matteModel? }`
   (`matteModel`: `matting` = modelo de recorte dedicado ORMBG; otro id = segmentador de
   reserva; un ORMBG ausente no bloquea `prepare`, lo degrada),
-  `animate { videoPath, alpha: none|mask-video|mask-image, maskPath, width, height, fps, frameCount, model }`.
+  `animate { videoPath, alpha: none|mask-video|mask-image, maskPath, width, height, fps, frameCount, model, driver? }`.
+- **Conductor de los labios** (aditivo): `POST /v1/animations` acepta `driver` (`auto` | `visemes` |
+  `audio`) y `words?`. `visemes` = rig determinista guiado por la línea de tiempo; `audio` = los
+  labios siguen el **sonido** de `audioPath` (modelo guiado por audio; los visemas, si llegan, solo
+  sirven de pista para cerrar en /p b m/); `auto` = el mejor que tenga el motor, y nunca falla por
+  un modelo opcional ausente (recurre al otro). **Sin el campo no cambia nada**: línea de tiempo
+  si se envía, audio si no. El resultado dice qué conductor trabajó (`driver`). `GET /health`
+  añade `animation { autoDriver, key }`: a qué se resuelve `auto` hoy y una clave opaca que
+  cambia cuando la misma petición daría otros píxeles. `LipSyncRequest.driver?` / `words?`,
+  `LipSyncResult.driver?` / `model?` y `EngineStatus.animationKey?` llevan lo mismo por la
+  interfaz de proveedores; el job de render pide `auto`, envía siempre el audio real de la
+  escena y mete `animationKey` en la clave de la caché de clips (`clipModelKey`). El conductor
+  que trabajó se guarda con el clip (`provider.mode` en `clip.json`, también al servirlo de la
+  caché) y llega a `Video.providers.lipsync.mode` (`mergeClipProvider` en
+  `apps/worker/src/jobs/render/avatars.ts`).
 - Errores: `{ error: { code, message } }` con los códigos compartidos (`UNPROCESSABLE` = sin
   cara utilizable; `SERVICE_UNAVAILABLE` = faltan pesos).
 - **Caché de rasgos del motor**: `AVATAR_ENGINE_WORK_DIR/.cache/avatars/<sha256 del retrato>.npz`
@@ -715,7 +795,10 @@ cache/avatar-clips/<sha>/…                                   solo avatares sto
   clips de un avatar del workspace cuelgan de su prefijo: al borrarlo (o revocar el
   consentimiento) desaparecen también.
 - **Caché de TTS**: solo a través de `synthesizeCached` (§11). Clave `ttsCacheKey(...)`; el
-  `.json` es `TtsCacheMetaSchema { v: 1, runtime, provider, sampleRate }`.
+  `.json` es `TtsCacheMetaSchema { v: 1, runtime, provider, sampleRate }`. Las voces neuronales
+  no son reproducibles bit a bit (Piper usa ruido; Kokoro también en su decodificador): la
+  caché es lo que garantiza que la vista previa y la exportación usen **el mismo** audio y la
+  misma línea de tiempo.
 - **Caché de clips**: `avatarClipCacheKey({ portraitSha, maskSha, audioSha, fps, maxSize, providerId, model })`
   - `AvatarClipCacheMetaSchema` en `clip.json`. El job de render la consulta antes de animar.
 - URLs: `createFileUrlBuilder` → URL firmada del proveedor (S3) o
@@ -1084,15 +1167,15 @@ y un test que ejercite el campo o la función nuevos.
 La lista completa, con valores por defecto y efecto, es [`.env.example`](../.env.example); aquí
 solo las reglas.
 
-| Quién                      | Esquema / lector                                                   | Variables                                                                                                                                                                                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API, worker, scripts de BD | `baseEnvSchema` (`@parlante/shared/node`)                          | `NODE_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `REDIS_URL`, `QUEUE_PREFIX`, `APP_SECRET`, `PUBLIC_API_URL`, `PUBLIC_WEB_URL`                                                                                                                                                    |
-| API y worker               | `providerEnvSchema` (`packages/providers/src/env.ts`)              | `STORAGE_*`, `S3_*`, `*_PROVIDER`, claves y modelos de proveedores, `MODERATION_*`, `AVATAR_ENGINE_URL/TOKEN/WORK_DIR/POLL_MS/STALL_SEC`, `AVATAR_PORTRAIT_SIZE`, `LIPSYNC_*`, `DICTATION_MODEL`, `DICTATION_MODEL_DIR`, `DICTATION_THREADS`, `DICTATION_IDLE_UNLOAD_SEC` |
-| API                        | `apiEnvSchema` (`apps/api/src/config.ts`)                          | `API_HOST`, `API_PORT`, `WEB_ORIGIN`, `SESSION_*`, `COOKIE_SECURE`, `TRUST_PROXY`, `RATE_LIMIT_*`, `MAX_UPLOAD_MB`, `UPLOAD_TMP_DIR`, `ALLOW_PRIVATE_URLS`, `OPENAPI_ENABLED`, `DICTATION_RATE_LIMIT_PER_MIN`, `DICTATION_MAX_PENDING`                                    |
-| Worker                     | `workerEnvSchema` (`apps/worker/src/config.ts`)                    | `WORKER_TMP_DIR`, `WORKER_QUEUES`, `WORKER_CONCURRENCY_<CLAVE>`, `WORKER_KEEP_TMP`, `ALLOW_PRIVATE_URLS`; `FFMPEG_PATH` / `FFPROBE_PATH` (`process.ts`)                                                                                                                   |
-| Web (servidor de Vite)     | `apps/web/vite.config.ts`                                          | `WEB_PORT`, `VITE_API_PROXY_TARGET`; en el bundle, `VITE_API_URL`                                                                                                                                                                                                         |
-| Motor (Python)             | `services/avatar-engine/parlante_engine/core/config.py` y `run.sh` | `AVATAR_ENGINE_*`, `FFMPEG_PATH`, `HF_HOME` (tabla en el README del motor)                                                                                                                                                                                                |
-| Tests                      | `@parlante/db/testing`                                             | `DATABASE_TEST_URL`                                                                                                                                                                                                                                                       |
+| Quién                      | Esquema / lector                                                   | Variables                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| API, worker, scripts de BD | `baseEnvSchema` (`@parlante/shared/node`)                          | `NODE_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `REDIS_URL`, `QUEUE_PREFIX`, `APP_SECRET`, `PUBLIC_API_URL`, `PUBLIC_WEB_URL`                                                                                                                                                                                                                                                         |
+| API y worker               | `providerEnvSchema` (`packages/providers/src/env.ts`)              | `STORAGE_*`, `S3_*`, `*_PROVIDER`, claves y modelos de proveedores, `MODERATION_*`, `AVATAR_ENGINE_URL/TOKEN/WORK_DIR/POLL_MS/STALL_SEC`, `AVATAR_PORTRAIT_SIZE`, `LIPSYNC_*`, `DICTATION_MODEL`, `DICTATION_MODEL_DIR`, `DICTATION_THREADS`, `DICTATION_IDLE_UNLOAD_SEC`, `VOICE_MODEL_DIR`, `VOICE_KOKORO_VARIANT`, `VOICE_THREADS`, `VOICE_DEVICE`, `VOICE_IDLE_UNLOAD_SEC` |
+| API                        | `apiEnvSchema` (`apps/api/src/config.ts`)                          | `API_HOST`, `API_PORT`, `WEB_ORIGIN`, `SESSION_*`, `COOKIE_SECURE`, `TRUST_PROXY`, `RATE_LIMIT_*`, `MAX_UPLOAD_MB`, `UPLOAD_TMP_DIR`, `ALLOW_PRIVATE_URLS`, `OPENAPI_ENABLED`, `DICTATION_RATE_LIMIT_PER_MIN`, `DICTATION_MAX_PENDING`                                                                                                                                         |
+| Worker                     | `workerEnvSchema` (`apps/worker/src/config.ts`)                    | `WORKER_TMP_DIR`, `WORKER_QUEUES`, `WORKER_CONCURRENCY_<CLAVE>`, `WORKER_KEEP_TMP`, `ALLOW_PRIVATE_URLS`; `FFMPEG_PATH` / `FFPROBE_PATH` (`process.ts`)                                                                                                                                                                                                                        |
+| Web (servidor de Vite)     | `apps/web/vite.config.ts`                                          | `WEB_PORT`, `VITE_API_PROXY_TARGET`; en el bundle, `VITE_API_URL`                                                                                                                                                                                                                                                                                                              |
+| Motor (Python)             | `services/avatar-engine/parlante_engine/core/config.py` y `run.sh` | `AVATAR_ENGINE_*`, `FFMPEG_PATH`, `HF_HOME` (tabla en el README del motor)                                                                                                                                                                                                                                                                                                     |
+| Tests                      | `@parlante/db/testing`                                             | `DATABASE_TEST_URL`                                                                                                                                                                                                                                                                                                                                                            |
 
 - **`.env` en la raíz**: lo carga `loadDotEnv()` (lo ya definido en el entorno gana). El formato
   lo fija `parseDotEnv`: `CLAVE=valor`; ` #` inicia un comentario salvo dentro de comillas;
@@ -1106,6 +1189,7 @@ solo las reglas.
 - **Una variable nueva**: se añade a su esquema zod (con valor por defecto o opcional) y a
   `.env.example` en el mismo cambio.
 - **Tests herméticos**: los arneses de API y worker fijan `AVATAR_ENGINE_URL` a un puerto cerrado
-  y `DICTATION_MODEL_DIR` a un directorio vacío, para que un motor en marcha o un modelo de voz
-  instalado en la máquina no cambien el resultado de ningún test. Los tests del modelo real
+  y `DICTATION_MODEL_DIR` y `VOICE_MODEL_DIR` a directorios vacíos, para que un motor en marcha,
+  un modelo de reconocimiento o unas voces neuronales instalados en la máquina no cambien el
+  resultado de ningún test (sin voces instaladas la voz por defecto es la de eSpeak). Los tests del modelo real
   (`[slow]`, se saltan si no está instalado) pasan su propio directorio.

@@ -42,6 +42,12 @@ export interface VoiceFilters {
   /** Provider id: `espeak`, `elevenlabs`, `openai`… (cloned voices: who cloned them). */
   provider?: string | undefined;
   q?: string | undefined;
+  /**
+   * `installed` (default): only voices that can synthesize now. `all`: also the local neural
+   * voices whose model is not installed, marked `unavailable` (the library explains how to
+   * install them).
+   */
+  availability?: 'installed' | 'all' | undefined;
 }
 
 /**
@@ -52,6 +58,9 @@ const VOICE_LIST_TTL_MS = 5 * 60_000;
 const voiceListCache = new WeakMap<TTSProvider, { at: number; voices: Promise<ProviderVoice[]> }>();
 
 function listProviderVoices(tts: TTSProvider): Promise<ProviderVoice[]> {
+  // Asking is free and the answer follows the disk (voices installed a moment ago must be
+  // listed at once): never reuse an old answer.
+  if (tts.volatileVoices) return (async () => tts.listVoices())();
   const now = Date.now();
   const cached = voiceListCache.get(tts);
   if (cached && now - cached.at < VOICE_LIST_TTL_MS) return cached.voices;
@@ -86,7 +95,36 @@ function stockVoiceDto(tts: TTSProvider, voice: ProviderVoice): Voice | null {
     profile: null,
     error: null,
     createdAt: null,
+    ...(voice.unavailable ? { unavailable: voice.unavailable } : {}),
+    ...(voice.pitchRange ? { pitchRange: voice.pitchRange } : {}),
   };
+}
+
+/**
+ * Mark the voice this server recommends for NEW content in each language and gender
+ * (`Voice.isDefault`; read it with `pickDefaultVoice` of @parlante/shared). `voices` must be
+ * the usable stock voices in order of preference (see `listStockVoices`): for every language
+ * and gender the first voice that speaks it wins — a multilingual voice wins every language,
+ * so nothing after it is marked for that gender.
+ */
+export function markDefaultVoices(voices: readonly Voice[]): void {
+  const taken = new Set<string>();
+  for (const voice of voices) {
+    if (voice.kind !== 'stock' || voice.status !== 'ready' || voice.unavailable) continue;
+    if (voice.gender !== 'female' && voice.gender !== 'male') continue;
+    const languages = voice.multilingual
+      ? LANGUAGES.map((language) => language.code)
+      : [baseLanguage(voice.language)];
+    let wins = false;
+    for (const language of languages) {
+      if (language === null) continue;
+      const slot = `${language}:${voice.gender}`;
+      if (taken.has(slot)) continue;
+      taken.add(slot);
+      wins = true;
+    }
+    if (wins) voice.isDefault = true;
+  }
 }
 
 /** Row → DTO for a cloned voice of the workspace. */
@@ -162,34 +200,67 @@ function providerFailure(tts: TTSProvider, error: unknown): AppError {
   );
 }
 
-/** Stock voices of every active provider, the default provider first. */
-async function listStockVoices(deps: VoiceCatalogDeps, filters: VoiceFilters): Promise<Voice[]> {
-  const defaultId = deps.providers.tts.default.info.id;
-  const active = [...deps.providers.tts.all()].sort(
-    (a, b) => Number(b.info.id === defaultId) - Number(a.info.id === defaultId),
-  );
-  const wanted = filters.provider ? active.filter((p) => p.info.id === filters.provider) : active;
-  const results = await Promise.allSettled(wanted.map((tts) => listProviderVoices(tts)));
+/**
+ * Active providers in the order their voices are preferred: the ranking of the registry
+ * (`TTS_PROVIDER`; with `auto`, installed local neural voices before eSpeak), then the rest.
+ */
+function providersByPreference(providers: VoiceCatalogDeps['providers']): TTSProvider[] {
+  const ranked = providers.tts.ranked?.() ?? [providers.tts.default];
+  const position = new Map(ranked.map((tts, index) => [tts.info.id, index]));
+  const rankOf = (tts: TTSProvider) => position.get(tts.info.id) ?? ranked.length;
+  // Not ranked (eSpeak under an explicit TTS_PROVIDER excluded): neural ones still go first.
+  const tier = (tts: TTSProvider) => (tts.info.quality === 'premium' ? 0 : 1);
+  return [...providers.tts.all()].sort((a, b) => rankOf(a) - rankOf(b) || tier(a) - tier(b));
+}
 
-  const items: Voice[] = [];
+/**
+ * Stock voices of every active provider, the preferred provider first, each one marked when
+ * it is the default of its language and gender. Voices that are not installed come last and
+ * only with `availability: 'all'`.
+ */
+async function listStockVoices(deps: VoiceCatalogDeps, filters: VoiceFilters): Promise<Voice[]> {
+  const active = providersByPreference(deps.providers);
+  const ranked = new Set(
+    (deps.providers.tts.ranked?.() ?? [deps.providers.tts.default]).map((tts) => tts.info.id),
+  );
+  const results = await Promise.allSettled(active.map((tts) => listProviderVoices(tts)));
+
+  const usable: Voice[] = [];
+  const unavailable: Voice[] = [];
+  /** Voices of the providers the defaults may come from, in order. */
+  const candidates: Voice[] = [];
   let firstFailure: AppError | null = null;
+  let asked = 0;
+  let failed = 0;
   results.forEach((result, index) => {
-    const tts = wanted[index];
+    const tts = active[index];
     if (!tts) return;
+    const wanted = !filters.provider || tts.info.id === filters.provider;
+    if (wanted) asked += 1;
     if (result.status === 'rejected') {
+      if (!wanted) return;
+      failed += 1;
       firstFailure ??= providerFailure(tts, result.reason);
       deps.onProviderError?.(tts.info.id, result.reason);
       return;
     }
     for (const voice of result.value) {
       const dto = stockVoiceDto(tts, voice);
-      if (dto && matches(dto, filters)) items.push(dto);
+      if (!dto) continue;
+      if (dto.unavailable) unavailable.push(dto);
+      else {
+        usable.push(dto);
+        if (ranked.has(tts.info.id)) candidates.push(dto);
+      }
     }
   });
   // One provider down must not hide the others; but when NONE of the providers asked for
   // could answer, an empty list would be a lie — report why there are no voices.
-  if (firstFailure && results.every((result) => result.status === 'rejected')) throw firstFailure;
-  return items;
+  if (firstFailure && failed === asked) throw firstFailure;
+  // Defaults are decided on the WHOLE catalogue, before any filter narrows the list.
+  markDefaultVoices(candidates);
+  const listed = filters.availability === 'all' ? [...usable, ...unavailable] : usable;
+  return listed.filter((voice) => matches(voice, filters));
 }
 
 /**

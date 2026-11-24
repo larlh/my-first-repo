@@ -2,19 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { ELEVEN_PROVIDER, clonedVoice, stockVoice } from '@/features/avatars/kit/testing/fixtures';
 import {
   NO_VOICE_FILTERS,
+  clampPitch,
   countByKind,
   filterVoices,
   formatPitch,
   formatSpeed,
   groupVoices,
   hasActiveVoiceFilters,
+  installCommandFor,
   languageCounts,
+  notInstalled,
   previewLanguage,
   providersOf,
   sampleText,
   speaks,
   voiceFiltersFromParams,
   voiceFiltersToParams,
+  voiceTier,
 } from './voices';
 
 const multi = stockVoice('en-f1', 'Rachel', {
@@ -115,5 +119,62 @@ describe('voice preview settings', () => {
     expect(formatPitch(0)).toBe('0 st');
     expect(formatPitch(2)).toBe('+2 st');
     expect(formatPitch(-3)).toBe('−3 st');
+  });
+});
+
+describe('neural voices in the library', () => {
+  const NEURAL = {
+    id: 'kokoro',
+    name: 'Kokoro (neuronal local)',
+    quality: 'premium',
+    local: true,
+  } as const;
+  const missing = (command: string) => ({ reasonCode: 'voice_not_installed' as const, command });
+  const dora = stockVoice('es-f1', 'Dora', { id: 'kokoro:ef_dora', provider: NEURAL });
+  const sara = stockVoice('it-f1', 'Sara', {
+    id: 'kokoro:if_sara',
+    provider: NEURAL,
+    unavailable: missing('pnpm voices:setup'),
+  });
+  const kerstin = stockVoice('de-f1', 'Kerstin', {
+    id: 'piper:de_DE-kerstin-medium',
+    provider: { ...NEURAL, id: 'piper' },
+    unavailable: missing('pnpm voices:setup --voices de_DE-kerstin-medium'),
+  });
+  const thorsten = stockVoice('de-m1', 'Thorsten', {
+    id: 'piper:de_DE-thorsten-medium',
+    provider: { ...NEURAL, id: 'piper' },
+    unavailable: missing('pnpm voices:setup --voices de_DE-thorsten-medium'),
+  });
+  const hanna = stockVoice('de-f1', 'Hanna');
+  const carmen = stockVoice('es-f1', 'Carmen');
+
+  it('ranks usable neural voices, then the ones to install, then the basic ones', () => {
+    expect([dora, sara, carmen, multi].map(voiceTier)).toEqual([0, 1, 2, 0]);
+    // Whatever order the server used, each language group starts with what sounds best.
+    const groups = groupVoices([carmen, hanna, kerstin, dora, thorsten]);
+    expect(groups.map((group) => [group.key, group.voices.map((voice) => voice.name)])).toEqual([
+      ['es', ['Dora', 'Carmen']],
+      ['de', ['Kerstin', 'Thorsten', 'Hanna']],
+    ]);
+  });
+
+  it('names one command that installs everything that is missing', () => {
+    expect(notInstalled([dora, sara, carmen]).map((voice) => voice.name)).toEqual(['Sara']);
+    expect(installCommandFor([dora, carmen])).toBeNull();
+    expect(installCommandFor([dora, sara])).toBe('pnpm voices:setup');
+    expect(installCommandFor([kerstin])).toBe('pnpm voices:setup --voices de_DE-kerstin-medium');
+    // Several voices with different commands: ask for their languages.
+    expect(installCommandFor([kerstin, thorsten])).toBe('pnpm voices:setup --languages de');
+    expect(installCommandFor([sara, kerstin])).toBe('pnpm voices:setup --languages it,de');
+  });
+
+  it('keeps a requested pitch inside what the voice can do', () => {
+    const limited = { pitchRange: { minSemitones: -4, maxSemitones: 4, resampled: true } };
+    expect(clampPitch(limited, 9)).toBe(4);
+    expect(clampPitch(limited, -12)).toBe(-4);
+    expect(clampPitch(limited, 2)).toBe(2);
+    expect(clampPitch({}, 9)).toBe(9);
+    expect(clampPitch({}, 40)).toBe(12);
   });
 });

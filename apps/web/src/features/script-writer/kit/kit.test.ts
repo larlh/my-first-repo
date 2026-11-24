@@ -64,6 +64,36 @@ describe('catalogue helpers', () => {
     expect(usableVoices([emma, broken])).toEqual([emma]);
   });
 
+  it('starts from the voice the server recommends: an installed neural one before the stock one', () => {
+    const neural = {
+      id: 'kokoro',
+      name: 'Kokoro (neuronal local)',
+      quality: 'premium',
+      local: true,
+    } as const;
+    const carmen = stockVoice('es-f1', 'Carmen');
+    const dora = stockVoice('es-f1', 'Dora', {
+      id: 'kokoro:ef_dora',
+      provider: neural,
+      isDefault: true,
+    });
+    const alex = stockVoice('es-m1', 'Álex', {
+      id: 'kokoro:em_alex',
+      provider: neural,
+      isDefault: true,
+    });
+    expect(defaultVoiceOf([dora, alex, carmen], 'es')?.id).toBe('kokoro:ef_dora');
+    expect(defaultVoiceOf([carmen, alex], 'es-MX')?.id).toBe('kokoro:em_alex');
+    // A neural voice that is not installed is neither offered nor chosen.
+    const missing = stockVoice('es-f1', 'Dora', {
+      id: 'kokoro:ef_dora',
+      provider: neural,
+      unavailable: { reasonCode: 'voice_not_installed', command: 'pnpm voices:setup' },
+    });
+    expect(usableVoices([missing, carmen])).toEqual([carmen]);
+    expect(defaultVoiceOf([missing, carmen], 'es')?.id).toBe('espeak:es-f1');
+  });
+
   it('compares a cost with the balance', () => {
     expect(canAfford(null, 0)).toBe(true);
     expect(canAfford(3, 3)).toBe(true);

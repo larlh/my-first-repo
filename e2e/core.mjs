@@ -36,8 +36,11 @@ import {
   sleep,
   uniqueEmail,
   until,
+  voiceSetup,
+  wavLevel,
   workspaceOf,
 } from './lib.mjs';
+import { launchForVoices, neuralVoices } from './voices.mjs';
 
 const { chromium } = loadPlaywright();
 const only = (process.env.E2E_ONLY ?? '')
@@ -228,6 +231,8 @@ async function journey(browser) {
   const email = uniqueEmail('journey');
   let videoId = null;
   const preview = {};
+  /** The voice the journey chooses by name: the default male Spanish voice of this stack. */
+  let narrator = null;
 
   try {
     await section('Registro y panel', async () => {
@@ -243,6 +248,41 @@ async function journey(browser) {
       check('el panel vacío explica los tres pasos', true);
     });
 
+    await section('Voz de la pila: neuronal local si está instalada, eSpeak si no', async () => {
+      const voices = await voiceSetup(context);
+      narrator = voices.pick('es', 'male');
+      const first = voices.pick('es');
+      check(
+        'la voz por defecto en español dice qué proveedor la genera',
+        typeof first.provider.name === 'string' && first.provider.local === true,
+        `${first.name} · ${first.provider.name}${voices.neural ? '' : ' (reserva: sin voces neuronales)'}`,
+      );
+      // A preview of the voice the journey narrates with: a real synthesis with real signal.
+      const t0 = Date.now();
+      const speech = await apiCall(context, 'POST', '/api/tts/synthesize', {
+        text: 'Hola, esta es la voz con la que se narra el recorrido.',
+        voiceId: narrator.id,
+        language: 'es',
+      });
+      checkEqual('POST /api/tts/synthesize con la voz del recorrido', speech.status, 200);
+      checkEqual('…la generó su proveedor', speech.json.provider.id, narrator.provider.id);
+      const wav = await context.request.get(speech.json.audioUrl);
+      const level = wavLevel(new Uint8Array(await wav.body()));
+      check(
+        'la preescucha tiene señal de voz (medida, no escuchada)',
+        level.rms > 0.02 && level.peak > 0.2 && level.seconds > 2,
+        `RMS ${level.rms.toFixed(3)}, pico ${level.peak.toFixed(2)}, ${level.seconds.toFixed(2)} s a ${level.sampleRate} Hz, en ${Date.now() - t0} ms`,
+      );
+      if (voices.neural) {
+        check(
+          'la voz del recorrido es neuronal local (Kokoro o Piper), no el modo básico',
+          ['kokoro', 'piper'].includes(narrator.provider.id) &&
+            narrator.provider.quality === 'premium',
+          `${narrator.id} · ${narrator.provider.name}`,
+        );
+      }
+    });
+
     await section(
       'Studio: dos escenas con texto, avatar, voz, fondo, música y subtítulos',
       async () => {
@@ -256,7 +296,7 @@ async function journey(browser) {
         await canvasOf(page).waitFor();
 
         // Scene 1: narration + voice, 2D avatar, image background, a text layer.
-        await setNarration(page, SCENE_1, 'Diego');
+        await setNarration(page, SCENE_1, narrator.name);
         await setAvatar(page, 'Mateo');
         await setImageBackground(page, 'Océano');
         await page
@@ -274,7 +314,7 @@ async function journey(browser) {
         checkEqual(
           'la segunda escena hereda la voz de la primera',
           (await properties(page).getByTestId('voice-name').textContent())?.trim(),
-          'Diego',
+          narrator.name,
         );
         await setAvatar(page, 'Lucía');
         await properties(page).getByRole('tab', { name: 'Escena' }).click();
@@ -306,12 +346,12 @@ async function journey(browser) {
       await page.getByRole('button', { name: /^Escena 1:/ }).click();
       await waitNarrationReady(page);
       const provider = await properties(page)
-        .getByText(/eSpeak NG/)
+        .getByText(narrator.provider.name)
         .first()
         .textContent();
       check(
         'la narración dice qué proveedor la generó',
-        /eSpeak/.test(provider ?? ''),
+        (provider ?? '').includes(narrator.provider.name),
         provider ?? '',
       );
 
@@ -377,7 +417,7 @@ async function journey(browser) {
       checkEqual(
         '…la voz elegida en ambas',
         composition.scenes.map((scene) => scene.script.voiceId),
-        ['espeak:es-m1', 'espeak:es-m1'],
+        [narrator.id, narrator.id],
       );
       checkEqual(
         '…un avatar distinto en cada escena',
@@ -983,9 +1023,12 @@ async function share(browser) {
         `en ${visitor.page.viewportSize().width} px de ancho`,
       );
       await visitor.page.getByText(/Carla/).first().waitFor();
+      // A blank video starts with the default voice of the stack: its provider is named.
+      const maker = (await voiceSetup(context)).provider('es').name;
       check(
         'dice quién lo comparte y con qué se hizo',
-        (await visitor.page.getByText(/eSpeak NG/).count()) > 0,
+        (await visitor.page.getByText(maker).count()) > 0,
+        maker,
       );
       const download = visitor.page
         .getByRole('main')
@@ -1574,6 +1617,8 @@ async function settings(browser) {
           type: 'script',
           text: 'Este vídeo se ha pedido con una clave de la API pública.',
           avatarId: 'stock_lucia',
+          // An API client names its voice. This one asks for the reserve voice on purpose:
+          // eSpeak NG must keep working when the neural voices are the default.
           voiceId: 'espeak:es-f1',
         },
       });
@@ -2004,7 +2049,24 @@ async function assets(browser) {
  * main
  * ---------------------------------------------------------------------------------------- */
 
-const SECTIONS = { journey, formats, share, credits, settings, assets };
+/**
+ * 7. The local neural voices, end to end (e2e/voices.mjs): library, a preview that sounds, a
+ * new video that starts with the neural voice, a 2D mouth that opens on the vowels the model
+ * pronounces and an export that carries the same audio. Skipped, with a boxed notice, on a
+ * stack without neural voices.
+ */
+async function neural() {
+  const voicesBrowser = await launchForVoices();
+  try {
+    const outcome = await neuralVoices(voicesBrowser);
+    if (outcome === 'skipped') skipped.push('neural (voces neuronales no instaladas)');
+  } finally {
+    await voicesBrowser.close();
+  }
+}
+
+const SECTIONS = { journey, formats, share, credits, settings, assets, neural };
+const skipped = [];
 
 const browser = await chromium.launch();
 let failed = null;
@@ -2024,4 +2086,8 @@ if (failed) {
   );
   process.exit(1);
 }
-console.log(`\n✔ e2e/core.mjs: ${checkCount()} comprobaciones en verde`);
+console.log(
+  `\n✔ e2e/core.mjs: ${checkCount()} comprobaciones en verde${
+    skipped.length > 0 ? ` — ⚠ SALTADO: ${skipped.join('; ')}` : ''
+  }`,
+);

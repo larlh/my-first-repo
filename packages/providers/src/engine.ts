@@ -208,6 +208,7 @@ export function engineStatusFromHealth(
     models: health.models,
     nonCommercial: health.models.some((model) => model.downloaded && !model.commercialUse),
     secondsPerPortrait: health.secondsPerPortrait ?? null,
+    ...(provider === 'lipsync' && health.animation ? { animationKey: health.animation.key } : {}),
   };
 }
 

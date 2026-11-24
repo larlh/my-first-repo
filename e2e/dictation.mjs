@@ -6,9 +6,10 @@
 //
 //   bash scripts/e2e.sh e2e/dictation.mjs
 //
-// The spoken phrase is synthesised by the product itself (eSpeak NG, through the API): no
-// recording of a person is involved. The run is SKIPPED, with a visible notice, when the local
-// model is not installed (`pnpm dictation:setup`).
+// The spoken phrase is synthesised by the product itself, through the API, with the default
+// English voice of the stack (a local neural voice when one is installed, eSpeak NG otherwise):
+// no recording of a person is involved. The run is SKIPPED, with a visible notice, when the
+// local speech model is not installed (`pnpm dictation:setup`).
 //
 // What it walks through: preferences (engine, language, what the page explains) → fields that
 // must never offer dictation → title of a new video → Studio script (language of the scene
@@ -34,13 +35,17 @@ import {
   section,
   uniqueEmail,
   until,
+  voiceSetup,
 } from './lib.mjs';
 
 const { chromium } = loadPlaywright();
 
-/** English: the open model understands eSpeak's English voice reliably (its Spanish, poorly). */
+/**
+ * English: the open model understands the English voices of the product reliably — also the
+ * basic eSpeak one, whose Spanish it understands poorly.
+ */
 const PHRASE = 'Next week we have an important meeting with the whole team.';
-const VOICE = { id: 'espeak:en-m1', language: 'en' };
+const PHRASE_LANGUAGE = 'en';
 /** Share of the words that must match: the check is about the pipeline, not the model's WER. */
 const MIN_SIMILARITY = 0.8;
 const WAV = path.join(ARTIFACTS_DIR, 'dictation-phrase.wav');
@@ -93,11 +98,12 @@ async function waitSaved(page) {
 
 /**
  * `added(now, before)` tells which part of the field is the dictated text; by default what
- * was appended after the previous content.
+ * was appended after the previous content. `accept(text)` says when that text is the dictated
+ * phrase; by default when it reads like PHRASE.
  */
 async function dictate(
   page,
-  { field, mic, label, added = (now, before) => now.slice(before.length) },
+  { field, mic, label, added = (now, before) => now.slice(before.length), accept = heard },
 ) {
   const before = await field.inputValue();
   checkEqual(
@@ -140,7 +146,7 @@ async function dictate(
     'the dictated phrase to appear in the field',
     async () => {
       const now = await field.inputValue();
-      return now !== before && heard(added(now, before)) ? now : null;
+      return now !== before && accept(added(now, before)) ? now : null;
     },
     { timeoutMs: 60_000 },
   );
@@ -186,6 +192,7 @@ async function main(browser) {
 
   try {
     let installed = false;
+    let voices = null;
     await section('Preparación: cuenta, motor local y frase sintetizada', async () => {
       await registerThroughUi(page, { name: 'Diana Dictado', email });
       await page.getByRole('heading', { level: 1, name: /Diana/ }).waitFor();
@@ -201,15 +208,22 @@ async function main(browser) {
         local: true,
       });
 
+      // The default English voice of this stack: neural when installed, eSpeak NG otherwise.
+      voices = await voiceSetup(context);
+      const speaker = voices.pick(PHRASE_LANGUAGE, 'male');
       const speech = await apiCall(context, 'POST', '/api/tts/synthesize', {
         text: PHRASE,
-        voiceId: VOICE.id,
-        language: VOICE.language,
+        voiceId: speaker.id,
+        language: PHRASE_LANGUAGE,
         speed: 1,
         pitch: 0,
       });
       checkEqual('POST /api/tts/synthesize', speech.status, 200);
-      checkEqual('la frase la sintetiza el eSpeak del producto', speech.json.provider.id, 'espeak');
+      checkEqual(
+        `la frase la sintetiza la voz del producto (${speaker.name} · ${speaker.provider.name})`,
+        speech.json.provider.id,
+        speaker.provider.id,
+      );
       const audio = await context.request.get(speech.json.audioUrl.replace(API_URL, WEB_URL));
       const raw = path.join(ARTIFACTS_DIR, 'dictation-phrase-raw.wav');
       fs.writeFileSync(raw, await audio.body());
@@ -372,13 +386,28 @@ async function main(browser) {
         await waitSaved(page);
         const sent = transcriptions.length;
         await field.click();
-        script = await dictate(page, { field, mic: micOf(field), label: 'guion' });
+        // The microphone still "hears" the English phrase, now transcribed as Spanish: what the
+        // model writes then depends on the voice (it keeps eSpeak's English words and renders a
+        // natural English voice into Spanish), so the words are not compared with the phrase
+        // here. What must hold is the path: one sentence lands in the script, it is exactly
+        // what the server transcribed, and it was transcribed in the language of the scene.
+        script = await dictate(page, {
+          field,
+          mic: micOf(field),
+          label: 'guion',
+          accept: (text) => normalize(text).split(' ').length >= 4,
+        });
         check('en el guion la frase conserva su punto final', script.trim().endsWith('.'), script);
         await until('the transcription to be recorded', () => transcriptions.length > sent);
         checkEqual(
           'el guion se dicta en el idioma de la voz de la escena, no en el del usuario',
           transcriptions[sent].body.language,
           sceneLanguage,
+        );
+        checkEqual(
+          'lo que queda en el guion es lo que transcribió el servidor',
+          normalize(script),
+          normalize(transcriptions[sent].body.text),
         );
 
         await field.blur();
@@ -465,7 +494,27 @@ async function main(browser) {
       await page.waitForURL(/\/interactive\/[a-z]+_[a-z0-9]+/);
       const box = page.getByRole('textbox', { name: /^Mensaje para / });
       await box.waitFor();
-      const message = await dictate(page, { field: box, mic: micOf(box), label: 'mensaje' });
+      // The avatar speaks Spanish (the default voice of a new session), so the message is
+      // transcribed as Spanish: as in the Studio script, the words depend on the voice that
+      // "speaks" into the microphone and are not compared with the phrase.
+      const sent = transcriptions.length;
+      const message = await dictate(page, {
+        field: box,
+        mic: micOf(box),
+        label: 'mensaje',
+        accept: (text) => normalize(text).split(' ').length >= 4,
+      });
+      await until('the transcription to be recorded', () => transcriptions.length > sent);
+      const sessionId = /\/interactive\/([a-z]+_[a-z0-9]+)/.exec(page.url())[1];
+      const { session: talk } = (
+        await apiCall(context, 'GET', `/api/interactive/sessions/${sessionId}`)
+      ).json;
+      const talkVoice = voices.items.find((voice) => voice.id === talk.voiceId);
+      checkEqual(
+        `el mensaje se dicta en el idioma de la voz del avatar (${talkVoice?.name})`,
+        transcriptions[sent].body.language,
+        talkVoice?.language.slice(0, 2),
+      );
       const reply = page.waitForResponse(
         (response) =>
           /\/api\/interactive\/sessions\/[^/]+\/messages$/.test(new URL(response.url()).pathname) &&
@@ -477,6 +526,20 @@ async function main(browser) {
       const exchange = await response.json();
       checkEqual('el servidor recibe el texto dictado', exchange.userMessage.text, message.trim());
       check('y el avatar contesta', exchange.assistantMessage.text.length > 0);
+      // …out loud, with a default voice of the stack (neural when one is installed).
+      const speakers = new Set(voices.items.filter((v) => v.isDefault).map((v) => v.provider.id));
+      check(
+        '…en voz alta, con la voz por defecto de la pila',
+        typeof exchange.speech?.audioUrl === 'string' && speakers.has(exchange.speech.provider.id),
+        `${exchange.speech?.provider?.name}${voices.neural ? '' : ' (reserva: sin voces neuronales)'}`,
+      );
+      if (voices.neural) {
+        check(
+          '…que es neuronal local',
+          ['kokoro', 'piper'].includes(exchange.speech.provider.id),
+          exchange.speech.provider.id,
+        );
+      }
     });
 
     await section('Lo que pasó por la red', async () => {

@@ -87,7 +87,8 @@ const es = {
       name: 'Modo básico local',
       text: 'Este servidor no tiene un servicio externo de clonado. Se analiza tu muestra en este equipo y se ajusta una voz sintética local para que se acerque a la tuya.',
       points: {
-        pitch: 'Mide el tono medio de tu voz y lo aplica a la voz base.',
+        pitch:
+          'Mide el tono medio de tu voz, elige la voz local más parecida (una neuronal, si está instalada) y le aplica ese tono.',
         pace: 'Estima tu velocidad al hablar y la imita.',
         offline: 'Funciona sin claves ni conexión; la muestra no sale de este servidor.',
         timbre: 'No reproduce tu timbre: sonará a voz sintética, no a ti.',
@@ -113,7 +114,8 @@ const es = {
     elapsed: 'Tiempo transcurrido: {{time}}',
     progressLabel: 'Clonado de {{name}}',
     explain: {
-      basic: 'Se mide el tono y la velocidad de la muestra y se elige la voz local de base.',
+      basic:
+        'Se mide el tono y la velocidad de la muestra y se elige la voz local más parecida como base.',
       premium: '{{name}} está creando la voz a partir de la muestra.',
     },
     noEta: 'Este trabajo no informa de porcentaje ni de tiempo restante.',
@@ -126,7 +128,7 @@ const es = {
     stop: 'Parar',
     basicTitle: 'Clonada en modo básico',
     basicText:
-      'Es una voz local ajustada al tono y la velocidad que se midieron en tu muestra. No reproduce tu timbre.',
+      'Es la voz local más parecida a la tuya (una neuronal, si está instalada) ajustada al tono y la velocidad que se midieron en tu muestra. No reproduce tu timbre.',
     profile: {
       f0: 'Tono medio medido',
       unknown: 'No detectado',
@@ -237,7 +239,8 @@ const en: typeof es = {
       name: 'Local basic mode',
       text: 'This server has no external cloning service. Your sample is analysed on this machine and a local synthetic voice is adjusted to get close to yours.',
       points: {
-        pitch: 'Measures the mean pitch of your voice and applies it to the base voice.',
+        pitch:
+          'Measures the mean pitch of your voice, picks the closest local voice (a neural one, when installed) and applies that pitch to it.',
         pace: 'Estimates how fast you speak and imitates it.',
         offline: 'Works with no keys and offline; the sample never leaves this server.',
         timbre: 'It does not reproduce your timbre: it will sound synthetic, not like you.',
@@ -263,7 +266,8 @@ const en: typeof es = {
     elapsed: 'Elapsed time: {{time}}',
     progressLabel: 'Cloning of {{name}}',
     explain: {
-      basic: 'The pitch and pace of the sample are measured and the local base voice is chosen.',
+      basic:
+        'The pitch and pace of the sample are measured and the closest local voice is chosen as the base.',
       premium: '{{name}} is creating the voice from the sample.',
     },
     noEta: 'This job reports no percentage and no time remaining.',
@@ -276,7 +280,7 @@ const en: typeof es = {
     stop: 'Stop',
     basicTitle: 'Cloned in basic mode',
     basicText:
-      'It is a local voice adjusted to the pitch and pace measured in your sample. It does not reproduce your timbre.',
+      'It is the local voice closest to yours (a neural one, when installed) adjusted to the pitch and pace measured in your sample. It does not reproduce your timbre.',
     profile: {
       f0: 'Mean pitch measured',
       unknown: 'Not detected',

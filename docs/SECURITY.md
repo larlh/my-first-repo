@@ -185,13 +185,31 @@ la interfaz lo avisa y exige aceptarlo antes del primer uso.
 - **Telemetría de bibliotecas de terceros.** La del ONNX Runtime que usa el dictado está
   apagada y vigilada por un test (tabla de arriba). El interruptor se fija en el entorno real
   del proceso desde el hilo principal; quien cree el motor de voz desde dentro de otro
-  `worker_thread` debe definir `ORT_DISABLE_TELEMETRY=1` en el entorno del proceso. **El motor
-  de avatares (Python) usa su propio `onnxruntime` 1.32 y OpenVINO, cuyas bibliotecas contienen
-  el mismo destino de telemetría, y nada en `services/avatar-engine` la desactiva**: no se ha
-  comprobado si llega a conectar, pero en la máquina de construcción existía ya un
-  `~/.cache/Microsoft/DeveloperTools/.onnxruntime/deviceid` anterior a este trabajo. Hasta que
-  se revise, quien necesite garantía de que nada sale del equipo debe arrancar el motor con
-  `ORT_DISABLE_TELEMETRY=1` y verificarlo en su red.
+  `worker_thread` debe definir `ORT_DISABLE_TELEMETRY=1` en el entorno del proceso. Las voces
+  neuronales usan el mismo interruptor antes de crear su hilo (`tts/neural-engine.ts`); son los
+  dos únicos sitios de API y worker que cargan ONNX Runtime. **Medido en uso normal, con las
+  voces neuronales por defecto**: la API y el worker reales, arrancados bajo
+  `strace -f -e trace=connect` con un `HOME` vacío y la configuración por defecto (sin claves),
+  mientras se pedían cuatro preescuchas con Kokoro, dos dictados con Whisper, tres renders de
+  un vídeo de 30 s y una traducción de vídeo con transcripción local y doblaje neuronal: la API
+  hizo 7 llamadas `connect()` y el worker 16, **todas** a PostgreSQL (`127.0.0.1:5432`), Redis
+  (`127.0.0.1:6379`), al motor de avatares (`127.0.0.1:8090`) o a sockets Unix de la propia
+  máquina (`nscd`, la tubería de `tsx`); ninguna a otra dirección, y no se escribió ningún
+  archivo en `HOME`. Es una medida de esos recorridos, no una garantía de todos: los
+  adaptadores externos (con clave), los webhooks y «URL → guion» conectan fuera por diseño, y
+  solo cuando el usuario los configura o los usa. **El motor de avatares (Python)
+  llamaba a casa por dos vías, y ya no**: medido con `HOME` vacío y un proxy sumidero, su
+  `onnxruntime` 1.32 escribía un identificador de dispositivo y abría
+  `mobile.events.data.microsoft.com:443`, y `import openvino` escribía un identificador de
+  cliente en `~/intel` y abría `www.google-analytics.com:443` (4 conexiones en los primeros 23 s
+  de arranque). `parlante_engine/core/privacy.py` lo apaga antes de importar ninguna de las dos
+  bibliotecas (`ORT_DISABLE_TELEMETRY=1` y el paquete `openvino_telemetry` hecho inimportable);
+  con ello, el servidor real bajo `strace` no hizo ninguna conexión ni escribió nada en `HOME`
+  al arrancar, preparar, animar (con ambos conductores) y generar un retrato. Lo vigila
+  `services/avatar-engine/tests/test_privacy.py` con control negativo, y `GET /health → privacy`
+  lo declara. En una máquina donde ya se ejecutó una versión anterior quedan esos
+  identificadores: se pueden borrar (`~/.cache/Microsoft/DeveloperTools/.onnxruntime/`,
+  `~/intel/openvino_ga_cid`, `~/intel/stats`). Detalle y tabla de medidas en el README del motor.
 - **Cadena de suministro del reconocimiento de voz.** `@huggingface/transformers` y
   `onnxruntime-node` se instalan de npm con versión fijada por el lockfile; el script de
   post-instalación de `onnxruntime-node` (descarga de binarios CUDA) **no se ejecuta** (pnpm

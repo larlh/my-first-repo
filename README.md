@@ -34,8 +34,10 @@ Es un producto original (nombre, diseño, avatares y API propios). Interfaz en e
 | Python (opcional) | 3.11 – 3.13, Linux x86-64         | Solo para el motor de avatares fotorrealistas                                   |
 | Navegador         | Reciente, con Canvas2D y WebAudio | Todas las pruebas se han hecho con Chromium; Firefox y Safari no se han probado |
 
-La voz local (eSpeak NG) va empaquetada como WebAssembly dentro de las dependencias de npm: no
-hay que instalar nada en el sistema. Desarrollado y probado en Linux (Ubuntu 24.04, PostgreSQL
+La voz local de reserva (eSpeak NG) va empaquetada como WebAssembly dentro de las dependencias
+de npm, y las voces neuronales locales (Kokoro y Piper) se ejecutan con ONNX Runtime, que
+también llega por npm: no hay que instalar nada en el sistema, solo descargar los modelos una
+vez (`pnpm voices:setup`). Desarrollado y probado en Linux (Ubuntu 24.04, PostgreSQL
 16.15, Redis 7.0, ffmpeg 6.1, Node 22.23).
 
 ## Puesta en marcha en 5 minutos
@@ -45,6 +47,7 @@ pnpm install          # dependencias del monorepo
 pnpm services         # arranca PostgreSQL y Redis locales y crea el rol y las bases de datos
 pnpm db:migrate       # aplica las migraciones
 pnpm db:seed          # opcional: usuario de demostración
+pnpm voices:setup     # recomendado: voces neuronales locales (184 MB, una vez)
 pnpm dev              # API en :4000, worker y web en :5173
 ```
 
@@ -68,27 +71,112 @@ el worker, la web en desarrollo y el motor).
 - La documentación interactiva de la API está en <http://localhost:4000/docs>.
 
 Cuánto tarda (medido en una máquina de 4 núcleos sin GPU): la pila arranca en unos 5 s; un vídeo
-de 30 s con avatar 2D se renderiza en 13–14 s a 720p (2,2 veces más rápido que el tiempo real)
-y en 24–26 s a 1080p, con un pico de unos 0,75–1 GB de memoria entre el worker y ffmpeg.
+de 30 s con avatar 2D y voz neuronal se renderiza a 720p en 17–19 s cuando hay que sintetizar
+la voz (1,6–1,8 veces más rápido que el tiempo real) y en 10,5 s cuando ya está en la caché
+porque se oyó en la vista previa (2,9 veces). Con la voz de reserva eSpeak NG se midieron
+13–14 s a 720p y 24–26 s a 1080p (el 1080p no se ha vuelto a medir con voz neuronal). El worker
+ocupa alrededor de 1 GB con el modelo de voz cargado, más ffmpeg mientras codifica.
 
 ## Proveedores: local sin clave y externo con clave
 
 Con el valor `auto` (por defecto) cada capacidad usa el adaptador externo si su clave está
 definida y, si no, la implementación local.
 
-| Capacidad              | Local, sin clave (por defecto)                                                                                                                                             | Externo                                                                                                                                                          | Qué lo activa                                                                           |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Voz (TTS)              | eSpeak NG: 44 voces en 13 idiomas, sintéticas y claramente robóticas; tiempos de fonema exactos para los labios                                                            | ElevenLabs, OpenAI TTS                                                                                                                                           | `ELEVENLABS_API_KEY`, `OPENAI_API_KEY` (sus voces se suman al catálogo); `TTS_PROVIDER` |
-| Avatar parlante 2D     | Avatares paramétricos dibujados en Canvas2D (10 de stock), en tiempo real; es lo que ves en la vista previa y lo que se exporta                                            | —                                                                                                                                                                | —                                                                                       |
-| Avatar fotorrealista   | Motor neuronal local (`pnpm avatar-engine`): genera retratos, prepara fotos y anima. Lento en CPU                                                                          | Servicio propio de lip-sync por HTTP                                                                                                                             | `LIPSYNC_PROVIDER=external` + `LIPSYNC_ENDPOINT_URL`                                    |
-| Guionista y chat (LLM) | «Heurística local»: plantillas deterministas, etiquetadas como modo básico. No redacta: ordena y reparte tu texto                                                          | Anthropic Claude                                                                                                                                                 | `ANTHROPIC_API_KEY` (`LLM_PROVIDER`, `ANTHROPIC_MODEL`)                                 |
-| Traducción             | Glosario local limitado, marcado como modo básico                                                                                                                          | Anthropic Claude                                                                                                                                                 | `ANTHROPIC_API_KEY` (`TRANSLATION_PROVIDER`)                                            |
-| Transcripción (STT)    | La aporta el usuario (SRT, VTT o texto); con el modelo de voz instalado (`pnpm dictation:setup`), Whisper base en la propia máquina                                        | OpenAI Whisper                                                                                                                                                   | `OPENAI_API_KEY` (`STT_PROVIDER`, `OPENAI_STT_MODEL`)                                   |
-| Dictado                | Whisper base en la propia máquina (CPU), tras `pnpm dictation:setup`. El audio no sale del equipo ni se guarda. Sin el modelo, el dictado local aparece como no disponible | Ninguno en el servidor. La web puede ofrecer además el reconocimiento del navegador (en Chrome envía el audio a Google), solo si el usuario lo elige y lo acepta | `pnpm dictation:setup` (`DICTATION_MODEL`, `DICTATION_MODEL_DIR`)                       |
-| Clonado de voz         | «Perfil de voz»: estima tono y velocidad de la muestra y ajusta una voz local. No imita el timbre                                                                          | ElevenLabs                                                                                                                                                       | `ELEVENLABS_API_KEY` (`VOICE_CLONE_PROVIDER`)                                           |
-| Moderación             | Lista de bloqueo local, ampliable con `MODERATION_EXTRA_BLOCKLIST`                                                                                                         | —                                                                                                                                                                | —                                                                                       |
-| Almacenamiento         | Disco local (`STORAGE_LOCAL_DIR`, por defecto `./data/storage`)                                                                                                            | S3 o compatible (MinIO…)                                                                                                                                         | `STORAGE_PROVIDER=s3` + `S3_*`                                                          |
-| Pagos                  | Adaptador simulado: cambiar de plan no cobra nada                                                                                                                          | fuera de alcance                                                                                                                                                 | —                                                                                       |
+| Capacidad              | Local, sin clave (por defecto)                                                                                                                                                                                                                                                                                                                  | Externo                                                                                                                                                          | Qué lo activa                                                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Voz (TTS)              | Voces neuronales en la propia máquina (CPU), tras `pnpm voices:setup`: Kokoro (español, inglés, francés, italiano, portugués) y Piper (alemán, neerlandés, polaco, ruso, sueco, griego, catalán…). Los labios y los subtítulos siguen los tiempos reales del audio. Siempre disponible como reserva: eSpeak NG (44 voces, 13 idiomas, robótica) | ElevenLabs, OpenAI TTS                                                                                                                                           | `pnpm voices:setup` (`VOICE_*`); `ELEVENLABS_API_KEY`, `OPENAI_API_KEY` (sus voces se suman al catálogo); `TTS_PROVIDER` decide de quién es la voz por defecto |
+| Avatar parlante 2D     | Avatares paramétricos dibujados en Canvas2D (10 de stock), en tiempo real; es lo que ves en la vista previa y lo que se exporta                                                                                                                                                                                                                 | —                                                                                                                                                                | —                                                                                                                                                              |
+| Avatar fotorrealista   | Motor neuronal local (`pnpm avatar-engine`): genera retratos, prepara fotos y anima. Lento en CPU                                                                                                                                                                                                                                               | Servicio propio de lip-sync por HTTP                                                                                                                             | `LIPSYNC_PROVIDER=external` + `LIPSYNC_ENDPOINT_URL`                                                                                                           |
+| Guionista y chat (LLM) | «Heurística local»: plantillas deterministas, etiquetadas como modo básico. No redacta: ordena y reparte tu texto                                                                                                                                                                                                                               | Anthropic Claude                                                                                                                                                 | `ANTHROPIC_API_KEY` (`LLM_PROVIDER`, `ANTHROPIC_MODEL`)                                                                                                        |
+| Traducción             | Glosario local limitado, marcado como modo básico                                                                                                                                                                                                                                                                                               | Anthropic Claude                                                                                                                                                 | `ANTHROPIC_API_KEY` (`TRANSLATION_PROVIDER`)                                                                                                                   |
+| Transcripción (STT)    | La aporta el usuario (SRT, VTT o texto); con el modelo de voz instalado (`pnpm dictation:setup`), Whisper base en la propia máquina                                                                                                                                                                                                             | OpenAI Whisper                                                                                                                                                   | `OPENAI_API_KEY` (`STT_PROVIDER`, `OPENAI_STT_MODEL`)                                                                                                          |
+| Dictado                | Whisper base en la propia máquina (CPU), tras `pnpm dictation:setup`. El audio no sale del equipo ni se guarda. Sin el modelo, el dictado local aparece como no disponible                                                                                                                                                                      | Ninguno en el servidor. La web puede ofrecer además el reconocimiento del navegador (en Chrome envía el audio a Google), solo si el usuario lo elige y lo acepta | `pnpm dictation:setup` (`DICTATION_MODEL`, `DICTATION_MODEL_DIR`)                                                                                              |
+| Clonado de voz         | «Perfil de voz»: estima tono y velocidad de la muestra y ajusta la voz local más parecida (una neuronal, si está instalada). No imita el timbre                                                                                                                                                                                                 | ElevenLabs                                                                                                                                                       | `ELEVENLABS_API_KEY` (`VOICE_CLONE_PROVIDER`)                                                                                                                  |
+| Moderación             | Lista de bloqueo local, ampliable con `MODERATION_EXTRA_BLOCKLIST`                                                                                                                                                                                                                                                                              | —                                                                                                                                                                | —                                                                                                                                                              |
+| Almacenamiento         | Disco local (`STORAGE_LOCAL_DIR`, por defecto `./data/storage`)                                                                                                                                                                                                                                                                                 | S3 o compatible (MinIO…)                                                                                                                                         | `STORAGE_PROVIDER=s3` + `S3_*`                                                                                                                                 |
+| Pagos                  | Adaptador simulado: cambiar de plan no cobra nada                                                                                                                                                                                                                                                                                               | fuera de alcance                                                                                                                                                 | —                                                                                                                                                              |
+
+### Voces neuronales locales
+
+Sin claves, sin suscripción y sin conexión: las voces se generan en tu equipo con modelos
+abiertos. Se instalan una vez:
+
+```bash
+pnpm voices:setup                     # Kokoro con todas sus voces: es, en, fr, it, pt — 184 MB
+pnpm voices:setup --languages de,nl   # voces Piper de otros idiomas (unos 63 MB por voz)
+pnpm voices:setup --voices <id>,<id>  # voces concretas (los ids los da --list)
+pnpm voices:setup --all               # todo el catálogo (unos 1,1 GB)
+pnpm voices:setup --list              # catálogo, licencia de cada voz y qué hay instalado
+pnpm voices:setup --remove --voices <id>   # borra los archivos de una voz
+```
+
+Funciona igual en Windows, macOS y Linux (es Node; no hay binarios que compilar). Los archivos
+se descargan solo de `huggingface.co`, de revisiones fijadas, y cada uno se comprueba con su
+SHA-256 antes de aceptarlo; van a `./data/models` (`VOICE_MODEL_DIR`). Repetir el comando no
+descarga nada de nuevo. Las voces aparecen en la biblioteca en cuanto termina la descarga, sin
+reiniciar.
+
+- **Qué cambia al instalarlas** (con `TTS_PROVIDER=auto`, el valor por defecto): la voz de los
+  vídeos nuevos, de los vídeos creados desde las plantillas integradas, del guionista, del
+  avatar interactivo y de la presentación de cada avatar pasa a ser la neuronal de su idioma y
+  género. Los vídeos ya guardados conservan la voz que tenían. eSpeak sigue en el catálogo,
+  etiquetada como modo básico, y es la voz de los idiomas y géneros sin voz neuronal.
+- **Sin instalarlas nada falla**: la biblioteca las muestra como «Sin instalar» con el comando
+  que las instala, y todo sigue funcionando con eSpeak.
+- **Labios y subtítulos**: los dos modelos calculan cuánto dura cada fonema antes de generar el
+  audio, y Parlante usa esas duraciones. La boca de los avatares 2D y los subtítulos palabra a
+  palabra siguen el audio real, no una estimación. Medido sobre el audio: el inicio de palabra
+  tras una pausa queda a 12 ms de mediana del sonido, y la apertura de boca que piden los
+  visemas va entre 20 ms por delante y 40 ms por detrás de la sonoridad según la voz (0–10 ms en
+  español; antes de corregir el adelanto de Kokoro iba 50–80 ms tarde). La vista previa del
+  Studio y el MP4 usan el mismo audio y la misma línea de tiempo: la exportación no vuelve a
+  sintetizar.
+- **Avatares fotorrealistas**: el motor recibe el audio real de cada escena y, en cada clip,
+  mide dos formas de mover los labios contra la sonoridad de ese audio — siguiendo el sonido
+  con un modelo guiado por audio, o siguiendo los fonemas de la voz — y se queda con la que la
+  sigue mejor (en empate, el audio). La ficha del vídeo dice cuál trabajó («Labios guiados por
+  el audio» / «por los fonemas de la voz»). Con `AVATAR_ENGINE_AUTO_DRIVER=audio` el motor
+  usa siempre el modelo guiado por audio.
+- **Velocidad y tono**: la velocidad es un parámetro de los modelos. El tono no: se cambia
+  reproduciendo el audio más rápido o más lento (compensando el ritmo), así que el timbre
+  cambia con él; por eso el control se limita a ±4 semitonos en estas voces y la interfaz lo
+  dice.
+- **Cuánto tarda** (medido en una máquina de 4 núcleos sin GPU). Con la máquina libre, a
+  través de la API: la preescucha de una frase de 5 s de voz tarda 2,8 s la primera vez
+  (incluye cargar el modelo) y 1,1–1,2 s las siguientes (0,23 s de cálculo por segundo de voz);
+  repetida, 9 ms (caché). Un vídeo 2D de 30 s a 720p se renderiza en 18,7 s la primera vez
+  (carga el modelo y sintetiza las cuatro escenas), en 16,9 s con guion nuevo y el modelo ya
+  cargado y en 10,5 s cuando la voz ya está en la caché (por ejemplo, porque la oíste en la
+  vista previa): entre 1,6 y 2,9 veces más rápido que el tiempo real. Con la máquina ocupada
+  por otros trabajos (carga 7–10) la misma frase tardó 3,1–6,0 s y un párrafo de 37 s de voz,
+  18–32 s. El audio se entrega entero, no en streaming.
+- **Memoria** (medida, proceso Node completo): los modelos viven en hilos aparte de la API y
+  del worker, y cada proceso carga su copia cuando la necesita. API: 0,3 GB al arrancar, 0,9 GB
+  con la voz cargada y 2,0 GB (pico 2,5) con la voz y el dictado. Worker: 0,3 GB al arrancar,
+  1,0 GB tras renderizar con voz neuronal y 2,3 GB (pico 2,6) si además transcribe un vídeo
+  para traducirlo. Todo se libera tras 15 minutos sin uso (`VOICE_IDLE_UNLOAD_SEC`,
+  `DICTATION_IDLE_UNLOAD_SEC`). Junto al motor neuronal (pico medido de 4,1 GB animando y de
+  6,4 GB generando un retrato) la suma de picos es de 9 a 11,5 GB: cabe en un equipo de 16 GB,
+  con poco margen si se genera un retrato mientras además se dicta y se renderiza.
+- **Calidad esperada, dicha con medidas** (nadie las ha escuchado aquí): el reconocedor local
+  Whisper base entiende las frases de prueba de Kokoro con un 2 % de palabras erróneas en
+  español y un 1 % en inglés; las mismas frases con eSpeak, con un 44 % y un 6 %. En un vídeo
+  de dos escenas hecho por la interfaz y exportado a MP4, el mismo reconocedor falla 5 de 37
+  palabras con la voz neuronal y 17 de 37 con eSpeak. Tablas completas, por voz, en
+  [`docs/MODELS.md`](docs/MODELS.md).
+- **Lo que no hay**: voz neuronal en turco, voz femenina en ruso y voz masculina en francés
+  (ninguna voz abierta con licencia que permita uso comercial); esos casos usan eSpeak. Las
+  siglas, los números y las abreviaturas se leen como los lee eSpeak NG, que es quien convierte
+  el texto en fonemas: «2 h 30 min» se lee letra a letra; escribe «2 horas 30 minutos».
+
+| Variable                | Efecto                                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TTS_PROVIDER`          | `auto` (externo con clave → neuronales instaladas → eSpeak), `neural`, `espeak`, `elevenlabs`, `openai`                                            |
+| `VOICE_MODEL_DIR`       | Dónde están los modelos (`./data/models`)                                                                                                          |
+| `VOICE_KOKORO_VARIANT`  | Precisión de los pesos de Kokoro: `uint8` (por defecto), `fp32` o `q8` (tabla en MODELS.md)                                                        |
+| `VOICE_THREADS`         | Hilos de CPU de los modelos (0 = todos los núcleos, hasta 4)                                                                                       |
+| `VOICE_DEVICE`          | `cpu` (lo medido y probado). `dml` (DirectML, Windows) y `cuda` piden GPU a ONNX Runtime y vuelven a la CPU si no se puede usar: **sin verificar** |
+| `VOICE_IDLE_UNLOAD_SEC` | Segundos sin uso tras los que se libera la memoria (900; 0 = nunca)                                                                                |
 
 ### Dictado por micrófono
 
@@ -189,11 +277,12 @@ pnpm avatar-engine    # en otra terminal; escucha en http://127.0.0.1:8090
 ```
 
 La primera vez crea un entorno virtual en `services/avatar-engine/.venv` (unos 660 MB),
-descarga los pesos con verificación sha256 a `data/models` (5,0 GB; el generador de retratos son
-4,3 GB de ellos) y deriva en el primer uso un archivo más de 1,7 GB. No hace falta reiniciar la
-API ni el worker: la web muestra el motor como disponible en cuanto responde. Con
-`AVATAR_ENGINE_DOWNLOAD_ARGS=--minimal` solo se bajan 0,56 GB (animar y preparar fotos, sin
-generar retratos). Sin el motor, la aplicación lo dice en la biblioteca de avatares y en el
+descarga los pesos con verificación sha256 a `data/models` (6,7 GB: 4,3 GB del generador de
+retratos y 1,65 GB del modelo que mueve los labios siguiendo el sonido) y deriva en el primer uso
+un archivo más de 1,7 GB. No hace falta reiniciar la API ni el worker: la web muestra el motor
+como disponible en cuanto responde. Con `AVATAR_ENGINE_DOWNLOAD_ARGS=--minimal` solo se bajan
+0,56 GB (animar y preparar fotos, sin generar retratos, y con los labios guiados solo por la
+línea de tiempo del texto); `--no-audio` quita únicamente el modelo de labios por audio. Sin el motor, la aplicación lo dice en la biblioteca de avatares y en el
 diálogo de render, y no deja encolar (ni cobra) nada que lo necesite.
 
 **Es lento en CPU, y la aplicación lo dice antes de empezar.** Cifras medidas en una máquina de
@@ -228,6 +317,7 @@ terceros: el modelo que genera los retratos impone restricciones de uso. Detalle
 pnpm dev                      # api + worker + web        (dev:api | dev:worker | dev:web)
 pnpm services                 # PostgreSQL + Redis locales (idempotente)
 pnpm avatar-engine            # motor neuronal local en :8090 (opcional)
+pnpm voices:setup             # instala las voces neuronales locales (184 MB, una vez; recomendado)
 pnpm dictation:setup          # instala el modelo de voz del dictado local (139 MB, una vez; opcional)
 pnpm db:migrate               # aplica migraciones a DATABASE_URL
 pnpm db:seed                  # usuario demo@parlante.local / parlante-demo (plan Creator)
@@ -246,20 +336,24 @@ Los tests de `db`, `jobs`, `api` y `worker` usan PostgreSQL y Redis reales y cre
 datos propia por ejecución, así que necesitan `pnpm services`. Los del motor:
 `cd services/avatar-engine && .venv/bin/python -m pytest` (segundos; los marcados `slow` cargan
 los modelos y renderizan vídeo real). Los tests marcados `[slow]` de `providers`, `api` y
-`worker` cargan el modelo de voz real y se saltan solos si no está instalado
-(`pnpm dictation:setup`).
+`worker` cargan los modelos reales (reconocimiento y voces neuronales) y se saltan solos si no
+están instalados (`pnpm dictation:setup`, `pnpm voices:setup`).
 
 Las pruebas de extremo a extremo arrancan su propia pila (base de datos nueva, API, worker y
 web) y la borran al terminar:
 
 ```bash
-pnpm e2e e2e/core.mjs                       # registro → Studio → render → MP4, compartir, créditos, API, webhooks
+pnpm e2e e2e/core.mjs                       # registro → Studio → render → MP4, compartir, créditos, API, webhooks, voces neuronales
 E2E_ALLOW_PRIVATE_URLS=false pnpm e2e e2e/ai.mjs    # bibliotecas, guionista, clonado, traducción, lotes, interactivo
 pnpm e2e e2e/dictation.mjs                  # dictado con micrófono simulado y el modelo local (se salta si falta)
+E2E_TTS_PROVIDER=espeak pnpm e2e e2e/core.mjs       # lo mismo solo con la voz de reserva (eSpeak NG)
 ```
 
-Con el motor arrancado, `e2e/ai.mjs` cubre además lo fotorrealista; su cabecera explica las
-variables (`E2E_ENGINE=1`, `E2E_AVATAR_ENGINE_URL`…).
+La pila de pruebas usa las voces que tendría una instalación sin claves: las neuronales locales
+si están instaladas (`pnpm voices:setup`) y, si no, eSpeak NG; en ese caso las comprobaciones de
+la voz neuronal se saltan con un aviso bien visible en la salida. Con el motor arrancado,
+`e2e/ai.mjs` cubre además lo fotorrealista; su cabecera explica las variables (`E2E_ENGINE=1`,
+`E2E_AVATAR_ENGINE_URL`…).
 
 ## Con Docker
 
@@ -310,18 +404,32 @@ el resultado en la base de datos, que es lo que la web consulta.
 
 Dichos tal cual, para que nadie los descubra por sorpresa.
 
-- **Calidad del modo local.** La voz de eSpeak NG es inteligible pero robótica. El guionista y
-  la traducción locales son heurísticos (la traducción local es un glosario: sirve para probar
-  el flujo, no para publicar). El «clonado» local es un perfil de tono y velocidad, no una
-  imitación del timbre. Todo ello se etiqueta como modo básico en la interfaz y en la API.
+- **Calidad del modo local.** Las voces neuronales (Kokoro, Piper) se han evaluado con medidas
+  objetivas, no escuchándolas; la voz de reserva, eSpeak NG, es inteligible pero robótica. El
+  guionista y la traducción locales son heurísticos (la traducción local es un glosario: sirve
+  para probar el flujo, no para publicar). El «clonado» local es un perfil de tono y velocidad
+  sobre la voz local más parecida, no una imitación del timbre. Lo heurístico se etiqueta como
+  modo básico en la interfaz y en la API; las voces neuronales, como «Neuronal local».
 - **Proveedores externos sin probar contra el servicio real.** Los adaptadores de Anthropic,
   ElevenLabs, OpenAI, S3 y el lip-sync externo tienen tests con respuestas simuladas; ninguno
   se ha ejecutado aquí con una clave real.
+- **Voces neuronales**: nadie las ha escuchado aquí; lo que se afirma de ellas son medidas
+  (inteligibilidad para un reconocedor, niveles, sincronía con el audio), no un juicio de
+  naturalidad. No hay voz neuronal en turco, femenina en ruso ni masculina en francés. Los
+  números, siglas y abreviaturas se leen como los expande eSpeak NG, que escribe los fonemas
+  también para estas voces («2 h 30 min» se deletrea), y el inglés de Kokoro no usa su
+  diccionario propio. El tono se cambia por remuestreo (±4 semitonos, altera el timbre). El
+  audio no llega en streaming. Solo se han ejecutado en Linux x86-64 y en CPU: Windows y macOS
+  (mismo runtime, binarios incluidos) y la GPU (`VOICE_DEVICE`) están sin verificar.
 - **Lo fotorrealista es lento en CPU** (tabla de arriba) y la GPU no está verificada. La vista
   previa del Studio y el avatar interactivo no usan el motor: muestran una aproximación 2D del
-  retrato; el movimiento neuronal solo aparece en el vídeo exportado.
+  retrato; el movimiento neuronal solo aparece en el vídeo exportado. Elegir cómo mover los
+  labios en cada clip (audio o fonemas, lo que mejor siga el sonido) añade unos 10 s de
+  preparación por clip; la elección se mide con la correlación entre la apertura de la boca y
+  la sonoridad, un indicador indirecto: no hay un juicio perceptivo de cuál se ve más natural.
 - **Encuadre «busto» de los avatares fotorrealistas**: el retrato es cuadrado y, si la caja del
-  avatar es más ancha que la figura, los hombros se cortan en vertical en los lados. Se evita
+  avatar es más ancha que la figura, los hombros no llegan al borde; sus cortes laterales se
+  funden con el fondo. Un corte horizontal (arriba, en el pelo, o abajo) no se trata: se evita
   con «primer plano», con forma circular o redondeada, o ajustando la caja.
 - **El kit de marca no comprueba el contraste**: aplica sus colores y tipografías a las capas
   con papel de marca y sustituye las capas marcadas como «logo» (ninguna plantilla integrada
@@ -378,10 +486,15 @@ Dichos tal cual, para que nadie los descubra por sorpresa.
   [`docs/MODELS.md`](docs/MODELS.md); condiciones en
   [`docs/RESPONSIBLE_USE.md`](docs/RESPONSIBLE_USE.md).
 - **Voz local**: `@echogarden/espeak-ng-emscripten` (eSpeak NG compilado a WebAssembly) se
-  distribuye bajo **GPL-3.0**. Parlante lo usa como dependencia de npm sin modificarla. Si
-  redistribuyes Parlante con esa dependencia incluida (por ejemplo, en una imagen de Docker),
-  debes cumplir la GPL-3.0 para ese componente; valora con asesoría legal su efecto sobre el
-  conjunto, o configura otro proveedor de voz (`TTS_PROVIDER`) y retira la dependencia.
+  distribuye bajo **GPL-3.0**. Parlante lo usa como dependencia de npm sin modificarla, como voz
+  de reserva **y para convertir el texto en fonemas de las voces neuronales** (Kokoro y Piper
+  dependen de él). Si redistribuyes Parlante con esa dependencia incluida (por ejemplo, en una
+  imagen de Docker), debes cumplir la GPL-3.0 para ese componente; valora con asesoría legal su
+  efecto sobre el conjunto. Prescindir de él significa quedarse solo con proveedores de voz
+  externos.
+- **Voces neuronales locales**: Kokoro-82M (**Apache-2.0**) y voces de Piper, cada una con la
+  licencia de sus datos (CC0, CC BY, CC BY-SA, Unlicense; ninguna no comercial). Algunas piden
+  atribución; `pnpm voices:setup --list` y [`docs/MODELS.md`](docs/MODELS.md) lo detallan.
 - **Reconocimiento de voz local**: los modelos Whisper (`Xenova/whisper-base` y
   `whisper-small`, **Apache-2.0**) se descargan aparte; el runtime son
   `@huggingface/transformers` (Apache-2.0) y `onnxruntime-node` (MIT). `@huggingface/transformers`

@@ -32,7 +32,8 @@ def main() -> int:
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--max-size", type=int, default=512)
     ap.add_argument("--seed", type=int)
-    ap.add_argument("--driver", default="auto", choices=["auto", "visemes", "audio"])
+    ap.add_argument("--driver", choices=["auto", "visemes", "audio"],
+                    help="default: the timeline when --runtime is given, else the audio model")
     ap.add_argument("--max-frames", type=int)
     ap.add_argument("--mux", action="store_true", help="also write review.mp4 (clip + audio)")
     a = ap.parse_args()

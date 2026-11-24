@@ -73,6 +73,69 @@ export function photoAvatarPlacement(
 }
 
 /**
+ * Width of the fade applied to a VISIBLE VERTICAL EDGE of a photorealistic avatar picture, as
+ * a fraction of the picture's placed width. A prepared portrait is square and its shoulders
+ * run into its left and right borders, so wherever such a border (or the layer box that crops
+ * the zoomed picture) falls inside the frame the body would end in a straight vertical cut.
+ */
+export const PHOTO_SIDE_FADE = 0.1;
+
+/** One faded edge in box-local x: fully transparent at `from`, fully opaque at `to`. */
+export interface PhotoFadeEdge {
+  from: number;
+  to: number;
+}
+
+export interface PhotoSideFade {
+  left: PhotoFadeEdge | null;
+  right: PhotoFadeEdge | null;
+}
+
+/**
+ * WHICH vertical edges of a photorealistic avatar picture must fade out, and where — pure
+ * geometry shared by the stand-in and the neural clip (the layer painter applies it to both),
+ * so the Studio preview and the exported MP4 end the shoulders the same way.
+ *
+ * `place` is `photoAvatarPlacement(...)` for the layer `box`; x coordinates of the result are
+ * relative to `box.x`, already mirrored when `flip` is set. An edge fades when it is visible
+ * as a cut inside the frame:
+ *  - the picture's own border lies inside the box (the picture is narrower than the box), or
+ *  - the box crops the picture, the layer has no shape mask (`windowed` false — with a circle
+ *    or rounded mask the box is a window and its edge is a legitimate frame) and that box edge
+ *    is inside the canvas (a crop by the canvas edge is how any camera frame ends).
+ * Returns null when nothing has to fade (callers then draw directly, untouched).
+ */
+export function photoSideFade(
+  place: PixelBox,
+  box: PixelBox,
+  options: { windowed: boolean; canvasWidth: number; flip?: boolean },
+): PhotoSideFade | null {
+  if (!(place.w > 0) || !(box.w > 0)) return null;
+  const EPS = 0.5;
+  const visLeft = Math.max(place.x, box.x);
+  const visRight = Math.min(place.x + place.w, box.x + box.w);
+  const visible = visRight - visLeft;
+  if (!(visible > 2)) return null;
+  const width = Math.min(PHOTO_SIDE_FADE * place.w, 0.4 * visible);
+  const fades = (edgeX: number, pictureBorderInside: boolean): boolean => {
+    if (edgeX <= EPS || edgeX >= options.canvasWidth - EPS) return false; // cropped by the frame
+    return pictureBorderInside || !options.windowed;
+  };
+  let left = fades(visLeft, place.x > box.x + EPS)
+    ? { from: visLeft - box.x, to: visLeft - box.x + width }
+    : null;
+  let right = fades(visRight, place.x + place.w < box.x + box.w - EPS)
+    ? { from: visRight - box.x, to: visRight - box.x - width }
+    : null;
+  if (options.flip) {
+    const mirror = (edge: PhotoFadeEdge | null): PhotoFadeEdge | null =>
+      edge ? { from: box.w - edge.from, to: box.w - edge.to } : null;
+    [left, right] = [mirror(right), mirror(left)];
+  }
+  return left || right ? { left, right } : null;
+}
+
+/**
  * How far the stand-in may move, as fractions of the layer box (so the motion is the same
  * number of pixels whatever the framing zoom). Kept to about a pixel or two at preview sizes:
  * the stand-in must stay registered with the neural clip that replaces it in the export.
@@ -120,6 +183,8 @@ export function createPhotoAvatarRig(
   return {
     id,
     kind: 'photo',
+    placement: (box: PixelBox, framing: AvatarFraming): PixelBox =>
+      photoAvatarPlacement(image.width, image.height, box, framing, rig.landmarks),
     draw(ctx: Ctx2D, box: PixelBox, state: AvatarState, options: AvatarDrawOptions): void {
       const place = photoAvatarPlacement(
         image.width,

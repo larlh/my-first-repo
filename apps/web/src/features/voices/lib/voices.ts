@@ -105,6 +105,50 @@ export function countByKind(
   return counts;
 }
 
+/**
+ * Order of the voices inside a group: the ones that sound best first. Neural and external
+ * voices that can be used now, then the local neural voices that still have to be installed
+ * (so people find out they exist), then the basic local voices. The order the server sent
+ * (its own preference) is kept inside each tier.
+ */
+export function voiceTier(voice: Pick<Voice, 'provider' | 'unavailable'>): 0 | 1 | 2 {
+  if (voice.unavailable) return 1;
+  return voice.provider.quality === 'premium' ? 0 : 2;
+}
+
+function byTier(voices: readonly Voice[]): Voice[] {
+  return voices
+    .map((voice, index) => ({ voice, index }))
+    .sort((a, b) => voiceTier(a.voice) - voiceTier(b.voice) || a.index - b.index)
+    .map((entry) => entry.voice);
+}
+
+/** Stock voices that are listed but cannot be used until their model is installed. */
+export function notInstalled(voices: readonly Voice[]): Voice[] {
+  return voices.filter((voice) => voice.unavailable !== undefined);
+}
+
+/**
+ * The command that installs every voice in `voices` that is missing: the plain default one
+ * when it covers them all, otherwise the languages that are missing.
+ */
+export function installCommandFor(voices: readonly Voice[]): string | null {
+  const missing = notInstalled(voices);
+  if (missing.length === 0) return null;
+  const commands = new Set(missing.map((voice) => voice.unavailable?.command ?? ''));
+  const first = [...commands][0];
+  if (commands.size === 1 && first) return first;
+  const languages = [...new Set(missing.map((voice) => voiceLanguage(voice)))];
+  return `pnpm voices:setup --languages ${languages.join(',')}`;
+}
+
+/** The pitch a voice will really apply for a requested one (its own range, if it has one). */
+export function clampPitch(voice: Pick<Voice, 'pitchRange'>, pitch: number): number {
+  const min = voice.pitchRange?.minSemitones ?? PITCH_RANGE.min;
+  const max = voice.pitchRange?.maxSemitones ?? PITCH_RANGE.max;
+  return Math.min(max, Math.max(min, pitch));
+}
+
 export interface VoiceGroup {
   /** `multi` gathers the voices that speak every language when no language is selected. */
   key: LanguageCode | 'multi' | 'cloned';
@@ -134,9 +178,9 @@ export function groupVoices(voices: readonly Voice[]): VoiceGroup[] {
   if (cloned.length > 0) groups.push({ key: 'cloned', voices: cloned });
   for (const code of LANGUAGE_CODES) {
     const list = byLanguage.get(code);
-    if (list && list.length > 0) groups.push({ key: code, voices: list });
+    if (list && list.length > 0) groups.push({ key: code, voices: byTier(list) });
   }
-  if (multi.length > 0) groups.push({ key: 'multi', voices: multi });
+  if (multi.length > 0) groups.push({ key: 'multi', voices: byTier(multi) });
   return groups;
 }
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Download the engine's weights (idempotent, sha256-verified, resumable).
 
-    python scripts/download_models.py                 # prepare + animate + generate (no audio driver)
-    python scripts/download_models.py --minimal       # prepare + animate only (0.56 GB)
-    python scripts/download_models.py --with-audio    # + HuBERT/LMDM for audio without a timeline (1.65 GB)
+    python scripts/download_models.py                 # prepare + animate (both drivers) + generate
+    python scripts/download_models.py --minimal       # prepare + animate with the viseme driver only (0.56 GB)
+    python scripts/download_models.py --no-audio      # everything but the audio driver (saves 1.65 GB)
+    python scripts/download_models.py --with-audio    # with --minimal: add the audio driver (HuBERT + LMDM)
     python scripts/download_models.py --all           # every declared model
     python scripts/download_models.py --import-from /path/to/hf-cache   # hard-link verified files, no download
     python scripts/download_models.py --list          # table: model, file, size, licence, state
@@ -33,14 +34,18 @@ def selected(reg, args) -> list:
         caps = {"prepare", "animate"}
         if not args.minimal:
             caps.add("generate")
-        if args.with_audio or args.all:
+        # Lips that follow the sound are the default: the audio driver is part of the normal
+        # download. Without it `driver: "auto"` falls back to the viseme timeline.
+        if args.all or args.with_audio or not (args.minimal or args.no_audio):
             caps.add("animate-audio")
     return [f for f in reg.files if caps & set(f.capabilities)]
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--with-audio", action="store_true", help="include the audio-driven model")
+    ap.add_argument("--with-audio", action="store_true",
+                    help="include the audio-driven model (already part of the default set; useful with --minimal)")
+    ap.add_argument("--no-audio", action="store_true", help="leave the audio-driven model out (saves 1.65 GB)")
     ap.add_argument("--all", action="store_true", help="include every declared model")
     ap.add_argument("--minimal", action="store_true", help="only what prepare + animate need")
     ap.add_argument("--import-from", metavar="DIR", action="append", default=[],

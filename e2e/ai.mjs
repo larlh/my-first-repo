@@ -37,7 +37,7 @@
  *
  * Exit code 0 only when every executed step passed. */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -215,6 +215,55 @@ async function apiCall(method, pathname, { body, multipart, expect: expected } =
 
 const apiGet = async (pathname) => (await apiCall('GET', pathname, { expect: 200 })).json;
 
+/**
+ * The voices this stack gives to new content (`Voice.isDefault` of `GET /api/voices`, read the
+ * way the web app does): an installed local neural voice when there is one, eSpeak NG
+ * otherwise. Every expectation about "who generated the audio" comes from here, so the walk
+ * passes on both kinds of machine; the checks that need a neural voice are skipped, visibly,
+ * when none is installed.
+ */
+const stack = { neural: false, voices: [] };
+const NEURAL_VOICE_PROVIDERS = ['kokoro', 'piper'];
+
+function defaultVoice(language, gender) {
+  const base = language.slice(0, 2);
+  const usable = (voice) =>
+    voice.kind === 'stock' &&
+    voice.status === 'ready' &&
+    !voice.unavailable &&
+    (voice.multilingual || voice.language.slice(0, 2) === base) &&
+    (!gender || voice.gender === gender);
+  const voice =
+    stack.voices.find((v) => usable(v) && v.isDefault) ?? stack.voices.find((v) => usable(v));
+  assert(voice, `a usable ${gender ?? ''} voice for ${language}`);
+  return voice;
+}
+
+async function readVoiceStack() {
+  stack.voices = (await apiGet('/api/voices?limit=200')).items;
+  stack.neural = NEURAL_VOICE_PROVIDERS.includes(defaultVoice('es').provider.id);
+  return stack;
+}
+
+/** New content starts with a default voice of the stack: neural when one is installed. */
+function assertDefaultVoice(voiceId, what) {
+  const voice = stack.voices.find((candidate) => candidate.id === voiceId);
+  assert(voice, `the voice of ${what} (${voiceId}) is in the catalogue`);
+  assertEqual(voice.isDefault, true, `${what} starts with a default voice (${voiceId})`);
+  if (stack.neural)
+    assert(
+      NEURAL_VOICE_PROVIDERS.includes(voice.provider.id),
+      `${what} starts with a neural voice (got ${voiceId})`,
+    );
+}
+
+function needsNeuralVoices() {
+  if (!stack.neural)
+    throw new Skip(
+      'needs the local neural voices (`pnpm voices:setup`, and no E2E_TTS_PROVIDER=espeak)',
+    );
+}
+
 async function credits() {
   const overview = await apiGet('/api/billing');
   return overview.credits;
@@ -310,6 +359,18 @@ function ffprobe(file) {
     { encoding: 'utf8' },
   );
   return JSON.parse(out);
+}
+
+/** Mean volume (dB) of the whole audio track of a media file. */
+function ffmpegVolume(file) {
+  const result = spawnSync(
+    'ffmpeg',
+    ['-v', 'info', '-i', file, '-vn', '-af', 'volumedetect', '-f', 'null', '-'],
+    { encoding: 'utf8' },
+  );
+  const match = /mean_volume:\s*(-?[\d.]+|-inf) dB/.exec(result.stderr ?? '');
+  if (!match) throw new Error(`volumedetect gave no result for ${file}`);
+  return match[1] === '-inf' ? -Infinity : Number(match[1]);
 }
 
 function ffmpeg(args) {
@@ -507,6 +568,7 @@ async function sectionAvatars() {
     assertEqual(video.status, 'draft', 'the new video is a draft');
     const layer = video.composition.scenes[0].layers.find((l) => l.type === 'avatar');
     assertEqual(layer?.avatarId, 'stock_mateo', 'the draft uses the chosen avatar');
+    assertDefaultVoice(video.composition.scenes[0].script.voiceId, 'the avatar draft');
     // The real Studio: its preview canvas and the script of the scene.
     await studioShowsScript(video.composition.scenes[0].script.text);
     return `borrador ${videoId}`;
@@ -552,9 +614,34 @@ async function sectionVoices() {
     const spanish = page.locator('section[aria-labelledby="voices-es"]');
     const rows = await spanish.locator('li').count();
     assert(rows >= 2, `Spanish has several voices (got ${rows})`);
-    const rowText = await settledText(spanish.locator('li').first(), [/eSpeak NG/, /Modo básico/]);
-    assert(/eSpeak NG/.test(rowText), 'the row names the provider (eSpeak NG)');
-    assert(/Modo básico/.test(rowText), 'the row is labelled «Modo básico»');
+    // The first voice of a language is the default of the stack: a local neural voice when
+    // one is installed, the basic eSpeak voice otherwise. Each row says which.
+    const first = defaultVoice('es');
+    const tier = stack.neural ? /Neuronal local/ : /Modo básico/;
+    await settledText(spanish.locator('li').first(), [/Neuronal local|Modo básico|Sin instalar/]);
+    const all = await spanish.locator('li').allTextContents();
+    // The first voice that can be used is the default one (neural voices that are not
+    // installed are listed before the basic ones, switched off and marked as such).
+    const usable = all.filter((row) => !/Sin instalar/.test(row));
+    assert(usable[0].includes(first.name), `the first usable Spanish voice is ${first.name}`);
+    assert(tier.test(usable[0]), `its row is labelled «${tier.source}»`);
+    if (!stack.neural) {
+      const missing = all.filter((row) => /Sin instalar/.test(row));
+      assert(missing.length > 0, 'the neural voices that are not installed are listed as such');
+      const hint = await settledText(page.getByRole('note').filter({ hasText: 'sin instalar' }), [
+        /pnpm voices:setup/,
+      ]);
+      assert(/pnpm voices:setup/.test(hint), 'the page says which command installs them');
+      const play = spanish.getByRole('button', { name: /^Escuchar a / }).first();
+      assert(await play.isDisabled(), 'a voice that is not installed cannot be played');
+    }
+    // eSpeak NG stays in the list, as the reserve, and is never dressed up as anything else.
+    const reserve = all.filter((row) => /Carmen|Diego/.test(row));
+    assert(reserve.length >= 2, 'the eSpeak voices are still listed');
+    assert(
+      reserve.every((row) => /Modo básico/.test(row)),
+      'eSpeak rows are labelled «Modo básico»',
+    );
 
     // Filtering by language leaves only that group.
     await choose(page.getByRole('combobox', { name: 'Idioma', exact: true }), 'Français');
@@ -572,7 +659,8 @@ async function sectionVoices() {
     await choose(page.getByRole('combobox', { name: 'Idioma', exact: true }), 'Todos los idiomas');
   });
 
-  await step('la vista previa suena de verdad (eSpeak) y dice quién la generó', async () => {
+  await step('la vista previa suena de verdad y dice quién la generó', async () => {
+    const expected = defaultVoice('es').provider;
     await goto('/voices');
     const spanish = page.locator('section[aria-labelledby="voices-es"]');
     await spanish.locator('li').first().waitFor();
@@ -580,14 +668,14 @@ async function sectionVoices() {
       (r) => new URL(r.url()).pathname === '/api/tts/synthesize' && r.request().method() === 'POST',
     );
     await spanish
-      .getByRole('button', { name: /^Escuchar a / })
-      .first()
+      .getByRole('button', { name: `Escuchar a ${defaultVoice('es').name}`, exact: true })
       .click();
     const response = await synthesis;
     assertEqual(response.status(), 200, 'POST /api/tts/synthesize');
     const speech = await response.json();
-    assertEqual(speech.provider.id, 'espeak', 'the audio was produced by eSpeak');
-    assertEqual(speech.provider.quality, 'basic', 'eSpeak is reported as basic quality');
+    assertEqual(speech.provider.id, expected.id, 'the audio was produced by the default voice');
+    assertEqual(speech.provider.quality, expected.quality, 'its quality tier is reported');
+    assertEqual(speech.provider.local, true, 'it was generated on this machine');
     assert(speech.runtime.visemes.length > 5, 'the synthesis carries a viseme timeline');
 
     // The WAV the browser plays has real signal…
@@ -604,16 +692,72 @@ async function sectionVoices() {
     assert(later.currentTime > first.currentTime || later.ended, 'the audio clock advances');
 
     const consolePanel = page.getByRole('region', { name: /^Preescucha de / });
-    const panelText = await settledText(consolePanel, [
-      /Este audio lo generó/,
-      /eSpeak NG/,
-      /Modo básico/,
-    ]);
+    const tier = stack.neural ? /Neuronal local/ : /Modo básico/;
+    const panelText = await settledText(consolePanel, [/Este audio lo generó/, tier]);
     assert(/Este audio lo generó/.test(panelText), 'the console says who generated the audio');
-    assert(/eSpeak NG/.test(panelText), 'the console names eSpeak NG');
-    assert(/Modo básico/.test(panelText), 'the console says «Modo básico»');
-    return `WAV de ${stats.durationMs} ms, rms ${stats.rms.toFixed(3)}, ${speech.runtime.visemes.length} visemas`;
+    assert(panelText.includes(expected.name), `the console names ${expected.name}`);
+    assert(tier.test(panelText), `the console says «${tier.source}»`);
+    return `${expected.name}: WAV de ${stats.durationMs} ms, rms ${stats.rms.toFixed(3)}, ${speech.runtime.visemes.length} visemas`;
   });
+
+  await step(
+    'voz neuronal: suena en los idiomas instalados y eSpeak sigue de reserva',
+    async () => {
+      needsNeuralVoices();
+      const samples = {
+        es: 'Buenos días. Esta es una prueba de la voz neuronal local.',
+        en: 'Good morning. This is a test of the local neural voice.',
+      };
+      const notes = [];
+      for (const [language, sample] of Object.entries(samples)) {
+        for (const gender of ['female', 'male']) {
+          const voice = defaultVoice(language, gender);
+          assert(
+            NEURAL_VOICE_PROVIDERS.includes(voice.provider.id),
+            `the default ${gender} ${language} voice is neural (got ${voice.id})`,
+          );
+          const speech = (
+            await apiCall('POST', '/api/tts/synthesize', {
+              expect: 200,
+              body: { voiceId: voice.id, language, text: sample },
+            })
+          ).json;
+          assertEqual(speech.provider.id, voice.provider.id, `${voice.id} names its provider`);
+          const wav = wavStats(await download(speech.audioUrl));
+          assert(wav.rms > 0.02, `${voice.id} has speech-level signal (rms ${wav.rms.toFixed(4)})`);
+          assert(
+            wav.durationMs > 2000 && wav.durationMs < 9000,
+            `${voice.id}: ${wav.durationMs} ms`,
+          );
+          const words = speech.runtime.words;
+          // Cues together spell the whole text (a word the model does not pronounce on its
+          // own, like an English "of the" run together, shares the cue of its neighbour).
+          assertEqual(
+            words.map((word) => word.text).join(' '),
+            sample,
+            `${voice.id}: the word cues spell the text`,
+          );
+          assert(words.length >= 8, `${voice.id}: a cue for nearly every word (${words.length})`);
+          assert(
+            words.every((word, i) => i === 0 || word.tMs >= words[i - 1].tMs),
+            `${voice.id}: word cues in order`,
+          );
+          notes.push(`${voice.id} ${wav.durationMs} ms rms ${wav.rms.toFixed(3)}`);
+        }
+      }
+      // The reserve voice still answers when it is asked for by name.
+      const reserve = (
+        await apiCall('POST', '/api/tts/synthesize', {
+          expect: 200,
+          body: { voiceId: 'espeak:es-f1', language: 'es', text: samples.es },
+        })
+      ).json;
+      assertEqual(reserve.provider.id, 'espeak', 'eSpeak NG answers when chosen');
+      assertEqual(reserve.provider.quality, 'basic', 'and is reported as basic quality');
+      assert(wavStats(await download(reserve.audioUrl)).rms > 0.01, 'the reserve voice sounds');
+      return notes.join(' · ');
+    },
+  );
 
   await step('velocidad y texto propio cambian el audio', async () => {
     const consolePanel = page.getByRole('region', { name: /^Preescucha de / });
@@ -723,6 +867,7 @@ async function sectionScriptWriter() {
       script.scenes.length,
       'one Studio scene per script scene',
     );
+    assertDefaultVoice(stored.composition.scenes[0].script.voiceId, 'the script draft');
     assertEqual(
       stored.composition.scenes[0].script.text,
       edited,
@@ -1168,7 +1313,21 @@ async function sectionInteractive() {
         'the reply is the answer, not the neighbouring question',
       );
       assert(exchange.speech?.audioUrl, 'the reply has audio');
-      assertEqual(exchange.speech.provider.id, 'espeak', 'the audio was synthesised by eSpeak');
+      // The session speaks with the default voice of the stack (neural when installed).
+      const { session } = await apiGet(`/api/interactive/sessions/${sessionId}`);
+      const sessionVoice = stack.voices.find((voice) => voice.id === session.voiceId);
+      assert(sessionVoice, `the voice of the session (${session.voiceId}) is in the catalogue`);
+      assertEqual(sessionVoice.isDefault, true, 'the session started with a default voice');
+      assertEqual(
+        exchange.speech.provider.id,
+        sessionVoice.provider.id,
+        'the audio was synthesised by the provider of the session voice',
+      );
+      if (stack.neural)
+        assert(
+          NEURAL_VOICE_PROVIDERS.includes(exchange.speech.provider.id),
+          `the interactive avatar answers with a neural voice (got ${exchange.speech.provider.id})`,
+        );
       const stats = wavStats(await download(exchange.speech.audioUrl));
       assert(stats.rms > 0.01 && stats.durationMs > 1500, 'the reply audio has real signal');
 
@@ -1193,7 +1352,7 @@ async function sectionInteractive() {
       );
       const main = await settledText(page.locator('main'), [/Modo básico/]);
       assert(/Modo básico/.test(main), 'the conversation is labelled as basic mode');
-      return `${speaking.changedPixels} de ${speaking.mouthPixels} px de la boca cambian (audio ${speaking.audioA.toFixed(2)} s → ${speaking.audioB.toFixed(2)} s); energía ${speaking.mouthEnergy.toFixed(2)} hablando / ${idle.mouthEnergy.toFixed(2)} en reposo`;
+      return `voz ${exchange.speech.provider.name} · ${speaking.changedPixels} de ${speaking.mouthPixels} px de la boca cambian (audio ${speaking.audioA.toFixed(2)} s → ${speaking.audioB.toFixed(2)} s); energía ${speaking.mouthEnergy.toFixed(2)} hablando / ${idle.mouthEnergy.toFixed(2)} en reposo`;
     },
   );
 
@@ -1351,6 +1510,21 @@ async function sectionBatch() {
         .sort()
         .join('+');
       assertEqual(codecs, 'aac+h264', `row ${item.index + 1} is H.264 + AAC`);
+      // A video made from a built-in template speaks with the default voices of the stack.
+      const spoken = video.composition.scenes.find((scene) => scene.script.kind === 'tts');
+      const rowVoice = stack.voices.find((voice) => voice.id === spoken?.script.voiceId);
+      assert(rowVoice, `the voice of row ${item.index + 1} is in the catalogue`);
+      assertEqual(rowVoice.isDefault, true, `row ${item.index + 1} uses a default voice`);
+      assertEqual(
+        video.providers?.tts?.id,
+        rowVoice.provider.id,
+        `row ${item.index + 1} says who voiced it`,
+      );
+      if (stack.neural)
+        assert(
+          NEURAL_VOICE_PROVIDERS.includes(video.providers.tts.id),
+          `row ${item.index + 1} was voiced by a neural voice (got ${video.providers.tts.id})`,
+        );
       const seconds = Number(probe.format.duration);
       assert(seconds > 5, `row ${item.index + 1} lasts (${seconds} s)`);
       durations.push(seconds.toFixed(1));
@@ -1506,6 +1680,11 @@ async function sectionTranslate() {
       done.providers?.translation && done.providers?.tts,
       'the job says who translated and who voiced',
     );
+    // Dubbed with the default English voice of the stack: neural when it is installed.
+    const dubVoice = stack.voices.find((voice) => voice.id === output.voiceId);
+    assert(dubVoice, `the dubbing voice (${output.voiceId}) is in the catalogue`);
+    assertEqual(dubVoice.id, defaultVoice('en').id, 'the default English voice dubs');
+    assertEqual(done.providers.tts.id, dubVoice.provider.id, 'the job names the voice provider');
 
     const file = path.join(OUT, 'translated-en.mp4');
     fs.writeFileSync(file, await download(output.videoUrl));
@@ -1838,6 +2017,8 @@ async function sectionPhotoAvatar() {
       let draft = await apiGet(`/api/videos/${videoId}`);
       const layer = draft.composition.scenes[0].layers.find((l) => l.type === 'avatar');
       assertEqual(layer?.avatarId, photoAvatar.id, 'the draft uses the new avatar');
+      const narratorId = draft.composition.scenes[0].script.voiceId;
+      assertDefaultVoice(narratorId, 'the photo-avatar draft');
       await studioShowsScript(draft.composition.scenes[0].script.text);
       // Leave the Studio (its autosave would race the edit) and cut the script down to ~2 s.
       await goto('/avatars');
@@ -1929,7 +2110,24 @@ async function sectionPhotoAvatar() {
       const charged = priorCredits - (await credits());
       assertEqual(charged, 2, 'a photoreal render of < 30 s costs 2 credits');
       await page.locator('video').first().waitFor({ timeout: 20_000 });
-      return `${seconds.toFixed(2)} s · ${mouth.frames} fotogramas medidos · etapas ${[...stages].join(' → ')} · cambio en la boca ${mouth.change.toFixed(1)} frente a ${forehead.change.toFixed(1)} en la frente`;
+      // Who made it: the voice of the draft and the engine, with the driver that moved the lips.
+      const narrator = stack.voices.find((voice) => voice.id === narratorId);
+      assertEqual(video.providers?.tts?.id, narrator.provider.id, 'the video names its voice');
+      assertEqual(video.providers?.lipsync?.id, 'local-neural', 'the engine animated the avatar');
+      const driver = video.providers.lipsync.mode;
+      assert(
+        ['audio', 'visemes'].includes(driver),
+        `the video says which driver moved the lips (got ${JSON.stringify(driver)})`,
+      );
+      const driverLine = await settledText(page.getByTestId('lip-driver'), [/Labios guiados/]);
+      assert(
+        driver === 'audio' ? /por el audio/.test(driverLine) : /por los fonemas/.test(driverLine),
+        `the video page says how the lips were driven («${driverLine}»)`,
+      );
+      // The voice is in the file: speech-level sound between the paddings.
+      const level = ffmpegVolume(videoFile);
+      assert(level > -40, `the MP4 carries the voice (mean ${level} dB)`);
+      return `voz ${narrator.provider.name} (${level} dB) · labios: ${driver} · ${seconds.toFixed(2)} s · ${mouth.frames} fotogramas medidos · etapas ${[...stages].join(' → ')} · cambio en la boca ${mouth.change.toFixed(1)} frente a ${forehead.change.toFixed(1)} en la frente`;
     },
   );
 
@@ -2180,7 +2378,22 @@ async function main() {
   // The walk spends more than the Free plan grants (photo avatar, clone, renders…): switch to
   // Creator through the product's own simulated checkout.
   await apiCall('POST', '/api/billing/change-plan', { body: { planId: 'creator' }, expect: 200 });
-  log(`  usuario: ${user.email} (plan Creator, ${await credits()} créditos)\n`);
+  await readVoiceStack();
+  const narrator = defaultVoice('es');
+  log(
+    `  usuario: ${user.email} (plan Creator, ${await credits()} créditos)\n  voz:     ${narrator.name} · ${narrator.provider.name}\n`,
+  );
+  if (!stack.neural) {
+    const lines = [
+      'VOCES NEURONALES NO DISPONIBLES en esta pila: se usa la voz de reserva (eSpeak NG).',
+      'Las comprobaciones de la voz neuronal SE SALTAN.',
+      'Para cubrirlas: `pnpm voices:setup` y no fijar E2E_TTS_PROVIDER (o `auto`).',
+    ];
+    const width = Math.max(...lines.map((line) => line.length));
+    log(`  ╔${'═'.repeat(width + 2)}╗`);
+    for (const line of lines) log(`  ║ ${line.padEnd(width)} ║`);
+    log(`  ╚${'═'.repeat(width + 2)}╝\n`);
+  }
 
   page = await context.newPage();
   page.setDefaultTimeout(15_000);

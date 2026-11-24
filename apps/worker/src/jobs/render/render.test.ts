@@ -951,6 +951,16 @@ describe('render job: photorealistic avatars', () => {
       expect(request?.clientRef?.startsWith(`${first.ref.renderJobId}:scn_`)).toBe(true);
       expect(request?.visemes?.[0]?.tMs).toBeGreaterThanOrEqual(300);
       expect(request?.visemes?.at(-1)?.viseme).toBe('rest');
+      // Lips follow the sound when the provider can: the best driver is asked for, and the
+      // audio that travels is the REAL narration (speech, not a silent stand-in) padded to
+      // the scene length, with the word timeline on the same clock as the visemes.
+      expect(request?.driver).toBe('auto');
+      expect(lipsync.audio[0]?.peak).toBeGreaterThan(2000);
+      expect(Math.abs((lipsync.audio[0]?.durationMs ?? 0) - one.result.durationMs)).toBeLessThan(
+        40,
+      );
+      expect(request?.words?.length).toBeGreaterThan(0);
+      expect(request?.words?.[0]?.tMs).toBeGreaterThanOrEqual(300);
 
       // The clip (magenta where its matte is white) is what the avatar layer shows.
       const file = localFile(one.result.videoKey);
@@ -1009,6 +1019,27 @@ describe('render job: photorealistic avatars', () => {
       expect(two.result.providers.lipsync).toEqual(FAKE_LIPSYNC_INFO);
       const cachedFrame = await frameAt(localFile(two.result.videoKey), 1);
       expect(cachedFrame.count(AVATAR_AREA, magenta)).toBeGreaterThan(20_000);
+
+      // The engine starts animating differently (another driver behind `auto`, new tuning):
+      // its `animationKey` changes, so the cached clip is no longer served.
+      lipsync.animationKey = 'audio-lips.v2';
+      lipsync.driver = 'audio';
+      const third = await start(shortComposition({ avatarId: 'real_lucia' }), {
+        account: first.account,
+      });
+      const three = await t.run(renderJob, third.ref);
+      if ('canceled' in three.result) throw new Error('unexpected cancellation');
+      expect(lipsync.calls).toHaveLength(2);
+      // The video says which driver moved the lips…
+      expect(three.result.providers.lipsync).toEqual({ ...FAKE_LIPSYNC_INFO, mode: 'audio' });
+      const fourth = await start(shortComposition({ avatarId: 'real_lucia' }), {
+        account: first.account,
+      });
+      const four = await t.run(renderJob, fourth.ref);
+      if ('canceled' in four.result) throw new Error('unexpected cancellation');
+      expect(lipsync.calls).toHaveLength(2); // same key again: served from the cache
+      // …also when the clip comes from the cache.
+      expect(four.result.providers.lipsync).toEqual({ ...FAKE_LIPSYNC_INFO, mode: 'audio' });
       expect(await tempLeftovers()).toEqual([]);
     },
     LONG,
@@ -1034,6 +1065,9 @@ describe('render job: photorealistic avatars', () => {
       // The silent scene: no viseme hint, and audio exactly as long as the scene (0.5 s).
       const silent = lipsync.calls[1];
       expect(silent?.visemes).toEqual([]);
+      expect(silent?.words).toEqual([]);
+      expect(lipsync.audio[1]).toMatchObject({ peak: 0 });
+      expect(Math.abs((lipsync.audio[1]?.durationMs ?? 0) - 500)).toBeLessThan(40);
       expect((await ffprobe(localFile(result.videoKey))).durationMs).toBeGreaterThan(2000);
       const frame = await frameAt(localFile(result.videoKey), result.durationMs / 1000 - 0.2);
       expect(frame.count(AVATAR_AREA, magenta)).toBeGreaterThan(20_000);

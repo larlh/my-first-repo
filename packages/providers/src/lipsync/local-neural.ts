@@ -22,6 +22,10 @@ function clampInt(value: number, min: number, max: number): number {
  * `local-neural`: animates photorealistic portraits with the local engine
  * (services/avatar-engine — open-source models, no paid service).
  *
+ * The engine has two drivers behind the same generator: the lips follow either the viseme
+ * timeline or the sound of the narration itself (`request.driver`; the result says which one
+ * ran). The narration audio is always sent — it is what the audio driver listens to.
+ *
  * `animate` copies the caller's portrait, matte and narration into a private directory of the
  * engine work dir, runs `POST /v1/animations` there (progress and ETA from the engine's own
  * measurements), copies the clip and its matte into `request.outputDir` and removes the
@@ -56,6 +60,9 @@ export function createLocalNeuralLipSyncProvider(
             audioPath,
             // An empty timeline means "no hint": the engine then works from the audio alone.
             ...(request.visemes && request.visemes.length > 0 ? { visemes: request.visemes } : {}),
+            ...(request.words && request.words.length > 0 ? { words: request.words } : {}),
+            // Absent = the engine's legacy rule (timeline when given); `auto` = its best driver.
+            ...(request.driver ? { driver: request.driver } : {}),
             fps: clampInt(request.fps, 1, 60),
             maxSize: clampInt(request.maxSize, MIN_SIZE, MAX_SIZE),
             outputDir: job.dir,
@@ -80,6 +87,8 @@ export function createLocalNeuralLipSyncProvider(
           fps: result.fps,
           frameCount: result.frameCount,
           provider: INFO,
+          model: result.model,
+          ...(result.driver ? { driver: result.driver } : {}),
         };
       } finally {
         await job.remove();

@@ -26,6 +26,7 @@ import type { VideoRow } from '@parlante/db';
 import { startRender } from '@parlante/jobs';
 import { defineRoute } from '../../lib/define-route';
 import { defineModule } from '../../lib/modules';
+import { withDefaultVoices } from '../voices/defaults';
 import {
   createCustomTemplate,
   loadTemplateSource,
@@ -156,6 +157,15 @@ export default defineModule({
       if (body.templateId) {
         const template = await loadTemplateSource(db, auth.workspaceId, locale, body.templateId);
         composition = cloneCompositionWithNewIds(template.composition);
+        // A built-in template is written with the always-available local voices: a video
+        // created from it starts with the voices this server recommends (voices/defaults.ts).
+        if (template.kind === 'builtin') {
+          composition = await withDefaultVoices(
+            { db, providers: app.providers },
+            auth.workspaceId,
+            composition,
+          );
+        }
         templateId = template.id;
         title ??= template.name;
       } else if (body.composition) {

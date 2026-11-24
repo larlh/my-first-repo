@@ -59,6 +59,15 @@ class Rig:
             return float(want)
         return float(np.interp(want, self._cal_achieved, self._cal_target))
 
+    def ratio_to_target(self, want: float) -> float:
+        """Lip ratio WANTED on the rendered face (inner-lip gap / mouth width) -> target for the lip
+        MLP that achieves it on this avatar (identity without a calibration)."""
+        if want <= 1e-4:
+            return float(self.cfg["open_ratio_rest"])
+        if self._cal_target is None:
+            return float(want)
+        return float(np.interp(want, self._cal_achieved, self._cal_target))
+
     def exp_delta(self, open_: float, width: float, round_: float, teeth: float, brow: float = 0.0) -> np.ndarray:
         d = np.zeros((21, 3), np.float32)
         d += max(width, 0.0) * self.bases["wide"]

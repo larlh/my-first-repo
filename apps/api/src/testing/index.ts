@@ -162,6 +162,9 @@ export async function createTestApp(
     // must not turn `STT_PROVIDER=auto` into automatic transcription inside a test. Tests of
     // the real model pass their own DICTATION_MODEL_DIR.
     DICTATION_MODEL_DIR: path.join(storageDir, '_no-speech-models'),
+    // And for the local neural voices: voices installed on this machine must not change the
+    // default voice of a test. Tests of the real voices pass their own VOICE_MODEL_DIR.
+    VOICE_MODEL_DIR: path.join(storageDir, '_no-voice-models'),
     ...env,
   });
   const app = await buildApp({ ...buildOptions, config, db: handle.db, queues });

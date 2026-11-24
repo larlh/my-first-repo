@@ -3,7 +3,6 @@ the real shapes (the cost of the generator does not depend on the picture). Used
 when no measurement exists yet, and by scripts/benchmark.py."""
 from __future__ import annotations
 
-import os
 import time
 
 import numpy as np
@@ -34,5 +33,5 @@ def run_benchmark(ctx: JobContext | None = None, frames: int = 6) -> dict:
     entry = perf.record("visemes", spf, frames, {"source": "benchmark", "backend": engine.generator.backend,
                                                  "setupSeconds": round(load_s, 2)}, peak_rss=perf.rss_mb())
     return {"kind": "benchmark", "secondsPerFrame": round(spf, 3), "frameTimes": [round(t, 3) for t in times],
-            "loadSeconds": round(load_s, 2), "loadAvg1": round(os.getloadavg()[0], 2),
+            "loadSeconds": round(load_s, 2), "loadAvg1": round(perf.load_avg(), 2),
             "backend": engine.generator.backend, "stored": entry}

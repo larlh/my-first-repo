@@ -259,6 +259,27 @@ describe('use in a video', () => {
     expect(script).toMatchObject({ kind: 'tts', text: 'Hola, soy Mateo.', language: 'es' });
   });
 
+  it('narrates with the recommended voice when no voice was chosen, never over a chosen one', () => {
+    const base = { title: 'x', text: 'Hola', locale: 'es' };
+    const script = (input: Parameters<typeof starterComposition>[0]) =>
+      starterComposition(input).scenes[0]?.script;
+    // What the server recommends (an installed neural voice) …
+    expect(script({ ...base, defaultVoiceId: 'kokoro:ef_dora' })).toMatchObject({
+      voiceId: 'kokoro:ef_dora',
+      language: 'es',
+    });
+    // … the always-available local voice when nothing is known …
+    expect(script(base)).toMatchObject({ voiceId: 'espeak:es-f1' });
+    // … and the voice the person picked wins over both.
+    expect(
+      script({
+        ...base,
+        defaultVoiceId: 'kokoro:ef_dora',
+        voice: { id: 'espeak:fr-f1', language: 'fr' },
+      }),
+    ).toMatchObject({ voiceId: 'espeak:fr-f1', language: 'fr' });
+  });
+
   it('uses the voice and its language when a voice starts the video', () => {
     const composition = starterComposition({
       title: 'Voz',

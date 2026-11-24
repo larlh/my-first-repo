@@ -3,9 +3,12 @@ import { TextStyleSchema, createComposition } from '@parlante/shared';
 import type { Composition, NewLayerInput, NewSceneInput, RenderRuntime } from '@parlante/shared';
 import {
   MapRenderAssets,
+  PHOTO_SIDE_FADE,
   clearRenderCaches,
+  createPhotoAvatarRig,
   layerPoseAt,
   layoutTextBlock,
+  photoSideFade,
   wrapText,
 } from './index';
 import type { RenderImage } from './index';
@@ -633,6 +636,184 @@ describe('avatar layers', () => {
   it('falls back to a placeholder for unknown avatars', () => {
     const shot = shoot(avatar({ avatarId: 'avt_0123456789abcdef' }), 0, runtime, undefined, size);
     expect(shot.px(320, 20)).toEqual([0x2a, 0x2f, 0x45, 255]);
+  });
+});
+
+describe('photorealistic avatar pictures: faded vertical edges', () => {
+  const LANDMARKS = {
+    leftEye: { x: 0.4, y: 0.35 },
+    rightEye: { x: 0.6, y: 0.35 },
+    mouthLeft: { x: 0.44, y: 0.55 },
+    mouthRight: { x: 0.56, y: 0.55 },
+    chin: { x: 0.5, y: 0.65 },
+  };
+  /** Opaque flat red square: a "portrait" whose body runs into every border. */
+  function flatRed(side: number): RenderImage {
+    const { canvas, ctx } = createNodeCanvas(side, side);
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, side, side);
+    return canvasAsImage(canvas);
+  }
+  const standIn = () =>
+    new MapRenderAssets().setAvatar(
+      'real_test',
+      createPhotoAvatarRig('real_test', flatRed(200), {
+        imageWidth: 200,
+        imageHeight: 200,
+        landmarks: LANDMARKS,
+        landmarksSource: 'estimated', // no mouth shade: the picture stays flat red
+      }),
+    );
+  const withClip = () =>
+    new MapRenderAssets().setAvatarClip('s', 'a', {
+      durationMs: 4000,
+      width: 100,
+      height: 100,
+      originMs: 0,
+      landmarks: LANDMARKS,
+      frameAt: () => flatRed(100),
+    });
+  const layer = (overrides: Record<string, unknown> = {}) =>
+    one([
+      {
+        id: 'a',
+        type: 'avatar',
+        avatarId: 'real_test',
+        box: { x: 0.25, y: 0, w: 0.5, h: 1 },
+        framing: 'half',
+        ...overrides,
+      } as NewLayerInput,
+    ]);
+  /** How red the pixel is, 0 (background) … 1 (the picture, opaque). */
+  const redness = (shot: ReturnType<typeof shoot>, x: number, y = 300) =>
+    (shot.px(x, y)[0] - BG[0]) / (255 - BG[0]);
+  const Y = 300;
+
+  it('fades both borders of a picture that ends inside the frame, in clip and stand-in alike', () => {
+    // Box 320 × 360 at x = 160; `half` contains the square picture: 320 × 320 at x = 160…480.
+    const fade = PHOTO_SIDE_FADE * 320;
+    const clip = shoot(layer(), 0, undefined, withClip(), size);
+    const still = shoot(layer(), 0, undefined, standIn(), size);
+    for (const shot of [clip, still]) {
+      // the cut is gone: the outermost column is (almost) pure background …
+      expect(redness(shot, 161)).toBeLessThan(0.03);
+      expect(redness(shot, 478)).toBeLessThan(0.03);
+      // … half-way through the ramp it is half picture, half background …
+      expect(redness(shot, 160 + fade / 2)).toBeGreaterThan(0.4);
+      expect(redness(shot, 160 + fade / 2)).toBeLessThan(0.6);
+      expect(redness(shot, 480 - fade / 2)).toBeGreaterThan(0.4);
+      expect(redness(shot, 480 - fade / 2)).toBeLessThan(0.6);
+      // … and past the ramp the picture is untouched
+      expect(shot.px(160 + fade + 2, Y).slice(0, 3)).toEqual(RED);
+      expect(shot.px(320, Y).slice(0, 3)).toEqual(RED);
+      expect(shot.px(480 - fade - 3, Y).slice(0, 3)).toEqual(RED);
+      // the ramp never steps back
+      let last = -1;
+      for (let x = 160; x <= 160 + fade + 2; x += 1) {
+        const r = redness(shot, x);
+        expect(r).toBeGreaterThanOrEqual(last - 0.01);
+        last = r;
+      }
+      // nothing spills outside the box
+      expect(shot.px(158, Y).slice(0, 3)).toEqual(BG);
+      expect(shot.px(482, Y).slice(0, 3)).toEqual(BG);
+    }
+    // Preview (stand-in) and export (clip) end the shoulders with the same ramp.
+    for (let x = 163; x < 477; x += 1) {
+      expect(Math.abs(clip.px(x, Y)[0] - still.px(x, Y)[0])).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it('fades where the layer box crops a zoomed picture inside the frame', () => {
+    // closeup: scale 1.92 → 384 px wide, cropped by the 320 px box at x = 160 and 480.
+    for (const assets of [withClip(), standIn()]) {
+      const shot = shoot(layer({ framing: 'closeup' }), 0, undefined, assets, size);
+      expect(redness(shot, 161)).toBeLessThan(0.03);
+      expect(redness(shot, 478)).toBeLessThan(0.03);
+      expect(shot.px(320, Y).slice(0, 3)).toEqual(RED);
+    }
+  });
+
+  it('keeps a hard edge where the canvas itself crops the picture', () => {
+    const atLeft = layer({ framing: 'closeup', box: { x: 0, y: 0, w: 0.5, h: 1 } });
+    for (const assets of [withClip(), standIn()]) {
+      const shot = shoot(atLeft, 0, undefined, assets, size);
+      expect(shot.px(0, Y).slice(0, 3)).toEqual(RED); // frame edge: no fade
+      expect(shot.px(2, Y).slice(0, 3)).toEqual(RED);
+      expect(redness(shot, 318)).toBeLessThan(0.03); // box edge inside the frame: fades
+    }
+    // A picture that covers the whole frame is drawn directly, pixel for pixel as before.
+    const square = { width: 360, height: 360 }; // closeup: 384 px wide, cropped by both frame edges
+    const fullFrame = shoot(
+      layer({ framing: 'closeup', box: full }),
+      0,
+      undefined,
+      withClip(),
+      square,
+    );
+    expect(fullFrame.px(0, Y).slice(0, 3)).toEqual(RED);
+    expect(fullFrame.px(359, Y).slice(0, 3)).toEqual(RED);
+  });
+
+  it('treats a circle or rounded mask as a window: its edge is not faded, a border inside is', () => {
+    const windowed = shoot(
+      layer({ framing: 'closeup', shape: 'rounded' }),
+      0,
+      undefined,
+      withClip(),
+      size,
+    );
+    expect(windowed.px(162, 200).slice(0, 3)).toEqual(RED);
+    expect(windowed.px(477, 200).slice(0, 3)).toEqual(RED);
+    // Box 384 px wide: the contained picture is 360 px (x = 140…500), its borders are inside.
+    const narrow = shoot(
+      layer({ shape: 'rounded', backdrop: '#00ff00', box: { x: 0.2, y: 0, w: 0.6, h: 1 } }),
+      0,
+      undefined,
+      withClip(),
+      size,
+    );
+    expect(near([0, 255, 0])(...(narrow.px(134, 200).slice(0, 3) as Rgb))).toBe(true); // backdrop
+    expect(near([0, 255, 0], 10)(...(narrow.px(141, 200).slice(0, 3) as Rgb))).toBe(true);
+    expect(narrow.px(320, 200).slice(0, 3)).toEqual(RED);
+  });
+
+  it('photoSideFade: geometry, mirroring and the cases with nothing to fade', () => {
+    const box = { x: 100, y: 0, w: 300, h: 300 };
+    const opts = { windowed: false, canvasWidth: 640 };
+    // picture narrower than the box: both of its borders fade, 10 % of its width each
+    expect(photoSideFade({ x: 150, y: 0, w: 200, h: 300 }, box, opts)).toEqual({
+      left: { from: 50, to: 70 },
+      right: { from: 250, to: 230 },
+    });
+    // left border inside the box, right side cropped by the box
+    const uneven = { x: 180, y: 0, w: 400, h: 300 };
+    expect(photoSideFade(uneven, box, opts)).toEqual({
+      left: { from: 80, to: 120 },
+      right: { from: 300, to: 260 },
+    });
+    // mirrored layer: the same edges, reflected about the box centre
+    expect(photoSideFade(uneven, box, { ...opts, flip: true })).toEqual({
+      left: { from: 0, to: 40 },
+      right: { from: 220, to: 180 },
+    });
+    // a window keeps its own edge but still fades a picture border inside it
+    expect(photoSideFade(uneven, box, { ...opts, windowed: true })).toEqual({
+      left: { from: 80, to: 120 },
+      right: null,
+    });
+    // cropped by the canvas on both sides, or by a window: nothing to do
+    const wide = { x: -50, y: 0, w: 740, h: 300 };
+    expect(photoSideFade(wide, { x: 0, y: 0, w: 640, h: 300 }, opts)).toBeNull();
+    expect(
+      photoSideFade({ x: 50, y: 0, w: 400, h: 300 }, box, { ...opts, windowed: true }),
+    ).toBeNull();
+    expect(photoSideFade({ x: 0, y: 0, w: 0, h: 0 }, box, opts)).toBeNull();
+    // the ramp never eats more than 40 % of what is visible
+    expect(photoSideFade({ x: 100, y: 0, w: 3000, h: 300 }, box, opts)?.left).toEqual({
+      from: 0,
+      to: 120,
+    });
   });
 });
 

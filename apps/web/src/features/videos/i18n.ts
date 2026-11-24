@@ -171,6 +171,11 @@ const es = {
       moderation: 'Moderación',
       storage: 'Almacenamiento',
     },
+    lipDriver: {
+      audio: 'Labios guiados por el audio: la boca sigue el sonido de la voz.',
+      visemes: 'Labios guiados por los fonemas de la voz (en este audio seguían mejor el sonido).',
+      mixed: 'Labios guiados por el audio en unas escenas y por los fonemas de la voz en otras.',
+    },
   },
   transcript: {
     title: 'Subtítulos',
@@ -444,6 +449,11 @@ const en: VideosTranslations = {
       stt: 'Transcription',
       moderation: 'Moderation',
       storage: 'Storage',
+    },
+    lipDriver: {
+      audio: 'Lips driven by the audio: the mouth follows the sound of the voice.',
+      visemes: 'Lips driven by the phonemes of the voice (they followed this audio more closely).',
+      mixed: 'Lips driven by the audio in some scenes and by the phonemes of the voice in others.',
     },
   },
   transcript: {

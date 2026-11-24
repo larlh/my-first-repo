@@ -101,6 +101,12 @@ class GenerateJob:
 
 
 # ---------------------------------------------------------------- measured performance
+def _load_avg() -> float:
+    from parlante_engine.core import perf as core_perf
+
+    return core_perf.load_avg()
+
+
 def _perf_path() -> Path:
     return get_settings().models_dir / ".perf-portrait.json"
 
@@ -124,7 +130,7 @@ def _record_perf(width: int, height: int, stats: dict, total_s: float | None, pe
             "unetEvals": stats.get("unetEvals"),
             "secondsPerImage": round(total_s, 1) if total_s is not None else previous.get("secondsPerImage"),
             "peakRssMb": round(peak_rss_mb),
-            "loadAvg1": round(os.getloadavg()[0], 2),
+            "loadAvg1": round(_load_avg(), 2),
             "threads": get_settings().threads,
             "measuredAt": int(time.time()),
         }
@@ -185,12 +191,29 @@ def refine_steps(steps: int) -> int:
     return steps - int(min(steps - 1, max(0, round(steps * (1.0 - REFINE_STRENGTH)))))
 
 
+def _machine_factor(perf: dict) -> float:
+    """Measured / modelled seconds per UNet evaluation on this machine: the MEDIAN over every size
+    that has been measured. Jobs are timed while the machine does other things too, so single
+    measurements are noisy (one busy 512-px job used to make 640 px look slower than 768 px);
+    a common factor keeps the estimates increasing with the size."""
+    ratios = []
+    for key, entry in perf.get("sizes", {}).items():
+        try:
+            w, h = (int(v) for v in key.split("x"))
+            measured = float(entry.get("secondsPerUnetEval") or 0.0)
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if measured > 0 and w > 0 and h > 0:
+            ratios.append(measured / _modelled_eval_seconds(w, h))
+    if ratios:
+        ratios.sort()
+        mid = len(ratios) // 2
+        return ratios[mid] if len(ratios) % 2 else 0.5 * (ratios[mid - 1] + ratios[mid])
+    return float(perf.get("machineFactor", 1.0))
+
+
 def _eval_seconds(width: int, height: int) -> float:
-    perf = load_perf()
-    entry = perf.get("sizes", {}).get(f"{width}x{height}")
-    if entry and entry.get("secondsPerUnetEval"):
-        return float(entry["secondsPerUnetEval"])
-    return _modelled_eval_seconds(width, height) * float(perf.get("machineFactor", 1.0))
+    return _modelled_eval_seconds(width, height) * _machine_factor(load_perf())
 
 
 def estimate_stage_seconds(width: int, height: int, steps: int = DEFAULT_STEPS) -> tuple[float, float]:

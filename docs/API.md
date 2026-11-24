@@ -345,7 +345,11 @@ H.264 + AAC (1280×720, 30 fps, estéreo a 48 kHz).
 - **Las URLs de archivo están firmadas y caducan** (unas horas; 7 días las que viajan dentro
   de un webhook). Descarga el archivo o vuelve a pedir el vídeo; no guardes la URL.
 - `downloadUrl` sirve el MP4 como adjunto con el título como nombre de archivo.
-- `providers` dice qué proveedor generó la voz y, si lo hay, el avatar fotorrealista.
+- `providers` dice qué proveedor generó la voz y, si lo hay, el avatar fotorrealista. La voz
+  del ejemplo es la de reserva (`espeak:…`); con una voz neuronal local (`kokoro:…`,
+  `piper:…`), `providers.tts.id` es `kokoro` o `piper`, con `quality: "premium"` y
+  `local: true`. En un vídeo con avatar fotorrealista, `providers.lipsync.mode` dice además
+  cómo se movieron los labios: `audio`, `visemes` o `mixed`.
 - `aiGenerated` es `true` cuando el vídeo contiene un avatar fotorrealista animado por IA; el
   MP4 lleva entonces esa marca en sus metadatos.
 - Si falla, `status` es `failed` y `error` trae `{ code, message, reason? }`.

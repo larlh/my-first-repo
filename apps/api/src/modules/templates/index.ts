@@ -6,6 +6,7 @@ import { defineRoute } from '../../lib/define-route';
 import { defineModule } from '../../lib/modules';
 import { renderPoster } from '../../lib/poster';
 import { createDraftVideo, posterDocument, toVideoDto, videoDeps } from '../videos/service';
+import { withDefaultVoices } from '../voices/defaults';
 import {
   deleteCustomTemplate,
   findCustomTemplate,
@@ -82,7 +83,15 @@ export default defineModule({
         userId: auth.userId,
         title: body.title ?? template.name,
         // Fresh ids: videos created from the same template never share scene or layer ids.
-        composition: cloneCompositionWithNewIds(template.composition),
+        // A built-in template starts with the voices this server recommends (voices/defaults.ts).
+        composition:
+          template.kind === 'builtin'
+            ? await withDefaultVoices(
+                { db, providers: app.providers },
+                auth.workspaceId,
+                cloneCompositionWithNewIds(template.composition),
+              )
+            : cloneCompositionWithNewIds(template.composition),
         source: 'template',
         templateId: template.id,
       });

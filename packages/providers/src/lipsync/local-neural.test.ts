@@ -158,7 +158,11 @@ describe('local-neural lip-sync: animate', () => {
         quality: 'premium',
         local: true,
       },
+      model: 'liveportrait',
     });
+    // No driver was asked for: the field does not travel and the engine keeps its legacy rule.
+    expect(body).not.toHaveProperty('driver');
+    expect(body).not.toHaveProperty('words');
     expect(await fs.readFile(result.videoPath, 'utf8')).toBe('CLIP(PORTRAIT)');
     expect(await fs.readFile(result.maskPath!, 'utf8')).toBe('MATTE');
 
@@ -173,6 +177,36 @@ describe('local-neural lip-sync: animate', () => {
     expect(await workDirEntries()).toEqual([]);
     expect(engine.canceled).toEqual([]);
     expect(engine.requests.filter((r) => r.startsWith('POST'))).toEqual(['POST /v1/animations']);
+  });
+
+  it('forwards the driver and the word timeline, and says which driver made the clip', async () => {
+    const words = [{ tMs: 120, durMs: 200, text: 'Hola' }];
+    engine.health = { ...engine.health, animation: { autoDriver: 'audio', key: 'audio-lips.v1' } };
+    const provider = createLipSyncProvider({ ...env, AVATAR_ENGINE_TOKEN: TOKEN });
+    // `auto`: the engine picks its best driver (here the audio-driven one) and reports it.
+    const auto = await provider.animate(await request({ driver: 'auto', words }));
+    expect(engine.submitted[0]!.body).toMatchObject({ driver: 'auto', words });
+    // The narration itself is what the audio driver listens to: it always travels.
+    const audioPath = engine.submitted[0]!.body.audioPath as string;
+    expect(path.basename(audioPath)).toBe('audio.wav');
+    expect(auto).toMatchObject({ driver: 'audio', model: 'liveportrait' });
+    // An explicit driver is passed through untouched.
+    const forced = await provider.animate(await request({ driver: 'visemes' }));
+    expect(engine.submitted[1]!.body).toMatchObject({ driver: 'visemes' });
+    expect(engine.submitted[1]!.body).not.toHaveProperty('words');
+    expect(forced.driver).toBe('visemes');
+    const sound = await provider.animate(await request({ driver: 'audio', visemes: [] }));
+    expect(engine.submitted[2]!.body).toMatchObject({ driver: 'audio' });
+    expect(engine.submitted[2]!.body).not.toHaveProperty('visemes');
+    expect(sound.driver).toBe('audio');
+  });
+
+  it('exposes the animation key of /health so clip caches can follow the engine', async () => {
+    const before = await createLipSyncProvider({ ...env, AVATAR_ENGINE_TOKEN: 'k1' }).status();
+    expect(before).not.toHaveProperty('animationKey'); // an engine that does not say
+    engine.health = { ...engine.health, animation: { autoDriver: 'audio', key: 'audio-lips.v1' } };
+    const after = await createLipSyncProvider({ ...env, AVATAR_ENGINE_TOKEN: 'k2' }).status();
+    expect(after.animationKey).toBe('audio-lips.v1');
   });
 
   it('animates portraits without a matte and clamps sizes to the contract', async () => {

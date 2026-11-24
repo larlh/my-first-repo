@@ -21,7 +21,23 @@ const es = {
     anyProvider: 'Todos los proveedores',
     basic: 'Modo básico, local',
     premium: 'Alta calidad, externo',
+    neural: 'Neuronal, local',
     clear: 'Quitar filtros',
+  },
+  install: {
+    title_one: 'Hay {{count}} voz neuronal sin instalar',
+    title_other: 'Hay {{count}} voces neuronales sin instalar',
+    text: 'Son voces de modelos abiertos que se ejecutan en este equipo, sin claves ni conexión. Para instalarlas, ejecuta en la carpeta de Parlante:',
+    after: 'Aparecerán aquí en cuanto termine la descarga; no hace falta reiniciar.',
+    copy: 'Copiar comando',
+    copied: 'Comando copiado',
+    copyFailed: 'No se pudo copiar',
+    badge: 'Sin instalar',
+    reason: {
+      voice_not_installed: 'El modelo de esta voz no está instalado en este equipo.',
+      voice_incomplete: 'La descarga del modelo de esta voz quedó a medias.',
+    },
+    how: 'Para instalarla, ejecuta en la carpeta de Parlante:',
   },
   gender: { female: 'Femenina', male: 'Masculina', neutral: 'Neutra' },
   empty: {
@@ -75,9 +91,14 @@ const es = {
     voiceProvider: 'Proveedor de la voz',
     audioProvider: 'Este audio lo generó',
     basicStock:
-      'Modo básico: voz sintética local (eSpeak NG). Suena robótica pero funciona sin claves ni conexión. Con un proveedor externo configurado aparecen aquí voces de mayor calidad.',
+      'Modo básico: voz sintética local (eSpeak NG). Suena robótica pero funciona sin claves ni conexión. Es la voz de reserva: las voces neuronales locales suenan mucho más naturales.',
+    neuralStock:
+      'Voz neuronal local: un modelo abierto que se ejecuta en este equipo, sin claves ni conexión. Los labios y los subtítulos siguen los tiempos reales del audio.',
+    pitchResampled:
+      'Esta voz no tiene control de tono propio: se cambia reproduciendo el audio más rápido o más lento (hasta {{min}} / {{max}}), y el timbre cambia con él.',
+    unavailableStatus: 'Esta voz todavía no está instalada.',
     basicCloned:
-      'Clonado en modo básico: es una voz local ajustada al tono y la velocidad de tu muestra. No reproduce tu timbre.',
+      'Clonado en modo básico: es la voz local más parecida a la tuya (una neuronal, si está instalada) ajustada al tono y la velocidad de tu muestra. No reproduce tu timbre.',
     profile: {
       base: 'Voz base',
       f0: 'Tono medio de la muestra',
@@ -128,7 +149,23 @@ const en: typeof es = {
     anyProvider: 'All providers',
     basic: 'Basic mode, local',
     premium: 'High quality, external',
+    neural: 'Neural, local',
     clear: 'Clear filters',
+  },
+  install: {
+    title_one: '{{count}} neural voice is not installed',
+    title_other: '{{count}} neural voices are not installed',
+    text: 'They are voices of open models that run on this machine, with no keys and offline. To install them, run in the Parlante folder:',
+    after: 'They show up here as soon as the download finishes; no restart needed.',
+    copy: 'Copy command',
+    copied: 'Command copied',
+    copyFailed: 'Could not copy',
+    badge: 'Not installed',
+    reason: {
+      voice_not_installed: 'The model of this voice is not installed on this machine.',
+      voice_incomplete: 'The download of the model of this voice was left unfinished.',
+    },
+    how: 'To install it, run in the Parlante folder:',
   },
   gender: { female: 'Female', male: 'Male', neutral: 'Neutral' },
   empty: {
@@ -182,9 +219,14 @@ const en: typeof es = {
     voiceProvider: 'Voice provider',
     audioProvider: 'This audio was made by',
     basicStock:
-      'Basic mode: local synthetic voice (eSpeak NG). It sounds robotic but works with no keys and offline. With an external provider configured, higher-quality voices show up here.',
+      'Basic mode: local synthetic voice (eSpeak NG). It sounds robotic but works with no keys and offline. It is the fallback voice: the local neural voices sound far more natural.',
+    neuralStock:
+      'Local neural voice: an open model that runs on this machine, with no keys and offline. Lips and subtitles follow the real timing of the audio.',
+    pitchResampled:
+      'This voice has no pitch control of its own: pitch is changed by playing the audio faster or slower (up to {{min}} / {{max}}), and the timbre changes with it.',
+    unavailableStatus: 'This voice is not installed yet.',
     basicCloned:
-      'Cloned in basic mode: a local voice adjusted to the pitch and speed of your sample. It does not reproduce your timbre.',
+      'Cloned in basic mode: the local voice closest to yours (a neural one, when installed) adjusted to the pitch and speed of your sample. It does not reproduce your timbre.',
     profile: {
       base: 'Base voice',
       f0: 'Mean pitch of the sample',

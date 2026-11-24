@@ -1,4 +1,4 @@
-import { CREDIT_COSTS, defaultVoiceId } from '@parlante/shared';
+import { CREDIT_COSTS } from '@parlante/shared';
 import type { Avatar, AvatarFraming } from '@parlante/shared';
 import { Clapperboard, Copy, Pencil, Play, Square, Trash2, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -9,6 +9,7 @@ import { ProviderBadge } from '@/components/ProviderBadge';
 import { api, useApiMutation } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useSession } from '@/lib/session';
+import { useDefaultVoice } from '@/lib/voices';
 import {
   Badge,
   Button,
@@ -108,6 +109,7 @@ export function AvatarSheet({ avatar, engine, onClose }: AvatarSheetProps) {
   const confirm = useConfirm();
   const failureReason = useFailureReason();
   const speech = useSpeechPreview();
+  const defaultVoice = useDefaultVoice();
   const [framing, setFraming] = useState<AvatarFraming>('bust');
   const [renaming, setRenaming] = useState(false);
 
@@ -156,7 +158,7 @@ export function AvatarSheet({ avatar, engine, onClose }: AvatarSheetProps) {
     if (speech.status === 'playing' || speech.status === 'loading') return speech.stop();
     void speech.play(current.id, {
       text: t('sheet.intro', { name: current.name }),
-      voiceId: defaultVoiceId(locale, current.gender === 'male' ? 'male' : 'female'),
+      voiceId: defaultVoice(locale, current.gender === 'male' ? 'male' : 'female'),
       language: locale,
     });
   };

@@ -17,6 +17,7 @@ import {
   ownAvatar,
   photorealStock,
   stockAvatars,
+  stockVoice,
 } from './kit/testing/fixtures';
 import { others, usePageTestSetup } from './kit/testing/page';
 
@@ -92,6 +93,44 @@ describe('avatar library', () => {
     expect(await screen.findByText('Ningún avatar coincide')).toBeVisible();
     await user.click(screen.getAllByRole('button', { name: 'Quitar filtros' })[0]!);
     expect(await screen.findByRole('heading', { level: 2, name: 'Instantáneos 2D' })).toBeVisible();
+  });
+
+  it('introduces an avatar with the neural voice of its gender when the server recommends one', async () => {
+    const user = userEvent.setup();
+    const kokoro = {
+      id: 'kokoro',
+      name: 'Kokoro (neuronal local)',
+      quality: 'premium' as const,
+      local: true,
+    };
+    const api = createFakeApi()
+      .on('GET', '/api/avatars', () => catalogue())
+      .on('GET', '/api/voices', () => ({
+        items: [
+          stockVoice('es-f1', 'Dora', { id: 'kokoro:ef_dora', provider: kokoro, isDefault: true }),
+          stockVoice('es-m1', 'Álex', { id: 'kokoro:em_alex', provider: kokoro, isDefault: true }),
+          stockVoice('es-f1', 'Carmen'),
+          stockVoice('es-m1', 'Diego'),
+        ],
+      }))
+      .on('POST', '/api/tts/synthesize', ({ body }) => ({
+        ...makeSpeech((body as { text: string }).text),
+        provider: kokoro,
+      }));
+    renderFeatures([avatars, others], '/avatars?avatar=stock_mateo', api);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Mateo' });
+    await waitFor(() => expect(api.requests('GET', '/api/voices')).not.toHaveLength(0));
+    await user.click(within(dialog).getByRole('button', { name: 'Escuchar presentación' }));
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+    // Mateo is a man: the male neural voice, not the first (female) one.
+    expect(api.requests('POST', '/api/tts/synthesize')[0]?.body).toMatchObject({
+      voiceId: 'kokoro:em_alex',
+      language: 'es',
+    });
+    expect(
+      await within(dialog).findByText('Neuronal local · Kokoro (neuronal local)'),
+    ).toBeVisible();
   });
 
   it('opens the card of an avatar, lets it introduce itself and names the TTS provider', async () => {

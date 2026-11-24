@@ -8,11 +8,13 @@ import {
 import type {
   AvatarClipCacheMeta,
   Composition,
+  EngineStatus,
   Layer,
   PhotoAvatarRig,
   ProviderRef,
   RenderRuntime,
   VisemeCue,
+  WordCue,
 } from '@parlante/shared';
 import { avatarClipCacheKey, sha256Hex, storageKeys } from '@parlante/shared/node';
 import { and, avatars as avatarsTable, eq } from '@parlante/db';
@@ -59,6 +61,7 @@ interface ClipJob {
   avatar: PhotorealAvatar;
   audioPath: string;
   visemes: VisemeCue[];
+  words: WordCue[];
   maxSize: number;
   frames: number;
   clientRef: string;
@@ -89,6 +92,24 @@ const NO_CLIPS: AvatarClips = {
   releaseBefore: () => Promise.resolve(),
   close: () => Promise.resolve(),
 };
+
+/** Driver asked from the lip-sync provider: the best it has (audio-driven lips when it can). */
+export const RENDER_LIPSYNC_DRIVER = 'auto' as const;
+
+/**
+ * What identifies HOW a clip is animated, for the clip cache key: the animation model, the
+ * requested driver and the engine's own `animationKey` (which driver `auto` resolves to, its
+ * tuning). Engines that do not report a key keep the model id alone, so their existing cache
+ * entries stay valid.
+ */
+export function clipModelKey(
+  status: Pick<EngineStatus, 'models' | 'animationKey'> | null,
+): string | null {
+  const model = status?.models?.find((m) => m.role === 'animation' && m.downloaded)?.id ?? null;
+  const key = status?.animationKey ?? null;
+  if (key === null) return model;
+  return `${model ?? ''}|${RENDER_LIPSYNC_DRIVER}|${key}`;
+}
 
 /** Largest side asked from the engine: two buckets, so 720p and 1080p renders share clips. */
 function clipSizeFor(neededPx: number): number {
@@ -179,6 +200,20 @@ function sceneVisemes(
   return out;
 }
 
+/** Word hint for the padded scene audio: narration words shifted to the scene clock. */
+function sceneWords(
+  runtime: RenderRuntime,
+  sceneId: string,
+  offsetMs: number,
+  speechMs: number,
+): WordCue[] {
+  const words = runtime.scenes[sceneId]?.words ?? [];
+  if (speechMs <= 0) return [];
+  return words
+    .filter((word) => word.tMs < speechMs)
+    .map((word) => ({ ...word, tMs: Math.round(word.tMs + offsetMs) }));
+}
+
 async function readCachedClip(run: RenderRun, job: ClipJob): Promise<ClipFiles | null> {
   const { storage } = run.ctx.providers;
   const key = (file: 'clip.mp4' | 'mask.mp4' | 'mask.png' | 'clip.json') =>
@@ -219,6 +254,16 @@ async function storeClip(run: RenderRun, job: ClipJob, clip: ClipFiles): Promise
   });
 }
 
+/**
+ * The provider of a video with several clips: the one of its clips, saying `mixed` when the
+ * lips of some were driven by the audio and of others by the viseme timeline.
+ */
+export function mergeClipProvider(current: ProviderRef | null, next: ProviderRef): ProviderRef {
+  if (!current) return next;
+  if (current.mode === next.mode) return current;
+  return { ...current, mode: 'mixed' };
+}
+
 export interface AvatarStageInput {
   composition: Composition;
   timeline: Timeline;
@@ -247,8 +292,9 @@ export async function prepareAvatarClips(
   if (wanted.length === 0) return NO_CLIPS;
 
   // The animation model is part of the cache key: a model upgrade must not serve old clips.
+  // Nor must a change of driver: the engine's `animationKey` says how `auto` animates today.
   const status = await lipsync.status().catch(() => null);
-  const model = status?.models?.find((m) => m.role === 'animation' && m.downloaded)?.id ?? null;
+  const model = clipModelKey(status);
 
   const avatarsById = new Map<string, PhotorealAvatar>();
   const sceneAudio = new Map<number, { path: string; sha: string }>();
@@ -309,6 +355,7 @@ export async function prepareAvatarClips(
         avatar,
         audioPath: audio.path,
         visemes: sceneVisemes(runtime, scene.id, offsetMs, timing.speechDurationMs),
+        words: sceneWords(runtime, scene.id, offsetMs, timing.speechDurationMs),
         maxSize,
         frames: Math.max(1, Math.ceil((timing.durationMs * timeline.fps) / 1000)),
         clientRef: `${ref.renderJobId}:${scene.id}:${layer.id}`,
@@ -370,8 +417,12 @@ export async function prepareAvatarClips(
       result = await lipsync.animate({
         portraitPath: job.avatar.portraitPath,
         maskPath: job.avatar.maskPath,
+        // The REAL audio of the scene (narration padded with silence to the scene length): the
+        // audio driver listens to it; the timelines are its hints (and the viseme driver's input).
         audioPath: job.audioPath,
         visemes: job.visemes,
+        words: job.words,
+        driver: RENDER_LIPSYNC_DRIVER,
         fps: timeline.fps,
         maxSize: job.maxSize,
         outputDir,
@@ -384,6 +435,15 @@ export async function prepareAvatarClips(
       run.cancel.throwIfCanceled();
       throw err;
     }
+    run.log.info(
+      {
+        clip: index,
+        frames: job.frames,
+        driver: result.driver ?? null,
+        model: result.model ?? null,
+      },
+      'photorealistic avatar animated',
+    );
     const clip: ClipFiles = {
       videoPath: result.videoPath,
       mattePath: result.alpha === 'none' ? null : result.maskPath,
@@ -394,7 +454,8 @@ export async function prepareAvatarClips(
         height: result.height,
         fps: result.fps,
         frameCount: result.frameCount,
-        provider: result.provider,
+        // Which driver moved the lips is part of who made the clip (shown with the video).
+        provider: result.driver ? { ...result.provider, mode: result.driver } : result.provider,
       }),
     };
     await storeClip(run, job, clip);
@@ -411,7 +472,7 @@ export async function prepareAvatarClips(
     for (const job of jobs.values()) {
       const clip = clips.get(job.hash);
       if (!clip) continue;
-      provider ??= clip.meta.provider;
+      provider = mergeClipProvider(provider, clip.meta.provider);
       for (const target of job.targets) {
         const source = await openAvatarClipSource({
           path: clip.videoPath,

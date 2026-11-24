@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from parlante_engine import __version__
-from parlante_engine.core import backends, perf
+from parlante_engine.core import backends, perf, privacy
 from parlante_engine.core.config import get_settings
 from parlante_engine.core.errors import HTTP_STATUS, EngineError
 from parlante_engine.core.jobs import get_job_manager
@@ -75,6 +75,8 @@ def _include_routers(app: FastAPI) -> list[str]:
 
 
 def health_body(app: FastAPI) -> dict:
+    from parlante_engine.animate.service import animation_info
+
     reg = get_registry()
     spf = perf.seconds_per_frame("visemes")
     generate_ready = "portrait" in app.state.subpackages and reg.capability_ready("generate")
@@ -94,9 +96,11 @@ def health_body(app: FastAPI) -> dict:
         "secondsPerPortrait": perf.get_metric("secondsPerPortrait"),
         # ---- additive fields (ignored by the zod schema of the contract) ----
         "drivers": {"visemes": reg.capability_ready("animate"), "audio": reg.capability_ready("animate-audio")},
+        "animation": animation_info(),
         "performance": perf.summary(DEFAULT_FPS),
         "backend": backends.describe(),
         "queue": get_job_manager().counts(),
+        "privacy": privacy.status(),
     }
 
 

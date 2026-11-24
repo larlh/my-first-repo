@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -42,7 +43,7 @@ def record(driver: str, seconds_per_frame: float, frames: int, extra: dict | Non
             "secondsPerFrame": round(spf, 4),
             "lastSecondsPerFrame": round(seconds_per_frame, 4),
             "lastFrames": frames,
-            "loadAvg1": round(os.getloadavg()[0], 2),
+            "loadAvg1": round(load_avg(), 2),
             "measuredAt": int(time.time()),
             # peak resident memory of the process while a job of this driver ran (sampled)
             "peakRssMb": round(peak_rss if peak_rss is not None else (cur or {}).get("peakRssMb") or rss_mb(), 0),
@@ -82,9 +83,29 @@ def seconds_per_frame(driver: str = "visemes") -> float | None:
     return float(entry["secondsPerFrame"]) if entry and entry.get("secondsPerFrame") else None
 
 
+def load_avg() -> float:
+    """1-minute load average, or 0.0 where the platform has none (Windows)."""
+    try:
+        return float(os.getloadavg()[0])
+    except (AttributeError, OSError):
+        return 0.0
+
+
 def peak_rss_mb() -> float:
-    import resource
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+    """Peak resident memory of this process in MiB (ru_maxrss: KiB on Linux, bytes on macOS;
+    Windows has no `resource` module: psutil's peak working set is used there)."""
+    try:
+        import resource
+    except ImportError:
+        info = psutil.Process().memory_info()
+        return float(getattr(info, "peak_wset", info.rss)) / (1024.0 * 1024.0)
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak / (1024.0 * 1024.0) if sys.platform == "darwin" else peak / 1024.0
+
+
+def available_mb() -> float:
+    """Memory that can be given to a new allocation without swapping (psutil's estimate)."""
+    return psutil.virtual_memory().available / (1024.0 * 1024.0)
 
 
 def rss_mb() -> float:

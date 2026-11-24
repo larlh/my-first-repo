@@ -142,6 +142,17 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
         fps: Number(entry.body.fps ?? 30),
         frameCount: 45,
         model: 'liveportrait',
+        // Like the real engine: an explicit driver is honoured, `auto` is what /health announces
+        // (falling back to the legacy rule), and a request without the field gets no `driver`.
+        ...(typeof entry.body.driver === 'string'
+          ? {
+              driver:
+                entry.body.driver === 'auto'
+                  ? (engine.health.animation?.autoDriver ??
+                    (Array.isArray(entry.body.visemes) ? 'visemes' : 'audio'))
+                  : (entry.body.driver as 'visemes' | 'audio'),
+            }
+          : {}),
       };
     } else if (entry.kind === 'prepare') {
       const portraitPath = path.join(outputDir, 'portrait.png');

@@ -1,6 +1,6 @@
 import { CompositionSchema } from '@parlante/shared';
 import type { Video } from '@parlante/shared';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/lib/i18n';
@@ -360,6 +360,53 @@ describe('new video', () => {
     expect(composition.subtitles.enabled).toBe(true);
   });
 
+  it('starts the blank draft with the voice the server recommends when there is one', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    withVideos(api, []);
+    const voice = (id: string, gender: 'female' | 'male', extra: Record<string, unknown>) => ({
+      id,
+      kind: 'stock',
+      name: id,
+      provider: { id: id.split(':')[0], name: id, quality: 'premium', local: true },
+      language: 'es',
+      multilingual: false,
+      gender,
+      description: '',
+      tags: [],
+      status: 'ready',
+      workspaceId: null,
+      consentId: null,
+      profile: null,
+      error: null,
+      createdAt: null,
+      ...extra,
+    });
+    api.on('GET', '/api/voices', () =>
+      json({
+        items: [
+          voice('kokoro:ef_dora', 'female', { isDefault: true }),
+          voice('kokoro:em_alex', 'male', { isDefault: true }),
+          voice('espeak:es-f1', 'female', {}),
+        ],
+      }),
+    );
+    api.on('POST', '/api/videos', () => json(makeVideo(9, { status: 'draft' }), 201));
+    renderFeatures([videos, others], '/videos/new', api);
+
+    await screen.findByRole('button', { name: 'Crear y abrir el Studio' });
+    await waitFor(() => expect(api.requests('GET', '/api/voices')).not.toHaveLength(0));
+    await user.type(screen.getByRole('textbox', { name: /Título/ }), 'Con voz neuronal');
+    await user.click(screen.getByRole('button', { name: 'Crear y abrir el Studio' }));
+    await waitFor(() => expect(api.requests('POST', '/api/videos')).toHaveLength(1));
+    const body = api.requests('POST', '/api/videos')[0]?.body as { composition: unknown };
+    expect(CompositionSchema.parse(body.composition).scenes[0]?.script).toMatchObject({
+      kind: 'tts',
+      language: 'es',
+      voiceId: 'kokoro:ef_dora',
+    });
+  });
+
   it('is not offered to viewers', async () => {
     const api = createFakeApi(makeSession('viewer'));
     withVideos(api, []);
@@ -420,6 +467,46 @@ describe('video detail', () => {
       'href',
       `/studio/${video.id}`,
     );
+  });
+
+  it('says how the lips of a photorealistic avatar were driven', async () => {
+    const api = createFakeApi();
+    const engine = {
+      id: 'local-neural',
+      name: 'Motor neuronal local',
+      quality: 'premium' as const,
+      local: true,
+    };
+    const voice = {
+      id: 'kokoro',
+      name: 'Kokoro (neuronal local)',
+      quality: 'premium' as const,
+      local: true,
+    };
+    const byAudio = makeVideo(1, {
+      title: 'Con labios por audio',
+      usesPhotorealAvatars: true,
+      providers: { tts: voice, lipsync: { ...engine, mode: 'audio' } },
+    });
+    const unsaid = makeVideo(2, {
+      title: 'Sin modo declarado',
+      usesPhotorealAvatars: true,
+      providers: { tts: voice, lipsync: engine },
+    });
+    withVideos(api, [byAudio, unsaid]);
+    renderFeatures([videos, others], `/videos/${byAudio.id}`, api);
+
+    await screen.findByRole('heading', { level: 1, name: 'Con labios por audio' });
+    expect(screen.getByText('Neuronal local · Kokoro (neuronal local)')).toBeInTheDocument();
+    expect(screen.getByTestId('lip-driver')).toHaveTextContent(
+      'Labios guiados por el audio: la boca sigue el sonido de la voz.',
+    );
+    cleanup();
+
+    // A render that does not say which driver worked (an older one, an external provider).
+    renderFeatures([videos, others], `/videos/${unsaid.id}`, api);
+    await screen.findByRole('heading', { level: 1, name: 'Sin modo declarado' });
+    expect(screen.queryByTestId('lip-driver')).not.toBeInTheDocument();
   });
 
   it('turns the public link on, shows it and copies it', async () => {

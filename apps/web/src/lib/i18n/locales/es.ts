@@ -63,6 +63,12 @@ export const es = {
       engine_error: 'El motor neuronal local ha respondido con un error interno.',
       engine_invalid: 'El motor neuronal local ha respondido algo que este servidor no entiende.',
       weights_missing: 'Al motor neuronal local le faltan pesos de modelos por descargar.',
+      voice_not_installed:
+        'Esta voz neuronal no está instalada en este equipo. En la carpeta de Parlante, ejecuta «pnpm voices:setup» y vuelve a intentarlo, o elige otra voz.',
+      voice_incomplete:
+        'La instalación de esta voz neuronal quedó a medias. Ejecuta de nuevo «pnpm voices:setup» en la carpeta de Parlante, o elige otra voz.',
+      voice_runtime_unavailable:
+        'El modelo de esta voz neuronal está instalado, pero no se ha podido cargar en este servidor. Revisa el registro de la API o elige otra voz.',
       not_configured: 'Este servidor no tiene configurado ningún motor de avatares.',
       unknown: 'El motor neuronal local no está disponible.',
     },
@@ -109,6 +115,9 @@ export const es = {
     premium: 'Alta calidad',
     basicHint: 'Generado en local con {{name}}, sin servicios externos. Calidad básica.',
     premiumHint: 'Generado con {{name}}, un proveedor externo de alta calidad.',
+    neural: 'Neuronal local',
+    neuralHint:
+      'Generado en este equipo con {{name}}, un modelo neuronal abierto. Sin servicios externos ni claves.',
     names: {
       localHeuristic: 'Heurística local',
       localBlocklist: 'Lista de bloqueo (local)',
@@ -119,6 +128,8 @@ export const es = {
       userTranscript: 'Transcripción aportada por el usuario',
       externalLipsync: 'Lip-sync externo',
       avatar2d: 'Avatar 2D',
+      kokoroLocal: 'Kokoro (neuronal local)',
+      piperLocal: 'Piper (neuronal local)',
     },
   },
   session: {

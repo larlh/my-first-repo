@@ -183,6 +183,8 @@ const es = {
     semitones_other: '{{count}} semitonos',
     applyAll: 'Usar esta voz en todas las escenas',
     appliedAll: 'Voz aplicada a todas las escenas',
+    pitchResampled:
+      'Esta voz cambia el tono reproduciendo el audio más rápido o más lento (hasta ±{{max}} semitonos): el timbre cambia con él.',
     pickTitle: 'Elige una voz',
     pickText: 'Escucha una muestra antes de elegir. Cada voz indica qué proveedor la genera.',
     language: 'Idioma',
@@ -648,6 +650,8 @@ const en: typeof es = {
     semitones_other: '{{count}} semitones',
     applyAll: 'Use this voice in every scene',
     appliedAll: 'Voice applied to every scene',
+    pitchResampled:
+      'This voice changes pitch by playing the audio faster or slower (up to ±{{max}} semitones): the timbre changes with it.',
     pickTitle: 'Choose a voice',
     pickText: 'Listen to a sample before choosing. Each voice says which provider generates it.',
     language: 'Language',

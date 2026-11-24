@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { ProviderBadge } from '@/components/ProviderBadge';
 import { api, isApiError, useApiMutation, useApiQuery } from '@/lib/api';
+import { useDefaultVoice } from '@/lib/voices';
 import { Button, Input, PageHeader, cn, toast, useErrorText } from '@/ui';
 import { ROUTES, useAvailableRoutes } from './lib/routes';
 import { starterComposition } from './lib/starter';
@@ -87,6 +88,7 @@ export default function NewVideoPage() {
     },
   });
 
+  const defaultVoice = useDefaultVoice();
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setTitleError(null);
@@ -98,6 +100,7 @@ export default function NewVideoPage() {
           aspect,
           locale: i18n.language,
           script: t('create.blank.sampleScript'),
+          voiceId: defaultVoice(i18n.language),
         }),
         ...(trimmed !== '' ? { title: trimmed } : {}),
       },

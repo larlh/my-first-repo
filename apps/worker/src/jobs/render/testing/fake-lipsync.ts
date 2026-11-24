@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { AppError } from '@parlante/shared';
 import type { EngineStatus, LipSyncProvider, LipSyncRequest, ProviderRef } from '@parlante/shared';
@@ -21,6 +22,15 @@ export const FAKE_LIPSYNC_INFO: ProviderRef = {
 export interface FakeLipSync extends LipSyncProvider {
   /** Every `animate` request received. */
   calls: LipSyncRequest[];
+  /**
+   * What the audio file of each request really contained when it arrived (the worker deletes
+   * its temp files afterwards): length and loudest 16-bit sample (0 = digital silence).
+   */
+  audio: { durationMs: number; peak: number }[];
+  /** `EngineStatus.animationKey` reported by `status()` (null = an engine that does not say). */
+  animationKey: string | null;
+  /** Driver the clips say they were made with (null = a provider that does not say). */
+  driver: 'audio' | 'visemes' | null;
   /** Make `animate` reject with this error. */
   failWith: Error | null;
   /** Wait this long inside `animate` (cancellation tests); aborting the signal rejects. */
@@ -29,10 +39,23 @@ export interface FakeLipSync extends LipSyncProvider {
   aborted: number;
 }
 
+/** Loudest absolute sample of a PCM 16-bit WAV (its `data` chunk). */
+function wavPeak(file: Buffer): number {
+  const at = file.indexOf('data', 12, 'latin1');
+  if (at < 0) return 0;
+  let peak = 0;
+  for (let o = at + 8; o + 1 < file.length; o += 2)
+    peak = Math.max(peak, Math.abs(file.readInt16LE(o)));
+  return peak;
+}
+
 export function createFakeLipSync(size = 256): FakeLipSync {
   const provider: FakeLipSync = {
     info: FAKE_LIPSYNC_INFO,
     calls: [],
+    audio: [],
+    animationKey: null,
+    driver: null,
     failWith: null,
     delayMs: 0,
     aborted: 0,
@@ -52,12 +75,17 @@ export function createFakeLipSync(size = 256): FakeLipSync {
             commercialUse: true,
           },
         ],
+        ...(provider.animationKey === null ? {} : { animationKey: provider.animationKey }),
       });
     },
     async animate(request) {
       provider.calls.push(request);
       if (provider.failWith) throw provider.failWith;
       const info = await ffprobe(request.audioPath);
+      provider.audio.push({
+        durationMs: info.durationMs ?? 0,
+        peak: wavPeak(await fs.readFile(request.audioPath)),
+      });
       const frameCount = Math.max(1, Math.ceil(((info.durationMs ?? 0) * request.fps) / 1000));
       request.onProgress?.({ fraction: 0.1, etaSec: 9 });
       if (provider.delayMs > 0) {
@@ -110,6 +138,7 @@ export function createFakeLipSync(size = 256): FakeLipSync {
         fps: request.fps,
         frameCount,
         provider: FAKE_LIPSYNC_INFO,
+        ...(provider.driver === null ? {} : { driver: provider.driver }),
       };
     },
   };

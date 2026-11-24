@@ -1,10 +1,10 @@
 import { GenderSchema, LANGUAGE_CODES, languageName } from '@parlante/shared';
 import type { LanguageCode, Voice } from '@parlante/shared';
-import { AudioLines, Mic, Play, Search, Square, X } from 'lucide-react';
+import { AudioLines, Copy, Download, Mic, Play, Search, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ProviderBadge, useProviderName } from '@/components/ProviderBadge';
+import { ProviderBadge, providerTier, useProviderName } from '@/components/ProviderBadge';
 import { api, useApiQuery } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import {
@@ -20,8 +20,10 @@ import {
   Tabs,
   VoiceBars,
   cn,
+  toast,
 } from '@/ui';
 import {
+  Callout,
   CountBadge,
   LIB_ROUTES,
   useAvailableRoutes,
@@ -32,11 +34,14 @@ import { DEFAULT_PREVIEW, VoiceConsole } from './components/VoiceConsole';
 import type { PreviewSettings } from './components/VoiceConsole';
 import {
   VOICE_KINDS,
+  clampPitch,
   countByKind,
   filterVoices,
   groupVoices,
   hasActiveVoiceFilters,
+  installCommandFor,
   languageCounts,
+  notInstalled,
   previewLanguage,
   providersOf,
   sampleText,
@@ -77,7 +82,7 @@ function VoiceRow({
   onToggle: () => void;
 }) {
   const { t } = useTranslation('voices');
-  const ready = voice.status === 'ready';
+  const ready = voice.status === 'ready' && !voice.unavailable;
   return (
     <li
       className={cn(
@@ -140,12 +145,18 @@ function VoiceRow({
             {t('multilingual')}
           </Badge>
         )}
-        <ProviderBadge
-          provider={voice.provider}
-          tierOnly
-          size="sm"
-          className="hidden sm:inline-flex"
-        />
+        {voice.unavailable ? (
+          <Badge tone="neutral" variant="outline" size="sm" icon={<Download aria-hidden="true" />}>
+            {t('install.badge')}
+          </Badge>
+        ) : (
+          <ProviderBadge
+            provider={voice.provider}
+            tierOnly
+            size="sm"
+            className="hidden sm:inline-flex"
+          />
+        )}
       </button>
     </li>
   );
@@ -166,10 +177,16 @@ export default function VoicesPage() {
   const filters = useMemo(() => voiceFiltersFromParams(params), [params]);
   const selectedId = params.get('voice');
 
-  const catalogue = useApiQuery(api.voices.list, undefined, {
-    refetchInterval: (query) =>
-      query.state.data?.items.some((voice) => voice.status === 'processing') ? POLL_MS : false,
-  });
+  // `all`: the local neural voices that are not installed yet are listed too, with how to
+  // install them (every selector of the app asks without it and only gets usable voices).
+  const catalogue = useApiQuery(
+    api.voices.list,
+    { query: { availability: 'all' } },
+    {
+      refetchInterval: (query) =>
+        query.state.data?.items.some((voice) => voice.status === 'processing') ? POLL_MS : false,
+    },
+  );
   const all = useMemo(() => catalogue.data?.items ?? [], [catalogue.data]);
 
   const [search, setSearch] = useState(filters.q);
@@ -193,15 +210,30 @@ export default function VoicesPage() {
   const groups = useMemo(() => groupVoices(shown), [shown]);
   const languages = useMemo(() => languageCounts(all), [all]);
   const providers = useMemo(() => providersOf(all), [all]);
+  const missing = useMemo(() => notInstalled(shown), [shown]);
+  const installCommand = useMemo(() => installCommandFor(shown), [shown]);
+  const copyCommand = async (command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+      toast.success(t('install.copied'));
+    } catch {
+      toast.error(t('install.copyFailed'));
+    }
+  };
 
   const [settings, setSettings] = useState<PreviewSettings>(DEFAULT_PREVIEW);
   const speech = useSpeechPreview();
   /** Phones: the console opens in a sheet when a voice is chosen. */
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  // On a wide screen there is always a voice on the desk: the first one listed.
+  // On a wide screen there is always a voice on the desk: the first one listed that can sound
+  // (the groups put the best voices first).
   const explicit = selectedId ? (all.find((voice) => voice.id === selectedId) ?? null) : null;
-  const selected: Voice | null = explicit ?? (desktop ? (shown[0] ?? null) : null);
+  const firstListed = useMemo(() => {
+    const listed = groups.flatMap((group) => group.voices);
+    return listed.find((voice) => !voice.unavailable) ?? listed[0] ?? null;
+  }, [groups]);
+  const selected: Voice | null = explicit ?? (desktop ? firstListed : null);
 
   const languageOf = (voice: Voice): LanguageCode =>
     previewLanguage(voice, settings.language ?? filters.language);
@@ -219,16 +251,19 @@ export default function VoicesPage() {
   };
 
   const play = (voice: Voice) => {
+    if (voice.unavailable) return;
     const language = languageOf(voice);
     void speech.play(voice.id, {
       text: (settings.text ?? sampleText(language)).trim() || sampleText(language),
       voiceId: voice.id,
       language,
       speed: settings.speed,
-      pitch: settings.pitch,
+      // What is asked is what the voice can do (and what the console shows).
+      pitch: clampPitch(voice, settings.pitch),
     });
   };
   const toggle = (voice: Voice) => {
+    if (voice.unavailable) return select(voice);
     if (speech.activeKey === voice.id && speech.status !== 'error') return speech.stop();
     // A quick listen from the list also puts the voice on the desk (not in a sheet).
     setParams(
@@ -355,8 +390,7 @@ export default function VoicesPage() {
                 ...providers.map((provider) => ({
                   value: provider.id,
                   label: providerName(provider),
-                  description:
-                    provider.quality === 'basic' ? t('filters.basic') : t('filters.premium'),
+                  description: t(`filters.${providerTier(provider)}`),
                 })),
               ]}
             />
@@ -406,6 +440,27 @@ export default function VoicesPage() {
             )
           ) : (
             <div className="flex flex-col gap-7">
+              {installCommand && (
+                <Callout
+                  icon={<Download />}
+                  title={t('install.title', { count: missing.length })}
+                  action={
+                    <Button
+                      size="sm"
+                      leftIcon={<Copy aria-hidden="true" />}
+                      onClick={() => void copyCommand(installCommand)}
+                    >
+                      {t('install.copy')}
+                    </Button>
+                  }
+                >
+                  <p className="text-pretty">{t('install.text')}</p>
+                  <code className="mt-1.5 block rounded bg-surface-3 px-2 py-1 font-mono text-xs break-all">
+                    {installCommand}
+                  </code>
+                  <p className="mt-1.5 text-xs text-fg-muted">{t('install.after')}</p>
+                </Callout>
+              )}
               {groups.map((group) => (
                 <section key={group.key} aria-labelledby={`voices-${group.key}`}>
                   <div className="mb-2.5 flex items-baseline gap-3">

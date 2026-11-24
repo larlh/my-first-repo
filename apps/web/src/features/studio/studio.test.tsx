@@ -222,6 +222,57 @@ describe('Studio editing and autosave', () => {
     await waitFor(() => expect(patches(api)).toHaveLength(1));
   });
 
+  it('offers a neural voice only the pitch range it honours and says how it changes pitch', async () => {
+    const { api } = studioApi(
+      draft({
+        composition: compositionFromScript([{ text: 'Hola, soy Dora.', title: 'Intro' }], {
+          avatarId: 'stock_lucia',
+          voiceId: 'kokoro:ef_dora',
+          language: 'es',
+        }),
+      }),
+    );
+    const kokoro = {
+      id: 'kokoro',
+      name: 'Kokoro (neuronal local)',
+      quality: 'premium',
+      local: true,
+    };
+    api.on('GET', '/api/voices', () => ({
+      items: [
+        VoiceSchema.parse({
+          id: 'kokoro:ef_dora',
+          kind: 'stock',
+          name: 'Dora',
+          provider: kokoro,
+          language: 'es',
+          gender: 'female',
+          description: '',
+          tags: [],
+          status: 'ready',
+          workspaceId: null,
+          consentId: null,
+          profile: null,
+          error: null,
+          createdAt: null,
+          isDefault: true,
+          pitchRange: { minSemitones: -4, maxSemitones: 4, resampled: true },
+        }),
+      ],
+    }));
+    await open(api);
+    await waitFor(() => expect(screen.getByTestId('voice-name')).toHaveTextContent('Dora'));
+    expect(screen.getByTestId('voice-name').parentElement).toHaveTextContent(
+      'Kokoro (neuronal local) · es',
+    );
+    const pitch = screen.getByRole('slider', { name: 'Tono' });
+    expect(pitch).toHaveAttribute('aria-valuemin', '-4');
+    expect(pitch).toHaveAttribute('aria-valuemax', '4');
+    expect(screen.getByTestId('pitch-note')).toHaveTextContent(
+      'reproduciendo el audio más rápido o más lento (hasta ±4 semitonos)',
+    );
+  });
+
   it('adds, duplicates and deletes scenes', async () => {
     const user = userEvent.setup();
     const { api } = studioApi();

@@ -197,6 +197,21 @@ vista previa. La exportación sustituye el stand-in por el clip neuronal en el m
 | Dictado (17)            | `POST /api/dictation/transcribe`: valida el WAV en memoria → `providers.dictation.transcribe` → `{ text, language, provider }`. Sin créditos, sin fila, sin archivo | sin job (síncrono; la inferencia corre en un hilo `worker_threads` de la API, un fragmento cada vez)                                  | dictation (siempre local) |
 | Webhooks (9)            | CRUD de endpoints; `dispatchWebhookEvent` crea entregas                                                                                                             | `webhook-delivery`: POST firmado HMAC con guardia SSRF y reintentos                                                                   | —                         |
 
+Voz neuronal local (TTS por defecto cuando está instalada): los modelos Kokoro y Piper (ONNX)
+viven en `data/models`, los instala `pnpm voices:setup` y los ejecuta `onnxruntime-node` dentro
+del proceso Node que sintetiza — la API para las preescuchas, la vista previa del Studio y el
+avatar interactivo; el worker para el render, el doblaje y el clonado —, en un hilo aparte por
+proceso (`packages/providers/src/tts/neural-engine.ts`). El texto pasa a fonemas con el eSpeak
+NG WASM del repositorio; el audio y los tiempos de cada fonema y de cada palabra salen del
+propio modelo (CONTRACTS §2), así que la boca de los avatares 2D y los subtítulos siguen el
+audio real. La caché de `synthesizeCached` (packages/jobs) hace que la vista previa y la
+exportación usen el mismo audio y la misma línea de tiempo. `TTS_PROVIDER=auto` ordena las voces
+por defecto: externo con clave → neuronales instaladas → eSpeak NG, que queda de reserva y es
+la voz de los idiomas sin voz neuronal. En el render fotorrealista el worker envía al motor ese
+mismo audio y pide el conductor `auto`: el motor mueve los labios con el modelo guiado por audio
+o con la línea de tiempo de fonemas, lo que mejor siga el sonido de cada clip, y el vídeo guarda
+cuál trabajó (`Video.providers.lipsync.mode`).
+
 Reconocimiento de voz local (dictado y STT sin clave): el modelo Whisper (ONNX) vive en
 `data/models`, lo instala `pnpm dictation:setup` y lo ejecuta `@huggingface/transformers` sobre
 `onnxruntime-node` dentro del proceso Node que lo necesita — la API para el dictado, el worker
@@ -257,16 +272,17 @@ la fase 3: [`SECURITY.md`](SECURITY.md).
 Todo lo descrito arriba está implementado; no quedan _stubs_ en rutas que el usuario ejecuta.
 Qué significa «probado» en cada pieza (detalle y cifras en el README y en los informes de cierre):
 
-| Pieza                                                                      | Estado                                                                                                                                       |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Contratos, BD, colas, API (115 rutas), worker (7 colas)                    | Tests de integración con PostgreSQL y Redis reales; matriz de aislamiento entre workspaces (`apps/api/src/security`).                        |
-| Render 2D de extremo a extremo                                             | `e2e/core.mjs`: navegador real contra web + API + worker, MP4 verificado con ffprobe y comparado fotograma a fotograma con la vista previa.  |
-| Proveedores locales (eSpeak, heurísticas, perfil de voz)                   | Ejercitados de verdad en los e2e. Son «modo básico» y así se etiquetan.                                                                      |
-| Motor neuronal (generar, preparar, animar)                                 | Ejercitado de verdad en CPU (`e2e/ai.mjs` con `E2E_ENGINE=1`). GPU implementada, **no verificada**.                                          |
-| Reconocimiento de voz local (dictado y STT de traducción)                  | Ejercitado de verdad en CPU con habla sintetizada por eSpeak (tests `[slow]` y curl contra la API). Sin voces humanas; solo en Linux x86-64. |
-| Dictado en la web (micrófono → campo de texto)                             | `e2e/dictation.mjs`: Chromium con micrófono simulado contra web + API + worker y el modelo real. Motor del navegador: solo con un doble.     |
-| Adaptadores externos (Anthropic, ElevenLabs, OpenAI, S3, lip-sync externo) | Implementados; **solo probados con respuestas simuladas** (no hay claves en el entorno de construcción).                                     |
-| Docker (`docker-compose.yml`, `docker/`)                                   | Escrito y validado de forma estática (`docker compose config`); **nunca ejecutado** (sin daemon en el entorno de construcción).              |
+| Pieza                                                                      | Estado                                                                                                                                                                                      |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contratos, BD, colas, API (115 rutas), worker (7 colas)                    | Tests de integración con PostgreSQL y Redis reales; matriz de aislamiento entre workspaces (`apps/api/src/security`).                                                                       |
+| Render 2D de extremo a extremo                                             | `e2e/core.mjs`: navegador real contra web + API + worker, MP4 verificado con ffprobe y comparado fotograma a fotograma con la vista previa.                                                 |
+| Proveedores locales (eSpeak, heurísticas, perfil de voz)                   | Ejercitados de verdad en los e2e. Son «modo básico» y así se etiquetan.                                                                                                                     |
+| Voces neuronales locales (Kokoro, Piper)                                   | Ejercitadas de verdad en CPU en los e2e (voz por defecto de la pila de pruebas) y en tests `[slow]`. Nadie las ha escuchado: se juzgan con medidas. GPU y Windows/macOS, **sin verificar**. |
+| Motor neuronal (generar, preparar, animar)                                 | Ejercitado de verdad en CPU (`e2e/ai.mjs` con `E2E_ENGINE=1`). GPU implementada, **no verificada**.                                                                                         |
+| Reconocimiento de voz local (dictado y STT de traducción)                  | Ejercitado de verdad en CPU con habla sintetizada por el producto (tests `[slow]`, e2e y curl contra la API). Sin voces humanas; solo en Linux x86-64.                                      |
+| Dictado en la web (micrófono → campo de texto)                             | `e2e/dictation.mjs`: Chromium con micrófono simulado contra web + API + worker y el modelo real. Motor del navegador: solo con un doble.                                                    |
+| Adaptadores externos (Anthropic, ElevenLabs, OpenAI, S3, lip-sync externo) | Implementados; **solo probados con respuestas simuladas** (no hay claves en el entorno de construcción).                                                                                    |
+| Docker (`docker-compose.yml`, `docker/`)                                   | Escrito y validado de forma estática (`docker compose config`); **nunca ejecutado** (sin daemon en el entorno de construcción).                                                             |
 
 Piezas añadidas en la fase 3 que no aparecen en las secciones anteriores:
 

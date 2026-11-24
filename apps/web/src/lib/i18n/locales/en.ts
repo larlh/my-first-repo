@@ -62,6 +62,12 @@ export const en: ShellTranslations = {
       engine_error: 'The local neural engine answered with an internal error.',
       engine_invalid: 'The local neural engine answered something this server does not understand.',
       weights_missing: 'The local neural engine is missing model weights that must be downloaded.',
+      voice_not_installed:
+        'This neural voice is not installed on this machine. In the Parlante folder, run “pnpm voices:setup” and try again, or pick another voice.',
+      voice_incomplete:
+        'The installation of this neural voice was left unfinished. Run “pnpm voices:setup” again in the Parlante folder, or pick another voice.',
+      voice_runtime_unavailable:
+        'The model of this neural voice is installed, but it could not be loaded on this server. Check the API log or pick another voice.',
       not_configured: 'This server has no avatar engine configured.',
       unknown: 'The local neural engine is not available.',
     },
@@ -108,6 +114,9 @@ export const en: ShellTranslations = {
     premium: 'High quality',
     basicHint: 'Generated locally with {{name}}, without external services. Basic quality.',
     premiumHint: 'Generated with {{name}}, an external high-quality provider.',
+    neural: 'Local neural',
+    neuralHint:
+      'Generated on this machine with {{name}}, an open neural model. No external services or keys.',
     names: {
       localHeuristic: 'Local heuristic',
       localBlocklist: 'Blocklist (local)',
@@ -118,6 +127,8 @@ export const en: ShellTranslations = {
       userTranscript: 'Transcript provided by the user',
       externalLipsync: 'External lip-sync',
       avatar2d: '2D avatar',
+      kokoroLocal: 'Kokoro (local neural)',
+      piperLocal: 'Piper (local neural)',
     },
   },
   session: {

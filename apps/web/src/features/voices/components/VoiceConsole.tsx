@@ -5,9 +5,11 @@ import {
   Clapperboard,
   Copy,
   Cpu,
+  Download,
   Pencil,
   Play,
   RotateCcw,
+  Sparkles,
   Square,
   Trash2,
   TriangleAlert,
@@ -15,7 +17,7 @@ import {
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ProviderBadge } from '@/components/ProviderBadge';
+import { ProviderBadge, providerTier } from '@/components/ProviderBadge';
 import { api, useApiMutation } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useSession } from '@/lib/session';
@@ -38,6 +40,7 @@ import {
   PITCH_RANGE,
   PREVIEW_TEXT_MAX,
   SPEED_RANGE,
+  clampPitch,
   formatPitch,
   formatSpeed,
   sampleText,
@@ -144,10 +147,16 @@ export function VoiceConsole({
   const failed = mine && speech.status === 'error';
   const result = speech.resultKey === voice.id ? speech.result : null;
   const presenter = presenterFor(voice);
-  const ready = voice.status === 'ready';
+  const unavailable = voice.unavailable ?? null;
+  const ready = voice.status === 'ready' && unavailable === null;
   const text = settings.text ?? sampleText(language);
   const cloned = voice.kind === 'cloned';
-  const basic = voice.provider.quality === 'basic';
+  const tier = providerTier(voice.provider);
+  const basic = tier === 'basic';
+  // Each voice has its own pitch range; the setting is kept when another voice is chosen.
+  const pitchMin = voice.pitchRange?.minSemitones ?? PITCH_RANGE.min;
+  const pitchMax = voice.pitchRange?.maxSemitones ?? PITCH_RANGE.max;
+  const pitch = clampPitch(voice, settings.pitch);
 
   const startVideo = useStartVideo({
     onCreated: () => toast.success(t('console.videoCreated')),
@@ -164,6 +173,14 @@ export function VoiceConsole({
       toast.error(t('console.deleteFailed'), { description: describe(error).title }),
   });
 
+  const copyCommand = async (command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+      toast.success(t('install.copied'));
+    } catch {
+      toast.error(t('install.copyFailed'));
+    }
+  };
   const copyId = async () => {
     try {
       await navigator.clipboard.writeText(voice.id);
@@ -252,7 +269,9 @@ export function VoiceConsole({
                   })
                 : ready
                   ? t('console.status.idle')
-                  : t(`console.status.${voice.status}`)}
+                  : unavailable
+                    ? t('console.unavailableStatus')
+                    : t(`console.status.${voice.status}`)}
       </p>
 
       <div className="flex flex-col gap-5 p-4 sm:p-5">
@@ -267,6 +286,27 @@ export function VoiceConsole({
               code: voice.error?.code,
               reason: voice.error?.reason,
             }) || t('console.failedText')}
+          </Callout>
+        )}
+        {unavailable && (
+          <Callout
+            icon={<Download />}
+            title={t(`install.reason.${unavailable.reasonCode}`)}
+            action={
+              <Button
+                size="sm"
+                leftIcon={<Copy aria-hidden="true" />}
+                onClick={() => void copyCommand(unavailable.command)}
+              >
+                {t('install.copy')}
+              </Button>
+            }
+          >
+            <p>{t('install.how')}</p>
+            <code className="mt-1.5 block rounded bg-surface-3 px-2 py-1 font-mono text-xs break-all">
+              {unavailable.command}
+            </code>
+            <p className="mt-1.5 text-xs text-fg-muted">{t('install.after')}</p>
           </Callout>
         )}
         {failed && speech.error && (
@@ -331,16 +371,24 @@ export function VoiceConsole({
           />
           <Slider
             label={t('console.pitch')}
-            value={settings.pitch}
-            min={PITCH_RANGE.min}
-            max={PITCH_RANGE.max}
+            value={pitch}
+            min={pitchMin}
+            max={pitchMax}
             step={PITCH_RANGE.step}
             disabled={!ready}
             formatValue={formatPitch}
-            onValueChange={(pitch) => onSettings({ ...settings, pitch })}
+            onValueChange={(next) => onSettings({ ...settings, pitch: next })}
           />
         </div>
-        {(settings.speed !== 1 || settings.pitch !== 0) && (
+        {voice.pitchRange?.resampled && (
+          <p className="-mt-2 text-xs text-pretty text-fg-muted">
+            {t('console.pitchResampled', {
+              min: formatPitch(pitchMin),
+              max: formatPitch(pitchMax),
+            })}
+          </p>
+        )}
+        {(settings.speed !== 1 || pitch !== 0) && (
           <button
             type="button"
             className="-mt-2 inline-flex items-center gap-1 self-start text-sm font-semibold underline"
@@ -353,24 +401,33 @@ export function VoiceConsole({
 
         {/* ---- honesty: who makes the sound ---- */}
         <div className="rounded-lg border border-line bg-surface-2 p-3.5">
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-sm">
-            <dt className="text-fg-muted">{t('console.voiceProvider')}</dt>
-            <dd className="justify-self-end">
-              <ProviderBadge provider={voice.provider} size="sm" />
-            </dd>
+          {/* Label and badge share a line when they fit and stack when the name is long. */}
+          <dl className="flex flex-col gap-2 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <dt className="text-fg-muted">{t('console.voiceProvider')}</dt>
+              <dd>
+                <ProviderBadge provider={voice.provider} size="sm" />
+              </dd>
+            </div>
             {result && (
-              <>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
                 <dt className="text-fg-muted">{t('console.audioProvider')}</dt>
-                <dd className="justify-self-end">
+                <dd>
                   <ProviderBadge provider={result.provider} size="sm" />
                 </dd>
-              </>
+              </div>
             )}
           </dl>
           {basic && (
             <p className="mt-3 flex gap-2 border-t border-line pt-3 text-xs text-pretty text-fg-muted">
               <Cpu aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
               {cloned ? t('console.basicCloned') : t('console.basicStock')}
+            </p>
+          )}
+          {tier === 'neural' && !cloned && (
+            <p className="mt-3 flex gap-2 border-t border-line pt-3 text-xs text-pretty text-fg-muted">
+              <Sparkles aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+              {t('console.neuralStock')}
             </p>
           )}
         </div>
