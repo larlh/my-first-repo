@@ -28,7 +28,7 @@ import type { InstallProgress } from '../stt/whisper-setup';
  * the size and SHA-256 of the catalogue before it is accepted. Running it again is harmless.
  * ----------------------------------------------------------------------------------------- */
 
-const MB = 1024 * 1024;
+const MB = 1000 * 1000;
 const mb = (bytes: number): string => `${(bytes / MB).toFixed(1)} MB`;
 
 // Node's fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY=1 is set BEFORE it starts: behind
@@ -141,14 +141,16 @@ try {
   }
   if (modelId !== env.DICTATION_MODEL) {
     console.log(`To use it, set DICTATION_MODEL=${modelId} in .env and restart API and worker.`);
-  } else {
+  } else if (result.changed) {
     console.log(
       'Dictation uses it right away. Restart API and worker so that STT_PROVIDER=auto (video translation) picks it up too.',
     );
   }
 } catch (err) {
   if (interactive && lastLine !== '') process.stdout.write('\n');
-  console.error(`Could not install ${model.id}: ${err instanceof Error ? err.message : String(err)}`);
+  console.error(
+    `Could not install ${model.id}: ${err instanceof Error ? err.message : String(err)}`,
+  );
   console.error(
     'Nothing unverified was kept. Check the connection to huggingface.co and run it again.',
   );

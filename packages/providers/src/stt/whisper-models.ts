@@ -209,7 +209,10 @@ export interface WhisperInstallState {
  * exists with the expected size. Hashes themselves are verified by the installer, which
  * writes the marker last.
  */
-export function inspectWhisperInstall(modelsDir: string, model: WhisperModelDef): WhisperInstallState {
+export function inspectWhisperInstall(
+  modelsDir: string,
+  model: WhisperModelDef,
+): WhisperInstallState {
   const dir = path.join(modelsDir, whisperModelFolder(model));
   const hint = `run "pnpm dictation:setup"`;
   let marker: WhisperInstallMarker;
@@ -230,7 +233,7 @@ export function inspectWhisperInstall(modelsDir: string, model: WhisperModelDef)
   }
   const verified = new Map((marker.files ?? []).map((file) => [file.path, file.sha256]));
   for (const file of model.files) {
-    let size = -1;
+    let size: number;
     try {
       size = fs.statSync(path.join(dir, ...file.path.split('/'))).size;
     } catch {

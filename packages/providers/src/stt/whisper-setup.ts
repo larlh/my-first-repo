@@ -116,7 +116,9 @@ async function downloadVerified(
       received += chunk.length;
       // Stop as soon as the server sends more than the catalogue says the file holds.
       if (received > file.sizeBytes) {
-        done(new ModelIntegrityError(file.path, 'size', String(file.sizeBytes), `> ${file.sizeBytes}`));
+        done(
+          new ModelIntegrityError(file.path, 'size', String(file.sizeBytes), `> ${file.sizeBytes}`),
+        );
         return;
       }
       hash.update(chunk);

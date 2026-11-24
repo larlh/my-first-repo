@@ -19,11 +19,7 @@ import {
 import type { WhisperRunner } from './local-whisper';
 import { WhisperEngineError } from './whisper-engine';
 import type { WhisperJob, WhisperOutput } from './whisper-engine';
-import {
-  WHISPER_INSTALL_MARKER,
-  WHISPER_MODELS,
-  whisperModelFolder,
-} from './whisper-models';
+import { WHISPER_INSTALL_MARKER, WHISPER_MODELS, whisperModelFolder } from './whisper-models';
 import type { WhisperInstallState } from './whisper-models';
 
 /*
@@ -34,7 +30,12 @@ import type { WhisperInstallState } from './whisper-models';
 
 const RATE = 16_000;
 const env = (overrides: Record<string, string> = {}) => providerEnvSchema.parse(overrides);
-const INSTALLED: WhisperInstallState = { installed: true, reasonCode: null, reason: null, dir: '/m' };
+const INSTALLED: WhisperInstallState = {
+  installed: true,
+  reasonCode: null,
+  reason: null,
+  dir: '/m',
+};
 const MISSING: WhisperInstallState = {
   installed: false,
   reasonCode: 'model_not_installed',
@@ -136,13 +137,13 @@ describe('local dictation provider (engine double)', () => {
       languages: [],
       model: null,
     });
-    await expect(
-      provider.transcribe({ samples: tone(1), sampleRate: RATE }),
-    ).rejects.toMatchObject({
-      code: 'SERVICE_UNAVAILABLE',
-      status: 503,
-      details: { reason: 'model_not_installed' },
-    });
+    await expect(provider.transcribe({ samples: tone(1), sampleRate: RATE })).rejects.toMatchObject(
+      {
+        code: 'SERVICE_UNAVAILABLE',
+        status: 503,
+        details: { reason: 'model_not_installed' },
+      },
+    );
     expect(jobs).toHaveLength(0);
   });
 
@@ -178,7 +179,8 @@ describe('local dictation provider (engine double)', () => {
       provider: provider.info,
     });
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toMatchObject({ language: 'es', timestamps: false, signal });
+    // Timestamps are always requested: the model transcribes pauses and punctuation better.
+    expect(jobs[0]).toMatchObject({ language: 'es', timestamps: true, signal });
     expect(jobs[0]!.samples).toBeInstanceOf(Float32Array);
     expect(jobs[0]!.samples).toHaveLength(samples.length);
     expect(Math.max(...jobs[0]!.samples.subarray(0, 400))).toBeCloseTo(9000 / 32768, 2);
@@ -186,7 +188,11 @@ describe('local dictation provider (engine double)', () => {
 
   it('returns the detected language when no hint is given, and only product languages', async () => {
     let detected: string | null = 'en';
-    const { jobs, runner } = recorder(() => ({ text: ' Hello there.', language: detected, chunks: [] }));
+    const { jobs, runner } = recorder(() => ({
+      text: ' Hello there.',
+      language: detected,
+      chunks: [],
+    }));
     const provider = createLocalWhisperDictation(env(), { runner, inspect: () => INSTALLED });
     const first = await provider.transcribe({ samples: tone(1), sampleRate: RATE });
     expect(first).toMatchObject({ text: 'Hello there.', language: 'en' });
@@ -196,9 +202,15 @@ describe('local dictation provider (engine double)', () => {
   });
 
   it('never sends silence to the model (it would invent a sentence)', async () => {
-    const { jobs, runner } = recorder(() => ({ text: 'Gracias por ver el vídeo.', language: 'es', chunks: [] }));
+    const { jobs, runner } = recorder(() => ({
+      text: 'Gracias por ver el vídeo.',
+      language: 'es',
+      chunks: [],
+    }));
     const provider = createLocalWhisperDictation(env(), { runner, inspect: () => INSTALLED });
-    expect(await provider.transcribe({ samples: new Int16Array(RATE * 4), sampleRate: RATE })).toEqual({
+    expect(
+      await provider.transcribe({ samples: new Int16Array(RATE * 4), sampleRate: RATE }),
+    ).toEqual({
       text: '',
       language: null,
       provider: provider.info,
@@ -242,7 +254,9 @@ describe('local dictation provider (engine double)', () => {
       reason: expect.stringContaining('Protobuf parsing failed'),
     });
     // During the back-off the engine is not asked again.
-    await expect(provider.transcribe(request)).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    await expect(provider.transcribe(request)).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+    });
     expect(jobs).toHaveLength(1);
     now += 61_000;
     healthy = true;
@@ -255,18 +269,19 @@ describe('local dictation provider (engine double)', () => {
       runner: recorder(() => new WhisperEngineError('invalid tensor', 'run')).runner,
       inspect: () => INSTALLED,
     });
-    await expect(
-      failing.transcribe({ samples: tone(1), sampleRate: RATE }),
-    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR', status: 502 });
+    await expect(failing.transcribe({ samples: tone(1), sampleRate: RATE })).rejects.toMatchObject({
+      code: 'PROVIDER_ERROR',
+      status: 502,
+    });
     // A failed segment says nothing about the model: still available.
     expect((await failing.status()).available).toBe(true);
     const aborted = createLocalWhisperDictation(env(), {
       runner: recorder(() => new WhisperEngineError('Aborted', 'aborted')).runner,
       inspect: () => INSTALLED,
     });
-    await expect(
-      aborted.transcribe({ samples: tone(1), sampleRate: RATE }),
-    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(aborted.transcribe({ samples: tone(1), sampleRate: RATE })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
   });
 });
 
@@ -343,7 +358,11 @@ describe('local STT provider (engine double)', () => {
       samples.set(tone(3), 0); // speech only at the very start: the second chunk is silence
       const audioPath = path.join(dir, 'speech.wav');
       await fs.writeFile(audioPath, encodeWav(samples, RATE));
-      const { jobs, runner } = recorder(() => ({ text: ' Solo texto.', language: 'en', chunks: [] }));
+      const { jobs, runner } = recorder(() => ({
+        text: ' Solo texto.',
+        language: 'en',
+        chunks: [],
+      }));
       const stt = createLocalWhisperStt(env(), { runner, inspect: () => INSTALLED });
       const result = await stt.transcribe({ audio: new Uint8Array(), audioPath, language: 'es' });
       expect(jobs).toHaveLength(1);
@@ -390,7 +409,12 @@ describe('selection and capabilities', () => {
     }
     await fs.writeFile(
       path.join(dir, WHISPER_INSTALL_MARKER),
-      JSON.stringify({ model: model.id, repo: model.repo, revision: model.revision, files: model.files }),
+      JSON.stringify({
+        model: model.id,
+        repo: model.repo,
+        revision: model.revision,
+        files: model.files,
+      }),
     );
   });
   afterAll(async () => {
@@ -418,8 +442,9 @@ describe('selection and capabilities', () => {
     expect(forced.requiresUserTranscript).toBe(true); // degrades to "supply the transcript"
     // The other model of the catalogue is not the one installed here.
     expect(
-      createSttProvider(env({ DICTATION_MODEL_DIR: installedDir, DICTATION_MODEL: 'whisper-small' }))
-        .info.id,
+      createSttProvider(
+        env({ DICTATION_MODEL_DIR: installedDir, DICTATION_MODEL: 'whisper-small' }),
+      ).info.id,
     ).toBe('manual');
   });
 
@@ -441,7 +466,12 @@ describe('selection and capabilities', () => {
     expect(without.dictation).toEqual({
       local: {
         available: false,
-        provider: { id: 'local-whisper', name: 'Whisper base (local)', quality: 'basic', local: true },
+        provider: {
+          id: 'local-whisper',
+          name: 'Whisper base (local)',
+          quality: 'basic',
+          local: true,
+        },
         reason: expect.stringContaining('pnpm dictation:setup'),
         reasonCode: 'model_not_installed',
         languages: [],
@@ -457,7 +487,12 @@ describe('selection and capabilities', () => {
     expect(withModel.sttRequiresTranscript).toBe(false);
     expect(withModel.dictation.local).toEqual({
       available: true,
-      provider: { id: 'local-whisper', name: 'Whisper base (local)', quality: 'basic', local: true },
+      provider: {
+        id: 'local-whisper',
+        name: 'Whisper base (local)',
+        quality: 'basic',
+        local: true,
+      },
       reason: null,
       reasonCode: null,
       languages: LOCAL_WHISPER_LANGUAGES,
@@ -487,13 +522,20 @@ describe('selection and capabilities', () => {
       languages: [],
     });
     // Consumers of an older producer still get the block.
-    const legacy = CapabilitiesSchema.parse({
-      active: {},
-      ttsProviders: [],
-      sttRequiresTranscript: true,
-      avatarEngine: { available: false, reason: 'x', device: null, secondsPerVideoSecond: null },
+    const { dictation: _dictation, ...older } = await describeCapabilities(
+      createProviders(
+        env({
+          AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
+          STORAGE_LOCAL_DIR: emptyDir,
+          DICTATION_MODEL_DIR: emptyDir,
+        }),
+      ),
+    );
+    const legacy = CapabilitiesSchema.parse(older);
+    expect(legacy.dictation.local).toMatchObject({
+      available: false,
+      reasonCode: 'not_configured',
     });
-    expect(legacy.dictation.local).toMatchObject({ available: false, reasonCode: 'not_configured' });
     expect(legacy.dictation.maxSegmentMs).toBe(30_000);
   });
 });

@@ -17,6 +17,8 @@ export interface TranscriptFieldProps {
   error?: string;
   /** Where the content came from when the form filled it in (the subtitles of a video). */
   note?: string;
+  /** Language spoken in the video: the language dictated into the transcript. */
+  language?: string;
 }
 
 const FORMATS: TranscriptFormat[] = ['srt', 'vtt', 'text'];
@@ -33,6 +35,7 @@ export function TranscriptField({
   required,
   error,
   note,
+  language,
 }: TranscriptFieldProps) {
   const { t } = useTranslation('translate');
   const formatter = useFormat();
@@ -89,6 +92,7 @@ export function TranscriptField({
         placeholder={t(`transcript.placeholders.${format}`)}
         hint={note ? `${note} ${t(`transcript.hints.${format}`)}` : t(`transcript.hints.${format}`)}
         error={error}
+        dictationLanguage={language}
         className="font-mono text-xs leading-5"
       />
 

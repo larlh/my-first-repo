@@ -200,6 +200,98 @@ export const en: ShellTranslations = {
     toLight: 'Switch to light theme',
     toDark: 'Switch to dark theme',
   },
+  dictation: {
+    button: 'Dictate with the microphone',
+    stopButton: 'Stop dictating',
+    unavailable: 'Dictation unavailable',
+    panel: 'Dictation status',
+    stop: 'Stop',
+    close: 'Close',
+    escHint: 'Press Esc to stop',
+    state: {
+      requesting: 'Waiting for microphone permission…',
+      requestingHint: 'Accept the browser prompt to start dictating.',
+      listening: 'Listening…',
+      listeningHintLocal: 'The text appears when each phrase ends.',
+      listeningHintBrowser: 'The text is written when each phrase closes.',
+      transcribing: 'Transcribing…',
+      pending_one: 'Transcribing {{count}} phrase…',
+      pending_other: 'Transcribing {{count}} phrases…',
+      level: 'Microphone input level',
+    },
+    engine: {
+      local: 'Local engine',
+      localPrivacy:
+        'Transcribed by your Parlante installation: the audio never leaves it and is not stored.',
+      browser: 'Browser dictation',
+      browserBadge: 'Browser · Web Speech',
+      browserPrivacy:
+        "The audio is recognised by your browser's speech service (in Chrome it is sent to Google).",
+    },
+    errors: {
+      permission_denied:
+        'The browser is not allowed to use the microphone. Allow it from the padlock icon in the address bar and try again.',
+      no_microphone: 'No microphone was found. Connect one and try again.',
+      microphone_busy: 'The microphone could not be opened. Another application may be using it.',
+      microphone_lost: 'The microphone stopped sending audio. Check that it is still connected.',
+      insecure_context:
+        'Browsers only allow the microphone on secure pages: open Parlante from "localhost" or over HTTPS.',
+      unsupported:
+        'This browser cannot capture audio for local dictation. Update it or use another one.',
+      engine_unavailable: 'Local dictation is not available.',
+      no_engine: 'No dictation engine is available. {{reason}}',
+      browser_unsupported: 'This browser has no dictation of its own (Web Speech API).',
+      limit_reached_one: 'The field reached its limit of {{count}} character. Dictation stopped.',
+      limit_reached_other:
+        'The field reached its limit of {{count}} characters. Dictation stopped.',
+      network: 'The Parlante server cannot be reached. Dictation stopped.',
+      rate_limited: 'You dictated too many phrases in a minute. Wait a moment and carry on.',
+      busy: 'The server is transcribing for other people. Try again in a few seconds.',
+      session_expired: 'Your session has expired. Sign in again to dictate.',
+      audio_rejected: 'The server did not accept the audio of that phrase. Try again.',
+      service_failed: 'The speech model failed on that phrase. Try again.',
+      browser_service:
+        "The browser's speech service is not answering or is blocked. Check your connection or use local dictation.",
+      language_unsupported: "Browser dictation does not support this field's language.",
+    },
+    reasons: {
+      model_not_installed:
+        'The local speech model is not installed. In the Parlante folder, run "pnpm dictation:setup" (a one-off download of about 140 MB) and press the microphone again.',
+      model_incomplete:
+        'The local speech model is only partly installed. Run "pnpm dictation:setup" again in the Parlante folder.',
+      runtime_unavailable:
+        'The local speech model is installed but could not be loaded on this server. Check the API log.',
+      not_configured: 'This Parlante server does not include local dictation.',
+      unknown: 'Local dictation is not available on this server right now.',
+    },
+    actions: {
+      useBrowser: 'Use browser dictation…',
+      useLocal: 'Use local dictation',
+      preferences: 'Dictation preferences',
+      retry: 'Try again',
+    },
+    consent: {
+      title: 'Before you use browser dictation',
+      intro:
+        "This engine is not Parlante's: it uses your browser's speech recognition (Web Speech API).",
+      leaves:
+        "Your voice leaves this machine. In Chrome, the audio is sent to Google's servers to be recognised; other browsers use their own service.",
+      policy:
+        'Parlante neither receives nor stores that audio, and has no control over what the service does with it.',
+      alternative:
+        'If you would rather nothing left the machine, use the local engine (the default).',
+      remember:
+        'By accepting, browser dictation becomes your engine on this device. You can change it in Settings → Language, theme and dictation.',
+      accept: 'Accept and use the browser engine',
+      cancel: 'Cancel',
+    },
+    announce: {
+      listeningLocal: 'Dictation started with the local engine. Speak now.',
+      listeningBrowser: "Dictation started with the browser's speech service. Speak now.",
+      stopped: 'Dictation stopped.',
+      error: 'Dictation stopped. {{message}}',
+    },
+  },
   user: {
     menu: '{{name}}’s menu',
     logout: 'Sign out',

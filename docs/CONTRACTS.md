@@ -206,7 +206,8 @@ route({ method, path, auth: 'session' | 'apiKey' | 'public', minRole?, feature, 
   (lo que envía el cliente), `RouteResponse<R>`.
 - OpenAPI en `/openapi.json` y Swagger UI en `/docs`, generados de esta tabla.
 
-114 rutas. **F** = funcionalidad del prompt maestro (0 = infraestructura). La columna
+115 rutas. **F** = funcionalidad del prompt maestro (0 = infraestructura; 17 = dictado por
+micrófono, añadida después). La columna
 de errores lista solo los de dominio; todas pueden devolver además 400/401/403/404/429/500.
 Tabla generada de `allRoutes()`; si añades una ruta, añade su fila.
 
@@ -219,6 +220,30 @@ Tabla generada de `allRoutes()`; si añades una ruta, añade su fila.
 | `pingWorker`       | POST   | `/api/system/worker-ping`        | sesión ≥ admin | 0   | Queue a ping job for the worker _(202)_                                   | —                  |
 | `workerPingStatus` | GET    | `/api/system/worker-ping/:jobId` | sesión ≥ admin | 0   | State and result of a ping job                                            | —                  |
 | `file`             | GET    | `/api/files/*`                   | pública        | 0   | Download a stored file via signed URL _(binario)_                         | —                  |
+
+`capabilities` responde `Capabilities`: `active` (proveedor por capacidad), `ttsProviders`,
+`sttRequiresTranscript`, `avatarEngine` y el bloque aditivo **`dictation`**:
+
+```ts
+dictation: {
+  local: {
+    available: boolean,              // ¿puede transcribir ESTE servidor ahora mismo?
+    provider: ProviderRef | null,    // { id: 'local-whisper', name: 'Whisper base (local)', quality: 'basic', local: true }
+    reason: string | null,           // frase en inglés para logs
+    reasonCode: DictationReasonCode | null, // lo que la UI traduce (null si está disponible)
+    languages: LanguageCode[],       // idiomas admitidos como pista (y candidatos de la detección)
+  },
+  maxSegmentMs: 30000,               // = DICTATION_MAX_SEGMENT_MS
+}
+```
+
+`DICTATION_REASON_CODES`: `model_not_installed` (falta `pnpm dictation:setup`),
+`model_incomplete` (archivos del modelo ausentes o de otro tamaño: repetir la instalación),
+`runtime_unavailable` (el modelo está pero no se pudo cargar o ejecutar), `not_configured` (el
+servidor no tiene proveedor de dictado; es también el valor por defecto del esquema para
+productores antiguos) y `unknown`. El motor `browser` (Web Speech API) vive entero en la web y
+**no** aparece aquí: el servidor no interviene en él. Se consulta en vivo: instalar el modelo
+con la API en marcha cambia `available` sin reiniciar.
 
 #### `api.auth`
 
@@ -442,6 +467,52 @@ origen cuando es `translation_source` y ninguna otra traducción lo usa.
 | `deleteVideo`   | DELETE | `/v1/videos/:videoId` | API key | 9   | Delete a video and its files                                                   | —                                                                                                                                      |
 | `uploadAsset`   | POST   | `/v1/assets`          | API key | 9   | Upload an image, video or audio file to use in compositions _(multipart, 201)_ | PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, PLAN_LIMIT_EXCEEDED                                                                         |
 
+#### `api.dictation`
+
+| Ruta         | Método | Path                        | Auth   | F   | Resumen                                                                                                                                                                         | Errores de dominio                                                                           |
+| ------------ | ------ | --------------------------- | ------ | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `transcribe` | POST   | `/api/dictation/transcribe` | sesión | 17  | Transcribe one spoken phrase (WAV PCM 16-bit mono 16 kHz, at most 30 s) on this server. The audio is processed in memory and never stored; no credits are charged _(multipart)_ | PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, RATE_LIMITED, SERVICE_UNAVAILABLE, PROVIDER_ERROR |
+
+Dictado por micrófono, motor **local**. Solo sesión (cualquier miembro, también `viewer`); **no**
+existe en `/v1`. Contrato en `packages/shared/src/api/dictation.ts`:
+
+- **Petición**: `multipart/form-data` con el campo de texto opcional `language` (uno de
+  `LANGUAGE_CODES`; envíalo **antes** del archivo) y la parte `audio`: un WAV RIFF, PCM de 16
+  bits, mono, 16 000 Hz (`DICTATION_SAMPLE_RATE`), de como mucho 30 s
+  (`DICTATION_MAX_SEGMENT_MS`; 964 140 bytes, `DICTATION_MAX_UPLOAD_BYTES`). El cliente corta el
+  habla por frases y envía cada una; no hay estado entre peticiones.
+- **Respuesta 200**: `{ text, language, provider, audioMs, processingMs }`
+  (`DictationTranscriptionSchema`). `text` viene recortado y es `''` si el fragmento no contiene
+  habla (el silencio no llega al modelo). `language` es la pista si se envió y, si no, el idioma
+  detectado entre los del producto (`null` cuando no hay texto). `provider` es un `ProviderRef`
+  (`quality: 'basic'`, `local: true`). `audioMs` es la duración real del audio recibido;
+  `processingMs`, el tiempo en el servidor incluida la espera de turno.
+- **Errores** (siempre `{ error: { code, message, details } }`; `details.reason` es la clave que
+  la UI traduce):
+
+  | Estado | `code`                   | `details.reason`                                     | Cuándo                                                                                                      |
+  | ------ | ------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+  | 400    | `BAD_REQUEST`            | —                                                    | El cuerpo no es `multipart/form-data`                                                                       |
+  | 400    | `VALIDATION_ERROR`       | — (`details.issues`)                                 | Falta la parte `audio`, o `language` no es un idioma del producto                                           |
+  | 400    | `VALIDATION_ERROR`       | `invalid_wav` · `unsupported_format` · `empty_audio` | Cabecera truncada o incoherente · WAV que no es PCM 16 bits mono 16 kHz (`details.received`) · sin muestras |
+  | 401    | `UNAUTHENTICATED`        | —                                                    | Sin sesión (una API key no sirve)                                                                           |
+  | 413    | `PAYLOAD_TOO_LARGE`      | `audio_too_long`                                     | Más de 30 s (`details.maxSegmentMs`, `details.audioMs`; `audioMs: null` si se cortó por tamaño)             |
+  | 415    | `UNSUPPORTED_MEDIA_TYPE` | `not_wav`                                            | El archivo no es RIFF/WAVE                                                                                  |
+  | 429    | `RATE_LIMITED`           | `user_rate_limit`                                    | Más de `DICTATION_RATE_LIMIT_PER_MIN` (60) fragmentos por usuario y minuto. Cabecera `Retry-After`          |
+  | 429    | `RATE_LIMITED`           | `busy`                                               | Ya hay `DICTATION_MAX_PENDING` (4) fragmentos en curso o en espera en todo el servidor. `Retry-After`       |
+  | 502    | `PROVIDER_ERROR`         | —                                                    | El modelo falló con ese fragmento                                                                           |
+  | 503    | `SERVICE_UNAVAILABLE`    | un `DictationReasonCode`                             | Dictado local no disponible (`model_not_installed`, `model_incomplete`, `runtime_unavailable`…)             |
+
+- **Límites**: el modelo transcribe un fragmento cada vez (concurrencia 1, en un hilo aparte).
+  Las respuestas llevan `RateLimit-Limit` / `RateLimit-Remaining` / `RateLimit-Reset` cuando
+  `RATE_LIMIT_ENABLED` está activo. Ambos contadores viven en la memoria del proceso de la API.
+- **Privacidad**: el audio se lee en memoria (nunca `receiveUpload`, que escribe un temporal),
+  se pasa al modelo y se descarta con la petición. No se guarda en disco, storage, base de datos
+  ni log; el texto reconocido tampoco se registra. No consume créditos ni deja fila alguna.
+- **Latencia medida** (4 núcleos, `whisper-base`, modelo ya cargado): 5 s de audio → 1,3–1,45 s
+  con idioma y 2,0–2,2 s sin él; 15 s → 2,1–2,6 s; 30 s → 3,4–4,0 s. La primera petición tras
+  arrancar (o tras 15 min sin uso) añade 1–2 s de carga del modelo.
+
 Además, el módulo `public-v1` sirve la documentación de la v1 fuera de la tabla (rutas ocultas,
 como `/openapi.json`; solo con `OPENAPI_ENABLED`): `GET /v1/openapi.json` (documento OpenAPI solo
 con `/v1/*`, derivado del general) y `GET /v1/docs` (Swagger UI). Todas las rutas `/v1/*` aplican
@@ -532,17 +603,18 @@ generación; se reembolsa si el LLM falla o responde en modo básico) e `interac
 `providers.ts` (interfaces) · `packages/providers` (implementaciones) ·
 `createProviders(env)` → `Providers`.
 
-| Capacidad     | Interfaz                                                                                              | Local (por defecto)                                                   | Externos               | Selección                                                                                                           |
-| ------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `tts`         | `TTSProvider { listVoices, synthesize }` → WAV PCM16 mono + visemas + palabras                        | `espeak`                                                              | `elevenlabs`, `openai` | Todos los que tengan clave están activos a la vez; `TTS_PROVIDER` elige el predeterminado. `providers.tts.get(id)`. |
-| `stt`         | `STTProvider { requiresUserTranscript, transcribe }`                                                  | `manual` (el usuario aporta la transcripción → `TRANSCRIPT_REQUIRED`) | `openai`               | `STT_PROVIDER`                                                                                                      |
-| `llm`         | `LLMProvider { generateScript, chat }`                                                                | `local` (heurística, `basicMode: true`)                               | `anthropic`            | `LLM_PROVIDER`                                                                                                      |
-| `translation` | `TranslationProvider { translate }`                                                                   | `local`                                                               | `anthropic`            | `TRANSLATION_PROVIDER`                                                                                              |
-| `voiceClone`  | `VoiceCloneProvider { createVoice, deleteVoice }`                                                     | `local` (perfil de voz)                                               | `elevenlabs`           | `VOICE_CLONE_PROVIDER`                                                                                              |
-| `lipsync`     | `LipSyncProvider { status, animate }`                                                                 | `local-neural` (motor)                                                | `external`             | `LIPSYNC_PROVIDER`                                                                                                  |
-| `portrait`    | `PortraitProvider { status, generate, prepare }`                                                      | `local-neural` (motor)                                                | —                      | `PORTRAIT_PROVIDER`                                                                                                 |
-| `moderation`  | `ModerationProvider { check }`                                                                        | `local` (lista de bloqueo)                                            | —                      | `MODERATION_PROVIDER`                                                                                               |
-| `storage`     | `StorageProvider` (put, get, getStream, stat, delete, deletePrefix, downloadTo, localPath, signedUrl) | `local` (disco)                                                       | `s3`                   | `STORAGE_PROVIDER`                                                                                                  |
+| Capacidad     | Interfaz                                                                                              | Local (por defecto)                                                                                                                   | Externos                | Selección                                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `tts`         | `TTSProvider { listVoices, synthesize }` → WAV PCM16 mono + visemas + palabras                        | `espeak`                                                                                                                              | `elevenlabs`, `openai`  | Todos los que tengan clave están activos a la vez; `TTS_PROVIDER` elige el predeterminado. `providers.tts.get(id)`. |
+| `stt`         | `STTProvider { requiresUserTranscript, transcribe }`                                                  | `manual` (el usuario aporta la transcripción → `TRANSCRIPT_REQUIRED`) y `local-whisper` (Whisper en CPU, si el modelo está instalado) | `openai`                | `STT_PROVIDER`: `auto` = `openai` con clave → `local-whisper` con el modelo instalado → `manual`                    |
+| `dictation`   | `DictationProvider { status, transcribe }` (opcional en `Providers`)                                  | `local-whisper` — **siempre local**, sea cual sea `STT_PROVIDER`                                                                      | — (no hay, a propósito) | `DICTATION_MODEL`, `DICTATION_MODEL_DIR`, `DICTATION_THREADS`, `DICTATION_IDLE_UNLOAD_SEC`                          |
+| `llm`         | `LLMProvider { generateScript, chat }`                                                                | `local` (heurística, `basicMode: true`)                                                                                               | `anthropic`             | `LLM_PROVIDER`                                                                                                      |
+| `translation` | `TranslationProvider { translate }`                                                                   | `local`                                                                                                                               | `anthropic`             | `TRANSLATION_PROVIDER`                                                                                              |
+| `voiceClone`  | `VoiceCloneProvider { createVoice, deleteVoice }`                                                     | `local` (perfil de voz)                                                                                                               | `elevenlabs`            | `VOICE_CLONE_PROVIDER`                                                                                              |
+| `lipsync`     | `LipSyncProvider { status, animate }`                                                                 | `local-neural` (motor)                                                                                                                | `external`              | `LIPSYNC_PROVIDER`                                                                                                  |
+| `portrait`    | `PortraitProvider { status, generate, prepare }`                                                      | `local-neural` (motor)                                                                                                                | —                       | `PORTRAIT_PROVIDER`                                                                                                 |
+| `moderation`  | `ModerationProvider { check }`                                                                        | `local` (lista de bloqueo)                                                                                                            | —                       | `MODERATION_PROVIDER`                                                                                               |
+| `storage`     | `StorageProvider` (put, get, getStream, stat, delete, deletePrefix, downloadTo, localPath, signedUrl) | `local` (disco)                                                                                                                       | `s3`                    | `STORAGE_PROVIDER`                                                                                                  |
 
 Reglas para quien implementa:
 
@@ -553,6 +625,16 @@ Reglas para quien implementa:
   `ProviderVoice.languages` → una sola voz `multilingual`, nunca duplicada por idioma.
 - STT: recibe WAV 16 kHz (`audio` y, si existe, `audioPath`); **el adaptador trocea** cuando su
   servicio limita el tamaño y recompone los tiempos.
+- **Reconocimiento de voz local** (`packages/providers/src/stt/`): `local-whisper.ts` (los dos
+  proveedores), `whisper-engine.ts` (un hilo `worker_threads` por modelo y proceso, cola con
+  concurrencia 1, descarga por inactividad), `whisper-worker.mjs` (el hilo: JavaScript plano
+  para cargar sin transpilador), `whisper-models.ts` (catálogo con revisión y SHA-256) y
+  `whisper-setup.ts` (instalador de `pnpm dictation:setup`). Nada se descarga en ejecución.
+  `Providers.dictation` es opcional: quien lo consume trata su ausencia como `not_configured`.
+  El STT local trocea las grabaciones largas en silencios (ventanas ≤ 29 s) y devuelve
+  segmentos con tiempos; si el modelo no está instalado, `requiresUserTranscript` vale `true` y
+  se comporta como `manual`. `STT_PROVIDER=auto` se resuelve al arrancar (reiniciar API y worker
+  tras instalar el modelo); el dictado comprueba el disco en cada petición.
 - Moderación: `context` = `script | chat | name | translation | avatar_prompt`. El último
   bloquea además descripciones de personas reales identificables.
 - `EngineStatus` (lip-sync y retratos): `available`, `reason`, `device`,
@@ -1002,15 +1084,15 @@ y un test que ejercite el campo o la función nuevos.
 La lista completa, con valores por defecto y efecto, es [`.env.example`](../.env.example); aquí
 solo las reglas.
 
-| Quién                      | Esquema / lector                                                   | Variables                                                                                                                                                                     |
-| -------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API, worker, scripts de BD | `baseEnvSchema` (`@parlante/shared/node`)                          | `NODE_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `REDIS_URL`, `QUEUE_PREFIX`, `APP_SECRET`, `PUBLIC_API_URL`, `PUBLIC_WEB_URL`                                                        |
-| API y worker               | `providerEnvSchema` (`packages/providers/src/env.ts`)              | `STORAGE_*`, `S3_*`, `*_PROVIDER`, claves y modelos de proveedores, `MODERATION_*`, `AVATAR_ENGINE_URL/TOKEN/WORK_DIR/POLL_MS/STALL_SEC`, `AVATAR_PORTRAIT_SIZE`, `LIPSYNC_*` |
-| API                        | `apiEnvSchema` (`apps/api/src/config.ts`)                          | `API_HOST`, `API_PORT`, `WEB_ORIGIN`, `SESSION_*`, `COOKIE_SECURE`, `TRUST_PROXY`, `RATE_LIMIT_*`, `MAX_UPLOAD_MB`, `UPLOAD_TMP_DIR`, `ALLOW_PRIVATE_URLS`, `OPENAPI_ENABLED` |
-| Worker                     | `workerEnvSchema` (`apps/worker/src/config.ts`)                    | `WORKER_TMP_DIR`, `WORKER_QUEUES`, `WORKER_CONCURRENCY_<CLAVE>`, `WORKER_KEEP_TMP`, `ALLOW_PRIVATE_URLS`; `FFMPEG_PATH` / `FFPROBE_PATH` (`process.ts`)                       |
-| Web (servidor de Vite)     | `apps/web/vite.config.ts`                                          | `WEB_PORT`, `VITE_API_PROXY_TARGET`; en el bundle, `VITE_API_URL`                                                                                                             |
-| Motor (Python)             | `services/avatar-engine/parlante_engine/core/config.py` y `run.sh` | `AVATAR_ENGINE_*`, `FFMPEG_PATH`, `HF_HOME` (tabla en el README del motor)                                                                                                    |
-| Tests                      | `@parlante/db/testing`                                             | `DATABASE_TEST_URL`                                                                                                                                                           |
+| Quién                      | Esquema / lector                                                   | Variables                                                                                                                                                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API, worker, scripts de BD | `baseEnvSchema` (`@parlante/shared/node`)                          | `NODE_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `REDIS_URL`, `QUEUE_PREFIX`, `APP_SECRET`, `PUBLIC_API_URL`, `PUBLIC_WEB_URL`                                                                                                                                                    |
+| API y worker               | `providerEnvSchema` (`packages/providers/src/env.ts`)              | `STORAGE_*`, `S3_*`, `*_PROVIDER`, claves y modelos de proveedores, `MODERATION_*`, `AVATAR_ENGINE_URL/TOKEN/WORK_DIR/POLL_MS/STALL_SEC`, `AVATAR_PORTRAIT_SIZE`, `LIPSYNC_*`, `DICTATION_MODEL`, `DICTATION_MODEL_DIR`, `DICTATION_THREADS`, `DICTATION_IDLE_UNLOAD_SEC` |
+| API                        | `apiEnvSchema` (`apps/api/src/config.ts`)                          | `API_HOST`, `API_PORT`, `WEB_ORIGIN`, `SESSION_*`, `COOKIE_SECURE`, `TRUST_PROXY`, `RATE_LIMIT_*`, `MAX_UPLOAD_MB`, `UPLOAD_TMP_DIR`, `ALLOW_PRIVATE_URLS`, `OPENAPI_ENABLED`, `DICTATION_RATE_LIMIT_PER_MIN`, `DICTATION_MAX_PENDING`                                    |
+| Worker                     | `workerEnvSchema` (`apps/worker/src/config.ts`)                    | `WORKER_TMP_DIR`, `WORKER_QUEUES`, `WORKER_CONCURRENCY_<CLAVE>`, `WORKER_KEEP_TMP`, `ALLOW_PRIVATE_URLS`; `FFMPEG_PATH` / `FFPROBE_PATH` (`process.ts`)                                                                                                                   |
+| Web (servidor de Vite)     | `apps/web/vite.config.ts`                                          | `WEB_PORT`, `VITE_API_PROXY_TARGET`; en el bundle, `VITE_API_URL`                                                                                                                                                                                                         |
+| Motor (Python)             | `services/avatar-engine/parlante_engine/core/config.py` y `run.sh` | `AVATAR_ENGINE_*`, `FFMPEG_PATH`, `HF_HOME` (tabla en el README del motor)                                                                                                                                                                                                |
+| Tests                      | `@parlante/db/testing`                                             | `DATABASE_TEST_URL`                                                                                                                                                                                                                                                       |
 
 - **`.env` en la raíz**: lo carga `loadDotEnv()` (lo ya definido en el entorno gana). El formato
   lo fija `parseDotEnv`: `CLAVE=valor`; ` #` inicia un comentario salvo dentro de comillas;
@@ -1023,3 +1105,7 @@ solo las reglas.
   `ALLOW_PRIVATE_URLS`.
 - **Una variable nueva**: se añade a su esquema zod (con valor por defecto o opcional) y a
   `.env.example` en el mismo cambio.
+- **Tests herméticos**: los arneses de API y worker fijan `AVATAR_ENGINE_URL` a un puerto cerrado
+  y `DICTATION_MODEL_DIR` a un directorio vacío, para que un motor en marcha o un modelo de voz
+  instalado en la máquina no cambien el resultado de ningún test. Los tests del modelo real
+  (`[slow]`, se saltan si no está instalado) pasan su propio directorio.

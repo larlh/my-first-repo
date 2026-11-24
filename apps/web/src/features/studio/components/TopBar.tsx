@@ -13,12 +13,14 @@ import {
   RefreshCw,
   Undo2,
 } from 'lucide-react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { JobStatusBadge } from '@/components/JobStatus';
 import { useFormat } from '@/lib/format';
 import {
   Button,
+  DictationButton,
   IconButton,
   Menu,
   MenuContent,
@@ -107,6 +109,7 @@ export function TopBar() {
   const { timeline } = usePreviewState();
   const { apply, undo, redo, seal } = store.getState();
   const rendering = video.status === 'queued' || video.status === 'rendering';
+  const titleField = useRef<HTMLInputElement>(null);
 
   return (
     <header
@@ -124,6 +127,7 @@ export function TopBar() {
       </IconButton>
       <span className="eyebrow hidden text-accent-text xl:block">{t('top.studio')}</span>
       <input
+        ref={titleField}
         aria-label={t('top.titleLabel')}
         value={title}
         maxLength={120}
@@ -135,6 +139,7 @@ export function TopBar() {
         }}
         className="display h-9 min-w-0 flex-1 truncate rounded-md border border-transparent bg-transparent px-2 text-lg text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-line-control focus:bg-bg-sunken"
       />
+      <DictationButton target={titleField} size="sm" />
       <SaveIndicator />
 
       <div className="mx-1 h-6 w-px bg-line" aria-hidden="true" />

@@ -31,14 +31,23 @@ export function audioTooLong(audioMs: number | null): AppError {
   return new AppError(
     'PAYLOAD_TOO_LARGE',
     `A dictation segment can be at most ${DICTATION_MAX_SEGMENT_MS / 1000} s long`,
-    { reason: 'audio_too_long' satisfies DictationAudioErrorReason, maxSegmentMs: DICTATION_MAX_SEGMENT_MS, audioMs },
+    {
+      reason: 'audio_too_long' satisfies DictationAudioErrorReason,
+      maxSegmentMs: DICTATION_MAX_SEGMENT_MS,
+      audioMs,
+    },
   );
 }
 
 export function parseDictationWav(bytes: Uint8Array): DictationAudio {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const tag = (offset: number): string =>
-    String.fromCharCode(bytes[offset] ?? 0, bytes[offset + 1] ?? 0, bytes[offset + 2] ?? 0, bytes[offset + 3] ?? 0);
+    String.fromCharCode(
+      bytes[offset] ?? 0,
+      bytes[offset + 1] ?? 0,
+      bytes[offset + 2] ?? 0,
+      bytes[offset + 3] ?? 0,
+    );
 
   if (bytes.byteLength < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') {
     throw new AppError('UNSUPPORTED_MEDIA_TYPE', 'Dictation audio must be a WAV file', {
@@ -47,8 +56,13 @@ export function parseDictationWav(bytes: Uint8Array): DictationAudio {
     });
   }
 
-  let format: { code: number; channels: number; sampleRate: number; bits: number; blockAlign: number } | null =
-    null;
+  let format: {
+    code: number;
+    channels: number;
+    sampleRate: number;
+    bits: number;
+    blockAlign: number;
+  } | null = null;
   let offset = 12;
   while (offset + 8 <= bytes.byteLength) {
     const id = tag(offset);
@@ -61,7 +75,8 @@ export function parseDictationWav(bytes: Uint8Array): DictationAudio {
         throw invalid('invalid_wav', 'The WAV header is truncated');
       }
       let code = view.getUint16(start, true);
-      if (code === WAVE_FORMAT_EXTENSIBLE && declared >= 26) code = view.getUint16(start + 24, true);
+      if (code === WAVE_FORMAT_EXTENSIBLE && declared >= 26)
+        code = view.getUint16(start + 24, true);
       format = {
         code,
         channels: view.getUint16(start + 2, true),
@@ -85,13 +100,21 @@ export function parseDictationWav(bytes: Uint8Array): DictationAudio {
             sampleRate: format.sampleRate,
             bitsPerSample: format.bits,
           },
-          expected: { format: WAVE_FORMAT_PCM, channels: 1, sampleRate: DICTATION_SAMPLE_RATE, bitsPerSample: 16 },
+          expected: {
+            format: WAVE_FORMAT_PCM,
+            channels: 1,
+            sampleRate: DICTATION_SAMPLE_RATE,
+            bitsPerSample: 16,
+          },
         });
       }
       // Streaming encoders leave 0 or 0xFFFFFFFF as the size: the data then runs to the end.
       const streamed = declared === 0xffffffff || (declared === 0 && remaining > 0);
       if (!streamed && declared > remaining) {
-        throw invalid('invalid_wav', 'The WAV file is truncated: it holds less audio than its header says');
+        throw invalid(
+          'invalid_wav',
+          'The WAV file is truncated: it holds less audio than its header says',
+        );
       }
       const length = streamed ? remaining - (remaining % 2) : declared;
       if (length % 2 !== 0) throw invalid('invalid_wav', 'The WAV data has an odd number of bytes');
@@ -106,5 +129,8 @@ export function parseDictationWav(bytes: Uint8Array): DictationAudio {
     // Chunks are word aligned.
     offset = start + declared + (declared % 2);
   }
-  throw invalid(format ? 'empty_audio' : 'invalid_wav', format ? 'The audio is empty' : 'The WAV file has no format chunk');
+  throw invalid(
+    format ? 'empty_audio' : 'invalid_wav',
+    format ? 'The audio is empty' : 'The WAV file has no format chunk',
+  );
 }

@@ -296,13 +296,20 @@ export function createLocalWhisperDictation(
     const output = await runtime.run({
       samples: pcm16ToFloat32(request.samples),
       language: request.language,
-      timestamps: false,
+      // Decoding WITH timestamps is how Whisper keeps going across the pauses of a phrase and
+      // punctuates it; without them it tends to stop at the first pause (measured). The
+      // times themselves are not used here.
+      timestamps: true,
       signal: request.signal,
     });
     const text = cleanTranscript(output.text);
     const language =
       request.language ?? LOCAL_WHISPER_LANGUAGES.find((code) => code === output.language) ?? null;
-    return { text, language: text === '' ? (request.language ?? null) : language, provider: runtime.info };
+    return {
+      text,
+      language: text === '' ? (request.language ?? null) : language,
+      provider: runtime.info,
+    };
   }
 
   return { info: runtime.info, status, transcribe };

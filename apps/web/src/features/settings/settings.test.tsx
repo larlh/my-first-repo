@@ -11,6 +11,7 @@ import {
   apiError,
   createFakeApi,
   makeBilling,
+  makeCapabilities,
   makeSession,
   renderFeatures,
   resetApiClient,
@@ -159,7 +160,7 @@ describe('profile and preferences', () => {
 
     await user.click(await screen.findByRole('radio', { name: /English/ }));
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Language and theme' }),
+      await screen.findByRole('heading', { level: 1, name: 'Language, theme and dictation' }),
     ).toBeInTheDocument();
     expect(api.requests('PATCH', '/api/auth/me')[0]?.body).toEqual({ locale: 'en' });
 
@@ -168,6 +169,160 @@ describe('profile and preferences', () => {
     expect(window.localStorage.getItem('parlante.theme')).toBe('dark');
     await user.click(screen.getByRole('radio', { name: /Light/ }));
     expect(document.documentElement.dataset.theme).toBe('light');
+  });
+});
+
+describe('dictation preferences', () => {
+  const STORAGE_KEY = 'parlante.dictation.v1.usr_a1b2c3d4e5f6g7h8';
+  const stored = () => JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}') as unknown;
+  const withDictation = (api: FakeApi, available: boolean) =>
+    api.on('GET', '/api/capabilities', () => ({
+      ...makeCapabilities(),
+      dictation: {
+        local: available
+          ? {
+              available: true,
+              provider: {
+                id: 'local-whisper',
+                name: 'Whisper base (local)',
+                quality: 'basic',
+                local: true,
+              },
+              reason: null,
+              reasonCode: null,
+              languages: ['es', 'en'],
+            }
+          : {
+              available: false,
+              provider: null,
+              reason: 'Model not installed',
+              reasonCode: 'model_not_installed',
+              languages: [],
+            },
+        maxSegmentMs: 30_000,
+      },
+    }));
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'webkitSpeechRecognition');
+  });
+
+  it('shows the three engines, which one is ready, and what leaves the machine with each', async () => {
+    const api = createFakeApi();
+    withDictation(api, true);
+    mount('/settings/preferences', api);
+
+    const panel = await screen.findByRole('region', { name: 'Dictado por micrófono' });
+    const engines = within(panel).getByRole('group', { name: 'Motor de dictado' });
+    expect(within(engines).getByRole('radio', { name: /Automático/ })).toBeChecked();
+    expect(within(engines).getByRole('radio', { name: /^Local/ })).not.toBeChecked();
+    // jsdom has no Web Speech API: the browser engine cannot be chosen here, and says why.
+    expect(within(engines).getByRole('radio', { name: /^Navegador/ })).toBeDisabled();
+    expect(within(engines).getByText('Este navegador no lo tiene')).toBeInTheDocument();
+    expect(
+      await within(engines).findByText('Disponible · Whisper base (local)'),
+    ).toBeInTheDocument();
+
+    expect(panel).toHaveTextContent('Qué sale de tu equipo con cada motor');
+    expect(panel).toHaveTextContent('Nada sale de tu instalación.');
+    expect(panel).toHaveTextContent('en Chrome, a los servidores de Google');
+    expect(panel).toHaveTextContent('Solo se usa si lo eliges y aceptas el aviso.');
+  });
+
+  it('explains a missing local model with the command that installs it, and re-checks on demand', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    withDictation(api, false);
+    mount('/settings/preferences', api);
+
+    const panel = await screen.findByRole('region', { name: 'Dictado por micrófono' });
+    expect(await within(panel).findByText('El motor local no está disponible')).toBeInTheDocument();
+    expect(panel).toHaveTextContent('pnpm dictation:setup');
+    expect(within(panel).getByText('No disponible')).toBeInTheDocument();
+
+    // The model gets installed; no restart is needed for the page to notice.
+    withDictation(api, true);
+    await user.click(within(panel).getByRole('button', { name: 'Comprobar de nuevo' }));
+    expect(await within(panel).findByText('Disponible · Whisper base (local)')).toBeInTheDocument();
+    expect(within(panel).queryByText('El motor local no está disponible')).not.toBeInTheDocument();
+  });
+
+  it('selects the browser engine only after its notice is accepted, and lets the acceptance be withdrawn', async () => {
+    const user = userEvent.setup();
+    // A browser with the Web Speech API (jsdom has none).
+    Object.defineProperty(window, 'webkitSpeechRecognition', {
+      value: class {},
+      configurable: true,
+    });
+    const api = createFakeApi();
+    withDictation(api, true);
+    mount('/settings/preferences', api);
+
+    const panel = await screen.findByRole('region', { name: 'Dictado por micrófono' });
+    const browser = within(panel).getByRole('radio', { name: /^Navegador/ });
+    expect(browser).toBeEnabled();
+    expect(within(panel).getByText('Pide aceptar un aviso')).toBeInTheDocument();
+
+    await user.click(browser);
+    const notice = await screen.findByRole('dialog', {
+      name: 'Antes de usar el dictado del navegador',
+    });
+    expect(notice).toHaveTextContent('Tu voz sale de este equipo.');
+    expect(notice).toHaveTextContent('En Chrome, el audio se envía a los servidores de Google');
+    // Nothing is selected or stored until it is accepted (the page behind the notice is inert).
+    expect(within(panel).getByRole('radio', { name: /Automático/, hidden: true })).toBeChecked();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+    await user.click(within(notice).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(within(panel).getByRole('radio', { name: /Automático/ })).toBeChecked();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    await user.click(browser);
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Aceptar y usar el del navegador',
+      }),
+    );
+    await waitFor(() => expect(browser).toBeChecked());
+    expect(stored()).toMatchObject({ engine: 'browser' });
+    expect((stored() as { browserConsentAt: string | null }).browserConsentAt).not.toBeNull();
+    expect(within(panel).getByText('Aviso aceptado')).toBeInTheDocument();
+    expect(
+      within(panel).getByText(/Aceptaste el aviso del dictado del navegador el/),
+    ).toBeInTheDocument();
+
+    // Back to local and again to the browser: accepted once, not asked again.
+    await user.click(within(panel).getByRole('radio', { name: /^Local/ }));
+    expect(stored()).toMatchObject({ engine: 'local' });
+    await user.click(browser);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(stored()).toMatchObject({ engine: 'browser' });
+
+    await user.click(within(panel).getByRole('button', { name: 'Retirar la aceptación' }));
+    expect(stored()).toMatchObject({ engine: 'auto', browserConsentAt: null });
+    expect(within(panel).getByRole('radio', { name: /Automático/ })).toBeChecked();
+  });
+
+  it('stores the dictation language and hides the microphone buttons on request', async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    withDictation(api, true);
+    mount('/settings/preferences', api);
+
+    const panel = await screen.findByRole('region', { name: 'Dictado por micrófono' });
+    const language = within(panel).getByRole('combobox', { name: 'Idioma en el que dictas' });
+    expect(language).toHaveTextContent('El de la interfaz (Español)');
+    await user.click(language);
+    await user.click(await screen.findByRole('option', { name: 'Français' }));
+    expect(stored()).toMatchObject({ language: 'fr' });
+
+    const show = within(panel).getByRole('switch', {
+      name: 'Mostrar el botón de micrófono en los campos de texto',
+    });
+    expect(show).toBeChecked();
+    await user.click(show);
+    expect(show).not.toBeChecked();
+    expect(stored()).toMatchObject({ showButtons: false, language: 'fr' });
   });
 });
 

@@ -377,7 +377,7 @@ function Catalogue() {
       <Section
         id="form"
         title="Formularios"
-        note="Input · Textarea · Select · Checkbox · Switch · Slider"
+        note="Input · Textarea · Select · Checkbox · Switch · Slider · dictado por micrófono (con sesión iniciada: activo por defecto en texto libre; nunca en correo, contraseña, URL, números, solo lectura ni `secret`)"
       >
         <div className="grid gap-x-8 gap-y-6 md:grid-cols-2">
           <Input
@@ -405,6 +405,18 @@ function Catalogue() {
             defaultValue="No editable"
             disabled
             optionalLabel="(opcional)"
+          />
+          <Input
+            label="Sin dictado"
+            placeholder="dictation={false}"
+            dictation={false}
+            hint="Este campo renuncia al micrófono con una propiedad."
+          />
+          <Input
+            label="Clave (secreto)"
+            defaultValue="pk_demo_0000"
+            secret
+            hint="`secret`: nunca se dicta, sea del tipo que sea."
           />
           <Textarea
             label="Guion de la escena"

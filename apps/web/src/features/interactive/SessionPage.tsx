@@ -405,6 +405,7 @@ function Conversation({ detail }: { detail: InteractiveSessionDetail }) {
               busy={thinking}
               personaName={personaName}
               focusKey={focusKey}
+              language={talk.language}
             />
           ) : (
             <Notice>{t('session.viewer')}</Notice>

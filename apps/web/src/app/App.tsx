@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { isApiError } from '@/lib/api/errors';
+import { DictationRuntime } from '@/lib/dictation/runtime';
 import { SessionProvider } from '@/lib/session';
 import { ThemeProvider } from '@/lib/theme';
 import { ConfirmProvider } from '@/ui/ConfirmDialog';
@@ -28,7 +29,7 @@ export function createQueryClient(): QueryClient {
   });
 }
 
-/** Everything a page can rely on: data cache, theme, session, confirm dialogs, toasts. */
+/** Everything a page can rely on: data cache, theme, session, confirm dialogs, toasts, dictation. */
 export function AppProviders({ client, children }: { client: QueryClient; children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
@@ -36,6 +37,7 @@ export function AppProviders({ client, children }: { client: QueryClient; childr
         <SessionProvider>
           <ConfirmProvider>{children}</ConfirmProvider>
           <Toaster />
+          <DictationRuntime />
         </SessionProvider>
       </ThemeProvider>
     </QueryClientProvider>

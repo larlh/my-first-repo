@@ -33,9 +33,11 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<Buffer> {
 describe('registry', () => {
   it('selects local providers when no keys are configured', async () => {
     // Port 9 (discard) is closed: the avatar engine is "stopped" whatever runs on this machine.
+    // Same for the speech model: `dir` holds none, whatever is installed in ./data/models.
     const providers = createProvidersFromEnv({
       STORAGE_LOCAL_DIR: dir,
       AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
+      DICTATION_MODEL_DIR: dir,
     });
     const caps = await describeCapabilities(providers);
     expect(CapabilitiesSchema.parse(caps)).toEqual(caps);
@@ -148,7 +150,7 @@ describe('registry', () => {
   });
 
   it('manual STT asks for a user transcript', async () => {
-    const providers = createProvidersFromEnv({ STORAGE_LOCAL_DIR: dir });
+    const providers = createProvidersFromEnv({ STORAGE_LOCAL_DIR: dir, DICTATION_MODEL_DIR: dir });
     await expect(providers.stt.transcribe({ audio: new Uint8Array() })).rejects.toMatchObject({
       code: 'TRANSCRIPT_REQUIRED',
     });

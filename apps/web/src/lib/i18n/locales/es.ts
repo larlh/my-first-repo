@@ -202,6 +202,99 @@ export const es = {
     toLight: 'Cambiar a tema claro',
     toDark: 'Cambiar a tema oscuro',
   },
+  dictation: {
+    button: 'Dictar con el micrófono',
+    stopButton: 'Detener el dictado',
+    unavailable: 'Dictado no disponible',
+    panel: 'Estado del dictado',
+    stop: 'Detener',
+    close: 'Cerrar',
+    escHint: 'Pulsa Esc para detener',
+    state: {
+      requesting: 'Esperando el permiso del micrófono…',
+      requestingHint: 'Acepta el aviso del navegador para empezar a dictar.',
+      listening: 'Escuchando…',
+      listeningHintLocal: 'El texto aparece al terminar cada frase.',
+      listeningHintBrowser: 'El texto se escribe al cerrar cada frase.',
+      transcribing: 'Transcribiendo…',
+      pending_one: 'Transcribiendo {{count}} frase…',
+      pending_other: 'Transcribiendo {{count}} frases…',
+      level: 'Nivel de entrada del micrófono',
+    },
+    engine: {
+      local: 'Motor local',
+      localPrivacy:
+        'Se transcribe en tu instalación de Parlante: el audio no sale de ella ni se guarda.',
+      browser: 'Dictado del navegador',
+      browserBadge: 'Navegador · Web Speech',
+      browserPrivacy:
+        'El audio lo reconoce el servicio de voz de tu navegador (en Chrome se envía a Google).',
+    },
+    errors: {
+      permission_denied:
+        'El navegador no tiene permiso para usar el micrófono. Permítelo en el icono del candado de la barra de direcciones y vuelve a intentarlo.',
+      no_microphone: 'No se ha encontrado ningún micrófono. Conecta uno y vuelve a intentarlo.',
+      microphone_busy:
+        'No se ha podido abrir el micrófono. Puede que otra aplicación lo esté usando.',
+      microphone_lost: 'El micrófono ha dejado de enviar audio. Comprueba que sigue conectado.',
+      insecure_context:
+        'El navegador solo deja usar el micrófono en páginas seguras: abre Parlante desde «localhost» o por HTTPS.',
+      unsupported:
+        'Este navegador no puede capturar audio para el dictado local. Actualízalo o usa otro.',
+      engine_unavailable: 'El dictado local no está disponible.',
+      no_engine: 'No hay ningún motor de dictado disponible. {{reason}}',
+      browser_unsupported: 'Este navegador no tiene dictado propio (Web Speech API).',
+      limit_reached_one: 'El campo ha llegado a su límite de {{count}} carácter. Dictado detenido.',
+      limit_reached_other:
+        'El campo ha llegado a su límite de {{count}} caracteres. Dictado detenido.',
+      network: 'No hay conexión con el servidor de Parlante. El dictado se ha detenido.',
+      rate_limited: 'Has dictado demasiadas frases en un minuto. Espera un momento y sigue.',
+      busy: 'El servidor está transcribiendo para otras personas. Inténtalo de nuevo en unos segundos.',
+      session_expired: 'Tu sesión ha caducado. Vuelve a iniciar sesión para dictar.',
+      audio_rejected: 'El servidor no ha aceptado el audio de esa frase. Vuelve a intentarlo.',
+      service_failed: 'El modelo de voz ha fallado con esa frase. Vuelve a intentarlo.',
+      browser_service:
+        'El servicio de voz del navegador no responde o está bloqueado. Comprueba tu conexión o usa el dictado local.',
+      language_unsupported: 'El dictado del navegador no admite el idioma de este campo.',
+    },
+    reasons: {
+      model_not_installed:
+        'El modelo de voz local no está instalado. En la carpeta de Parlante, ejecuta «pnpm dictation:setup» (descarga única de unos 140 MB) y vuelve a pulsar el micrófono.',
+      model_incomplete:
+        'La instalación del modelo de voz local está incompleta. Ejecuta de nuevo «pnpm dictation:setup» en la carpeta de Parlante.',
+      runtime_unavailable:
+        'El modelo de voz local está instalado, pero no se ha podido cargar en este servidor. Revisa el registro de la API.',
+      not_configured: 'Este servidor de Parlante no incluye el dictado local.',
+      unknown: 'El dictado local no está disponible en este servidor ahora mismo.',
+    },
+    actions: {
+      useBrowser: 'Usar el dictado del navegador…',
+      useLocal: 'Usar el dictado local',
+      preferences: 'Preferencias de dictado',
+      retry: 'Reintentar',
+    },
+    consent: {
+      title: 'Antes de usar el dictado del navegador',
+      intro:
+        'Este motor no es de Parlante: usa el reconocimiento de voz de tu navegador (Web Speech API).',
+      leaves:
+        'Tu voz sale de este equipo. En Chrome, el audio se envía a los servidores de Google para reconocerlo; otros navegadores usan su propio servicio.',
+      policy:
+        'Parlante no recibe ni guarda ese audio, y no controla lo que el servicio hace con él.',
+      alternative:
+        'Si prefieres que nada salga del equipo, usa el motor local (el predeterminado).',
+      remember:
+        'Al aceptar, el dictado del navegador queda como tu motor en este dispositivo. Puedes cambiarlo en Ajustes → Idioma, tema y dictado.',
+      accept: 'Aceptar y usar el del navegador',
+      cancel: 'Cancelar',
+    },
+    announce: {
+      listeningLocal: 'Dictado en marcha con el motor local. Habla ahora.',
+      listeningBrowser: 'Dictado en marcha con el servicio de voz del navegador. Habla ahora.',
+      stopped: 'Dictado detenido.',
+      error: 'Dictado detenido. {{message}}',
+    },
+  },
   user: {
     menu: 'Menú de {{name}}',
     logout: 'Cerrar sesión',

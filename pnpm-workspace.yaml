@@ -6,3 +6,11 @@ packages:
 onlyBuiltDependencies:
   - esbuild
   - msgpackr-extract
+
+# Build scripts that must NOT run, on purpose (listing them here also silences pnpm's warning):
+#  - onnxruntime-node: its post-install only downloads CUDA binaries; the CPU binaries ship in
+#    the package, and local speech recognition runs on the CPU (docs/MODELS.md).
+#  - protobufjs: a version check, not needed.
+ignoredBuiltDependencies:
+  - onnxruntime-node
+  - protobufjs

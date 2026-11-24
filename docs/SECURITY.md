@@ -114,6 +114,25 @@ la configuración y la Composition no admite URLs, solo ids.
 | Descripciones de retratos: se rechazan personas reales identificables y menores                                                                                                 | `packages/providers/src/moderation/people.ts`                                         |
 | El MP4 con presentador fotorrealista lleva `com.parlante.ai_generated=true`, y la página pública lo indica                                                                      | `AI_GENERATED_METADATA` en `packages/shared`, `apps/worker/src/jobs/render/encode.ts` |
 
+### Dictado por micrófono
+
+Qué sale del equipo con cada motor: con el **local**, nada (el audio viaja del navegador a la
+API de la propia instalación y se transcribe allí); con el del **navegador**, el audio lo trata
+el navegador y, en Chrome, se envía a Google — Parlante no lo recibe, no lo controla y por eso
+la interfaz lo avisa y exige aceptarlo antes del primer uso.
+
+| Control                                                                                                                                                                                                                                                                                                                                                                                                                            | Dónde                                                                                                        |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| El audio del dictado local se procesa **en memoria**: no se escribe en disco (no usa el temporal de las subidas), ni en storage, ni en la base de datos; se descarta con la petición                                                                                                                                                                                                                                               | `apps/api/src/modules/dictation/index.ts` (`receiveAudio`)                                                   |
+| Ni el audio ni el texto reconocido se escriben en el log (solo la línea de la petición); los errores del modelo solo citan al propio modelo                                                                                                                                                                                                                                                                                        | idem; `packages/providers/src/stt/local-whisper.ts`                                                          |
+| Solo con sesión (cualquier miembro); no existe en `/v1`; comprobación de `Origin` como el resto de rutas con cookie                                                                                                                                                                                                                                                                                                                | `packages/shared/src/api/dictation.ts`, `apps/api/src/lib/define-route.ts`                                   |
+| Cuerpo acotado a 964 140 bytes mientras se recibe; se valida la cabecera WAV, el formato (PCM 16 bits, mono, 16 kHz) y la duración **real** (≤ 30 s), sin fiarse de la cabecera                                                                                                                                                                                                                                                    | `apps/api/src/modules/dictation/wav.ts`                                                                      |
+| Límite por usuario (60 fragmentos/min) y tope global de fragmentos en espera (4), con `429` y `Retry-After`; el modelo corre en un hilo aparte y no bloquea el resto de la API                                                                                                                                                                                                                                                     | `apps/api/src/modules/dictation/index.ts`, `whisper-engine.ts`                                               |
+| La **telemetría de ONNX Runtime se desactiva** (`ORT_DISABLE_TELEMETRY=1`, fijada por el motor antes de cargar la biblioteca). Sin ello, `onnxruntime-node` 1.30 intenta conectar con `mobile.events.data.microsoft.com` y guarda un identificador de dispositivo y una cola de eventos en `~/.cache/Microsoft` (medido). Un test con el modelo real lo vigila: ninguna conexión saliente y nada escrito en el directorio personal | `packages/providers/src/stt/whisper-engine.ts` (`disableOnnxRuntimeTelemetry`), `local-whisper.real.test.ts` |
+| El modelo no se descarga nunca en ejecución: el runtime tiene los modelos remotos desactivados y recibe una ruta local absoluta                                                                                                                                                                                                                                                                                                    | `packages/providers/src/stt/whisper-worker.mjs`                                                              |
+| Instalación (`pnpm dictation:setup`): solo `huggingface.co`, revisión fijada, tamaño y SHA-256 por archivo antes de aceptarlo; solo formatos de datos (ONNX, JSON)                                                                                                                                                                                                                                                                 | `packages/providers/src/stt/whisper-{models,setup}.ts`                                                       |
+| El dictado es siempre local aunque haya claves de proveedores externos: `OPENAI_API_KEY` cambia el STT de la traducción de vídeo, nunca el destino del audio dictado                                                                                                                                                                                                                                                               | `packages/providers/src/stt/index.ts` (`createDictationProvider`)                                            |
+
 ### Entrada, errores, registros y configuración
 
 | Control                                                                                                                                       | Dónde                                                                     |
@@ -156,6 +175,29 @@ la configuración y la Composition no admite URLs, solo ids.
   otros idiomas, homoglifos de otros alfabetos ni palabras partidas entre escenas. Una narración
   subida como audio no se modera (solo su transcripción); una foto subida no se analiza: el
   consentimiento es una declaración, no una verificación de identidad.
+- **Dictado.** El texto dictado no pasa por moderación al transcribirse: es texto que el usuario
+  escribe en un campo y se modera donde ya se moderaba ese campo (guion, nombre, mensaje…). Los
+  límites del dictado viven en la memoria del proceso (misma salvedad que el resto de límites).
+  Con el modelo cargado, la API ocupa 1,4–1,8 GB más; un atacante autenticado no puede
+  multiplicarlo (una sola instancia del modelo, cola acotada), pero sí mantenerlo cargado. El
+  motor del navegador queda fuera del control del servidor: lo que el navegador haga con el
+  audio depende de su fabricante.
+- **Telemetría de bibliotecas de terceros.** La del ONNX Runtime que usa el dictado está
+  apagada y vigilada por un test (tabla de arriba). El interruptor se fija en el entorno real
+  del proceso desde el hilo principal; quien cree el motor de voz desde dentro de otro
+  `worker_thread` debe definir `ORT_DISABLE_TELEMETRY=1` en el entorno del proceso. **El motor
+  de avatares (Python) usa su propio `onnxruntime` 1.32 y OpenVINO, cuyas bibliotecas contienen
+  el mismo destino de telemetría, y nada en `services/avatar-engine` la desactiva**: no se ha
+  comprobado si llega a conectar, pero en la máquina de construcción existía ya un
+  `~/.cache/Microsoft/DeveloperTools/.onnxruntime/deviceid` anterior a este trabajo. Hasta que
+  se revise, quien necesite garantía de que nada sale del equipo debe arrancar el motor con
+  `ORT_DISABLE_TELEMETRY=1` y verificarlo en su red.
+- **Cadena de suministro del reconocimiento de voz.** `@huggingface/transformers` y
+  `onnxruntime-node` se instalan de npm con versión fijada por el lockfile; el script de
+  post-instalación de `onnxruntime-node` (descarga de binarios CUDA) **no se ejecuta** (pnpm
+  ignora los scripts de dependencias no autorizadas en `pnpm-workspace.yaml`; no lo añadas ahí).
+  Los JSON del modelo no tienen hash publicado por el Hub: los suyos se calcularon de la
+  revisión fijada en la primera descarga y quedaron escritos en el catálogo.
 - **OpenAPI público.** `/docs` y `/openapi.json` se sirven también en producción
   (`OPENAPI_ENABLED=false` los apaga). Describen la API, no contienen secretos.
 - **Mensajes del motor.** Los 503 del motor neuronal citan `AVATAR_ENGINE_URL` (pensado para

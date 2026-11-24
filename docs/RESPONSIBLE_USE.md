@@ -166,12 +166,26 @@ a él.
 Parlante guarda en tu instalación (base de datos PostgreSQL y almacenamiento de archivos) las
 cuentas, los vídeos y sus composiciones, los archivos subidos, los avatares y voces creados, los
 registros de consentimiento y el libro de créditos. Sin proveedores externos configurados, nada
-sale de la máquina: voz, guion, traducción, retratos y animación se calculan en local.
+sale de la máquina: voz, guion, traducción, retratos, animación y dictado se calculan en local.
 
 Con claves de proveedores externos, el contenido necesario se envía a ese servicio: el texto de
 los guiones (Anthropic, ElevenLabs, OpenAI), el audio a transcribir (OpenAI) y la muestra de voz
 a clonar (ElevenLabs). Quien configura las claves es responsable de que ese envío esté
 permitido y de informar a sus usuarios.
+
+**Dictado por micrófono.** Lo que dictas se convierte en texto y el audio se descarta: no se
+almacena en ningún sitio ni queda en los registros, y el texto solo existe en el campo donde lo
+has dictado (se guarda si guardas ese campo, como si lo hubieras tecleado). Qué sale del equipo
+depende del motor que elijas:
+
+| Motor de dictado                    | Dónde se transcribe                                                    | Qué sale de tu instalación                                                                                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Local** (por defecto)             | En el servidor de tu propia instalación, con el modelo abierto Whisper | Nada. El audio va del navegador a tu API y se procesa en memoria; funciona sin conexión a internet                                                       |
+| **Navegador** (opcional, lo eliges) | Lo decide el navegador (Web Speech API)                                | En Chrome, el audio se envía a los servidores de Google. Parlante no lo recibe ni lo controla; la interfaz lo dice antes del primer uso y pide aceptarlo |
+
+El motor local es siempre local, aunque la instalación tenga claves de proveedores externos. El
+micrófono solo se usa mientras dictas y con el permiso que concede el navegador. Es un modelo
+pequeño (modo básico): revisa lo dictado antes de usarlo, sobre todo nombres propios y cifras.
 
 | Qué borras                   | Qué desaparece                                                                                  |
 | ---------------------------- | ----------------------------------------------------------------------------------------------- |

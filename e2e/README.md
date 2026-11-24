@@ -8,6 +8,7 @@ comprueba es lo que un usuario vería, oiría o descargaría.
 pnpm e2e e2e/core.mjs                 # = bash scripts/e2e.sh e2e/core.mjs
 E2E_ONLY=journey,share pnpm e2e e2e/core.mjs
 pnpm e2e e2e/perf.mjs                 # tiempos de render (30 s a 720p y 1080p) y memoria del worker
+pnpm e2e e2e/dictation.mjs            # dictado por micrófono con el modelo local (se salta si no está instalado)
 ```
 
 `scripts/e2e.sh` crea la base de datos `parlante_e2e_<id>`, migra, arranca API, worker y web
@@ -60,6 +61,32 @@ E2E_ENGINE=1 E2E_AVATAR_ENGINE_URL=http://127.0.0.1:8090 \
 paso SSRF de `ai.mjs` necesita la protección activa. Si se lanzan los dos en la misma pasada
 (`pnpm e2e e2e/core.mjs e2e/ai.mjs`), ese paso de `ai.mjs` se salta con aviso; para cubrirlo,
 lanza `ai.mjs` aparte con `E2E_ALLOW_PRIVATE_URLS=false`.
+
+## Qué cubre `dictation.mjs`
+
+El dictado por micrófono con el motor **local**, de verdad: Chromium se lanza con un micrófono
+simulado (`--use-fake-ui-for-media-stream`, `--use-fake-device-for-media-stream`,
+`--use-file-for-fake-audio-capture=<wav>%noloop`) que «oye» un WAV; la web lo capta, corta la
+frase y la envía a la API, y el modelo Whisper instalado en la máquina la transcribe. La frase
+la sintetiza el propio producto (eSpeak NG, por `POST /api/tts/synthesize`): no interviene
+ninguna grabación de una persona. Está en inglés porque el modelo entiende bien la voz inglesa
+de eSpeak y mal la española; el texto se compara por palabras (≥ 80 % de coincidencia), porque
+lo que se prueba es el recorrido, no la precisión del modelo.
+
+| Paso         | Qué comprueba                                                                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Preferencias | Motor local disponible, automático por defecto, qué sale del equipo con cada motor, aviso previo del motor del navegador, idioma del dictado guardado por usuario             |
+| Exclusiones  | El nombre tiene micrófono; el correo (solo lectura) y las contraseñas, no                                                                                                     |
+| Título       | Título de un vídeo nuevo: botón pulsado, nivel de entrada, proveedor nombrado, texto en el campo sin punto final, Esc detiene; el vídeo se crea con ese título                |
+| Studio       | Guion dictado en el idioma de la voz de la escena, autoguardado, deshacer / rehacer, sigue ahí tras recargar; título de la barra (campo fuera del kit) sustituye la selección |
+| Guionista    | El texto entra en la posición del cursor, entre dos frases                                                                                                                    |
+| Interactivo  | El mensaje dictado se envía al avatar y este contesta                                                                                                                         |
+| Red          | Cada dictado fue una petición real a `/api/dictation/transcribe`, contestada 200 por el proveedor local                                                                       |
+
+Si el modelo no está instalado (`pnpm dictation:setup`), el script lo dice en un recuadro bien
+visible y termina sin fallar. El motor del **navegador** (Web Speech API) necesita el servicio
+de voz del fabricante del navegador y no se puede ejercitar aquí: lo cubren los tests de la web
+con un doble de `SpeechRecognition`.
 
 Dos cosas que conviene saber:
 

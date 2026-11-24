@@ -29,6 +29,12 @@ import {
   translationOutputs,
 } from '@parlante/db';
 import { seedAccount } from '@parlante/db/testing';
+import {
+  createLocalWhisperStt,
+  disposeWhisperEngines,
+  isLocalWhisperInstalled,
+  providerEnvSchema,
+} from '@parlante/providers';
 import { createNodeCanvas, loadNodeImage } from '@parlante/renderer/node';
 import { ffprobe, runFfmpeg } from '../../lib/ffmpeg';
 import { createTempDir } from '../../lib/tmp';
@@ -673,6 +679,61 @@ describe('translation job — failures, credits and idempotency', () => {
       t.ctx.providers.stt = realStt;
     }
   }, 120_000);
+
+  // [slow] The same path with the REAL local speech model (skipped when it is not installed:
+  // `pnpm dictation:setup`). The harness keeps `auto` on the manual provider, so the real one
+  // is put in place by hand, exactly as `createProviders` does on a machine with the model.
+  const speechEnv = providerEnvSchema.parse({});
+  it.skipIf(!isLocalWhisperInstalled(speechEnv))(
+    '[slow] transcribes the video with the local Whisper model when the user gave no transcript',
+    async () => {
+      const realStt = t.ctx.providers.stt;
+      const whisper = createLocalWhisperStt(speechEnv);
+      expect(whisper.requiresUserTranscript).toBe(false);
+      t.ctx.providers.stt = whisper;
+      try {
+        const seeded = await seedTranslation({ transcript: null });
+        const { result } = await t.run(job, seeded.payload);
+        expect(result.completedLanguages).toEqual(['en']);
+        const { job: row, outputs } = await state(seeded);
+        expect(row?.status).toBe('completed');
+        expect(row?.transcriptSource).toBe('stt');
+        // Honesty: the row says which provider heard the video, and that it is the basic one.
+        expect(row?.providers?.stt).toEqual({
+          id: 'local-whisper',
+          name: 'Whisper base (local)',
+          quality: 'basic',
+          local: true,
+        });
+        // Timed segments inside the 10 s of the video, in order. The words are whatever a
+        // small model makes of a robotic voice over a tone: only their shape is asserted.
+        const heard = row?.transcript ?? [];
+        expect(heard.length).toBeGreaterThanOrEqual(1);
+        let previous = -1;
+        for (const segment of heard) {
+          expect(segment.text.trim()).not.toBe('');
+          expect(segment.startMs).toBeGreaterThanOrEqual(previous);
+          expect(segment.endMs).toBeGreaterThan(segment.startMs);
+          expect(segment.endMs).toBeLessThanOrEqual(DURATION_MS);
+          previous = segment.startMs;
+        }
+        expect(
+          heard
+            .map((segment) => segment.text)
+            .join(' ')
+            .split(/\s+/).length,
+        ).toBeGreaterThan(5);
+        // The dub was produced from that transcript.
+        const english = outputs.get('en');
+        expect(english?.status).toBe('completed');
+        expect(await ffprobe(localFile(english?.videoKey))).toMatchObject({ hasAudio: true });
+      } finally {
+        t.ctx.providers.stt = realStt;
+        await disposeWhisperEngines();
+      }
+    },
+    240_000,
+  );
 
   it('moderates the TRANSLATED text before dubbing: a blocked language fails, nothing of it is spoken', async () => {
     const realTranslation = t.ctx.providers.translation;

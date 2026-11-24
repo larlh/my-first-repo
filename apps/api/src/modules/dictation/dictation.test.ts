@@ -38,7 +38,13 @@ const FAKE_INFO: ProviderRef = {
 /** Build a WAV file; the defaults are the only format dictation accepts. */
 function wav(
   samples: Int16Array,
-  format: { sampleRate?: number; channels?: number; bits?: number; code?: number; dataSize?: number } = {},
+  format: {
+    sampleRate?: number;
+    channels?: number;
+    bits?: number;
+    code?: number;
+    dataSize?: number;
+  } = {},
 ): Buffer {
   const { sampleRate = RATE, channels = 1, bits = 16, code = 1 } = format;
   const data = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
@@ -119,7 +125,12 @@ describe('dictation WAV reader', () => {
 
   it('skips other chunks, accepts streamed sizes and an odd offset in memory', () => {
     const body = wav(tone(0.5));
-    const list = Buffer.concat([Buffer.from('LIST'), Buffer.from([3, 0, 0, 0]), Buffer.from('abc'), Buffer.from([0])]);
+    const list = Buffer.concat([
+      Buffer.from('LIST'),
+      Buffer.from([3, 0, 0, 0]),
+      Buffer.from('abc'),
+      Buffer.from([0]),
+    ]);
     const withList = Buffer.concat([body.subarray(0, 36), list, body.subarray(36)]);
     expect(parseDictationWav(withList).samples).toHaveLength(8000);
     // ffmpeg writing to a pipe leaves 0xFFFFFFFF as the data size.
@@ -143,7 +154,10 @@ describe('dictation WAV reader', () => {
       'not_wav',
     ]);
     expect(reason(Buffer.alloc(4))).toEqual(['UNSUPPORTED_MEDIA_TYPE', 'not_wav']);
-    expect(reason(wav(tone(1), { channels: 2 }))).toEqual(['VALIDATION_ERROR', 'unsupported_format']);
+    expect(reason(wav(tone(1), { channels: 2 }))).toEqual([
+      'VALIDATION_ERROR',
+      'unsupported_format',
+    ]);
     expect(reason(wav(tone(1), { sampleRate: 44_100 }))).toEqual([
       'VALIDATION_ERROR',
       'unsupported_format',
@@ -181,6 +195,7 @@ describe('POST /api/dictation/transcribe', () => {
 
   it('transcribes a segment for any member, in memory, without charging credits', async () => {
     const viewer = await t.addMember(alice.workspace, 'viewer');
+    const ledgerBefore = await t.db.select().from(creditLedger);
     const res = await t.call(api.dictation.transcribe, {
       as: viewer,
       multipart: upload(wav(tone(2)), { language: 'es' }),
@@ -211,20 +226,26 @@ describe('POST /api/dictation/transcribe', () => {
       .from(workspaces)
       .where(eq(workspaces.id, alice.workspace.id));
     expect(workspace?.credits).toBe(alice.workspace.credits);
-    expect(await t.db.select().from(creditLedger)).toHaveLength(0);
+    expect(await t.db.select().from(creditLedger)).toEqual(ledgerBefore);
     // Nothing on disk: neither storage objects nor upload temp files.
     expect(await fs.readdir(t.storageDir)).toEqual([]);
   });
 
   it('lets the model detect the language when the client sends none', async () => {
     fake.next = () => ({ text: 'Hello there.', language: 'en', provider: FAKE_INFO });
-    const res = await t.call(api.dictation.transcribe, { as: alice, multipart: upload(wav(tone(1))) });
+    const res = await t.call(api.dictation.transcribe, {
+      as: alice,
+      multipart: upload(wav(tone(1))),
+    });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ text: 'Hello there.', language: 'en', audioMs: 1000 });
     expect(fake.requests[0]!.language).toBeUndefined();
     // Silence: an empty text and no language is a valid answer.
     fake.next = () => ({ text: '', language: null, provider: FAKE_INFO });
-    const quiet = await t.call(api.dictation.transcribe, { as: alice, multipart: upload(wav(tone(1))) });
+    const quiet = await t.call(api.dictation.transcribe, {
+      as: alice,
+      multipart: upload(wav(tone(1))),
+    });
     expect(quiet.body).toMatchObject({ text: '', language: null });
   });
 
@@ -240,7 +261,10 @@ describe('POST /api/dictation/transcribe', () => {
     expect(foreign.status).toBe(403);
     // An API key is not a session: dictation is not part of the public API.
     const key = await t.apiKeyFor(alice.workspace);
-    const withKey = await t.call(api.dictation.transcribe, { as: key, multipart: upload(wav(tone(1))) });
+    const withKey = await t.call(api.dictation.transcribe, {
+      as: key,
+      multipart: upload(wav(tone(1))),
+    });
     expect(withKey.status).toBe(401);
     expect(fake.requests).toHaveLength(0);
   });
@@ -347,7 +371,10 @@ describe('POST /api/dictation/transcribe', () => {
       languages: ['es'],
       model: 'whisper-base',
     };
-    const down = await t.call(api.dictation.transcribe, { as: alice, multipart: upload(wav(tone(1))) });
+    const down = await t.call(api.dictation.transcribe, {
+      as: alice,
+      multipart: upload(wav(tone(1))),
+    });
     expect(down.status).toBe(503);
     expect(down.error).toMatchObject({
       code: 'SERVICE_UNAVAILABLE',
@@ -359,19 +386,28 @@ describe('POST /api/dictation/transcribe', () => {
     fake.next = () => {
       throw new AppError('PROVIDER_ERROR', 'Local speech recognition failed: invalid tensor');
     };
-    const failed = await t.call(api.dictation.transcribe, { as: alice, multipart: upload(wav(tone(1))) });
+    const failed = await t.call(api.dictation.transcribe, {
+      as: alice,
+      multipart: upload(wav(tone(1))),
+    });
     expect(failed.status).toBe(502);
     // A failure frees its turn: the next segment is served.
     fake.next = () => ({ text: 'bien', language: 'es', provider: FAKE_INFO });
     for (let i = 0; i < 6; i += 1) {
-      const ok = await t.call(api.dictation.transcribe, { as: alice, multipart: upload(wav(tone(1))) });
+      const ok = await t.call(api.dictation.transcribe, {
+        as: alice,
+        multipart: upload(wav(tone(1))),
+      });
       expect(ok.status).toBe(200);
     }
   });
 
   it('answers 503 not_configured when the server has no dictation provider', async () => {
     delete t.app.providers.dictation;
-    const res = await t.call(api.dictation.transcribe, { as: alice, multipart: upload(wav(tone(1))) });
+    const res = await t.call(api.dictation.transcribe, {
+      as: alice,
+      multipart: upload(wav(tone(1))),
+    });
     expect(res.status).toBe(503);
     expect(res.error.details).toEqual({ reason: 'not_configured' });
     const caps = await t.call(api.system.capabilities, { as: alice });
@@ -413,7 +449,12 @@ describe('dictation without the model installed (real provider)', () => {
     expect(caps.body.dictation).toEqual({
       local: {
         available: false,
-        provider: { id: 'local-whisper', name: 'Whisper base (local)', quality: 'basic', local: true },
+        provider: {
+          id: 'local-whisper',
+          name: 'Whisper base (local)',
+          quality: 'basic',
+          local: true,
+        },
         reason: expect.stringContaining('pnpm dictation:setup'),
         reasonCode: 'model_not_installed',
         languages: [],
@@ -542,7 +583,8 @@ describe.skipIf(!isLocalWhisperInstalled(realEnv))(
     async function speak(text: string, language: 'es' | 'en'): Promise<Buffer> {
       const speech = await t.app.providers.tts.default.synthesize({
         text,
-        providerVoiceId: `${language}-f1`,
+        // The plain eSpeak voice, Spanish first: that audio is identical on every run.
+        providerVoiceId: `${language}-m1`,
         language,
         speed: 1,
         pitch: 0,
@@ -574,10 +616,14 @@ describe.skipIf(!isLocalWhisperInstalled(realEnv))(
       expect(caps.body.dictation.local).toMatchObject({ available: true, reasonCode: null });
       expect(caps.body.dictation.local.languages).toEqual(expect.arrayContaining(['es', 'en']));
       // With the model installed, `auto` also gives video translation automatic transcription.
-      expect(caps.body.active.stt).toMatchObject({ id: 'local-whisper', quality: 'basic', local: true });
+      expect(caps.body.active.stt).toMatchObject({
+        id: 'local-whisper',
+        quality: 'basic',
+        local: true,
+      });
       expect(caps.body.sttRequiresTranscript).toBe(false);
 
-      const spanish = 'Hola, bienvenidos a esta presentación sobre nuestro nuevo producto.';
+      const spanish = 'La semana que viene tenemos una reunión importante con todo el equipo.';
       const es = await t.call(api.dictation.transcribe, {
         as: alice,
         multipart: upload(await speak(spanish, 'es'), { language: 'es' }),
@@ -595,7 +641,7 @@ describe.skipIf(!isLocalWhisperInstalled(realEnv))(
       expect(es.body.processingMs).toBeGreaterThan(0);
 
       // No hint: the language is detected.
-      const english = 'Hello and welcome to this presentation about our new product.';
+      const english = 'Next week we have an important meeting with the whole team.';
       const en = await t.call(api.dictation.transcribe, {
         as: alice,
         multipart: upload(await speak(english, 'en')),

@@ -249,6 +249,7 @@ export default function NewTranslationPage() {
             }
             durationMs={duration}
             required={transcriptRequired}
+            language={form.sourceLanguage}
             note={
               transcriptFrom !== null && form.source?.kind === 'video'
                 ? t('new.transcript.fromVideo', { title: transcriptFrom })

@@ -1,9 +1,5 @@
 import type { FastifyRequest } from 'fastify';
-import {
-  AppError,
-  DICTATION_MAX_UPLOAD_BYTES,
-  api,
-} from '@parlante/shared';
+import { AppError, DICTATION_MAX_UPLOAD_BYTES, api } from '@parlante/shared';
 import type { DictationReasonCode, RouteDef } from '@parlante/shared';
 import { defineRoute } from '../../lib/define-route';
 import { defineModule } from '../../lib/modules';

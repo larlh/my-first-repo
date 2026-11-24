@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { WhisperEngine, WhisperEngineError, resolveWhisperThreads } from './whisper-engine';
+import {
+  WhisperEngine,
+  WhisperEngineError,
+  disableOnnxRuntimeTelemetry,
+  resolveWhisperThreads,
+} from './whisper-engine';
 import type { WhisperEngineOptions, WhisperOutput, WorkerLike } from './whisper-engine';
 
 /*
@@ -97,7 +102,11 @@ describe('WhisperEngine', () => {
     const worker = workers[0]!;
     // Only the first job was handed over; the second waits for its answer.
     expect(worker.posted).toHaveLength(1);
-    expect(worker.posted[0]).toMatchObject({ type: 'transcribe', language: 'es', timestamps: false });
+    expect(worker.posted[0]).toMatchObject({
+      type: 'transcribe',
+      language: 'es',
+      timestamps: false,
+    });
 
     worker.reply(out('uno'));
     await expect(first).resolves.toEqual(out('uno'));
@@ -220,6 +229,22 @@ describe('WhisperEngine', () => {
     await expect(waiting).rejects.toBeInstanceOf(WhisperEngineError);
     expect(workers[0]!.terminated).toBe(true);
     await expect(engine.run({ samples: audio() })).rejects.toMatchObject({ phase: 'load' });
+  });
+
+  it('switches the telemetry of ONNX Runtime off in the environment of the process', () => {
+    const before = process.env.ORT_DISABLE_TELEMETRY;
+    try {
+      delete process.env.ORT_DISABLE_TELEMETRY;
+      disableOnnxRuntimeTelemetry();
+      expect(process.env.ORT_DISABLE_TELEMETRY).toBe('1');
+      // Whatever was configured, it ends up off: the product never phones home.
+      process.env.ORT_DISABLE_TELEMETRY = '0';
+      disableOnnxRuntimeTelemetry();
+      expect(process.env.ORT_DISABLE_TELEMETRY).toBe('1');
+    } finally {
+      if (before === undefined) delete process.env.ORT_DISABLE_TELEMETRY;
+      else process.env.ORT_DISABLE_TELEMETRY = before;
+    }
   });
 
   it('uses the configured thread count, or every core up to four', () => {

@@ -14,10 +14,20 @@ export interface ComposerProps {
   personaName: string;
   /** Bumped to move the focus back to the box (after a turn). */
   focusKey: number;
+  /** Language of the conversation: the language dictated into the box. */
+  language?: string;
 }
 
 /** Message box: Enter sends, Shift+Enter breaks the line. */
-export function Composer({ value, onChange, onSend, busy, personaName, focusKey }: ComposerProps) {
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  busy,
+  personaName,
+  focusKey,
+  language,
+}: ComposerProps) {
   const { t } = useTranslation('interactive');
   const box = useRef<HTMLTextAreaElement>(null);
   const hintId = useId();
@@ -50,7 +60,9 @@ export function Composer({ value, onChange, onSend, busy, personaName, focusKey 
           onKeyDown={onKeyDown}
           rows={2}
           maxLength={MESSAGE_MAX_CHARS}
-          className="min-h-[3.75rem] min-w-0 flex-1 resize-none"
+          dictationLanguage={language}
+          wrapperClassName="flex-1"
+          className="min-h-[3.75rem] resize-none"
         />
         <Button
           type="submit"

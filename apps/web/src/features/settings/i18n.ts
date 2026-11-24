@@ -36,8 +36,8 @@ const es = {
       text: 'Cómo te ven tus compañeros y cómo entras en Parlante.',
     },
     preferences: {
-      label: 'Idioma y tema',
-      title: 'Idioma y tema',
+      label: 'Idioma, tema y dictado',
+      title: 'Idioma, tema y dictado',
       text: 'Ajustes de este dispositivo. El idioma también se guarda en tu perfil.',
     },
     workspace: {
@@ -116,6 +116,57 @@ const es = {
       system: { label: 'Como el sistema', text: 'Sigue el ajuste de tu dispositivo' },
       light: { label: 'Claro', text: 'Papel cálido y tinta' },
       dark: { label: 'Oscuro', text: 'La cabina con las luces bajas' },
+    },
+    dictation: {
+      title: 'Dictado por micrófono',
+      text: 'Los campos de texto llevan un botón de micrófono para dictar en vez de teclear. Estos ajustes se guardan en este navegador, para tu usuario.',
+      engine: {
+        legend: 'Motor de dictado',
+        auto: {
+          label: 'Automático',
+          text: 'Usa el motor local de esta instalación. Nunca pasa al del navegador por su cuenta.',
+        },
+        local: {
+          label: 'Local',
+          text: 'Un modelo Whisper abierto en tu instalación de Parlante. El texto llega al terminar cada frase.',
+        },
+        browser: {
+          label: 'Navegador',
+          text: 'El reconocimiento de voz de tu navegador, con texto en vivo. En Chrome el audio se envía a Google.',
+        },
+        localReady: 'Disponible',
+        localMissing: 'No disponible',
+        localChecking: 'Comprobando…',
+        browserMissing: 'Este navegador no lo tiene',
+        browserAccepted: 'Aviso aceptado',
+        browserNeedsNotice: 'Pide aceptar un aviso',
+      },
+      localProblem: 'El motor local no está disponible',
+      recheck: 'Comprobar de nuevo',
+      leaves: {
+        title: 'Qué sale de tu equipo con cada motor',
+        local: 'Motor local',
+        localText:
+          'Nada sale de tu instalación. El navegador envía cada frase al servidor de Parlante que tú ejecutas, que la transcribe en memoria. Ni el audio ni el texto se guardan o se registran, y no se usa ningún servicio externo.',
+        browser: 'Dictado del navegador',
+        browserText:
+          'Sale tu voz. El navegador la envía a su propio servicio de reconocimiento: en Chrome, a los servidores de Google. Parlante no recibe ese audio ni controla qué hace el servicio con él. Solo se usa si lo eliges y aceptas el aviso.',
+      },
+      language: {
+        label: 'Idioma en el que dictas',
+        ui: 'El de la interfaz ({{language}})',
+        hint: 'Algunos campos usan su propio idioma: el guion del Studio se dicta en el idioma de la voz de la escena, y la transcripción de una traducción, en el idioma del vídeo.',
+      },
+      show: {
+        label: 'Mostrar el botón de micrófono en los campos de texto',
+        text: 'Si lo desactivas, ningún campo ofrece dictado. Nunca aparece en contraseñas, correos, direcciones web, números ni claves.',
+      },
+      consent: {
+        given: 'Aceptaste el aviso del dictado del navegador el {{date}}.',
+        withdraw: 'Retirar la aceptación',
+        withdrawn: 'Aceptación retirada: el dictado vuelve al motor automático',
+      },
+      saved: 'Preferencias de dictado guardadas',
     },
   },
   workspace: {
@@ -667,8 +718,8 @@ const en: typeof es = {
       text: 'How your teammates see you and how you sign in to Parlante.',
     },
     preferences: {
-      label: 'Language and theme',
-      title: 'Language and theme',
+      label: 'Language, theme and dictation',
+      title: 'Language, theme and dictation',
       text: 'Settings for this device. The language is also saved to your profile.',
     },
     workspace: {
@@ -746,6 +797,57 @@ const en: typeof es = {
       system: { label: 'Match the system', text: 'Follows your device setting' },
       light: { label: 'Light', text: 'Warm paper and ink' },
       dark: { label: 'Dark', text: 'The booth with the lights down' },
+    },
+    dictation: {
+      title: 'Dictation by microphone',
+      text: 'Text fields carry a microphone button so you can dictate instead of typing. These settings are stored in this browser, for your user.',
+      engine: {
+        legend: 'Dictation engine',
+        auto: {
+          label: 'Automatic',
+          text: 'Uses the local engine of this installation. It never switches to the browser engine by itself.',
+        },
+        local: {
+          label: 'Local',
+          text: 'An open Whisper model in your Parlante installation. The text arrives when each phrase ends.',
+        },
+        browser: {
+          label: 'Browser',
+          text: "Your browser's speech recognition, with live text. In Chrome the audio is sent to Google.",
+        },
+        localReady: 'Available',
+        localMissing: 'Not available',
+        localChecking: 'Checking…',
+        browserMissing: 'This browser does not have it',
+        browserAccepted: 'Notice accepted',
+        browserNeedsNotice: 'Asks you to accept a notice',
+      },
+      localProblem: 'The local engine is not available',
+      recheck: 'Check again',
+      leaves: {
+        title: 'What leaves your machine with each engine',
+        local: 'Local engine',
+        localText:
+          'Nothing leaves your installation. The browser sends each phrase to the Parlante server you run, which transcribes it in memory. Neither the audio nor the text is stored or logged, and no external service is used.',
+        browser: 'Browser dictation',
+        browserText:
+          "Your voice does. The browser sends it to its own recognition service: in Chrome, to Google's servers. Parlante does not receive that audio and has no control over what the service does with it. It is only used if you choose it and accept the notice.",
+      },
+      language: {
+        label: 'Language you dictate in',
+        ui: 'The interface language ({{language}})',
+        hint: 'Some fields use their own language: the Studio script is dictated in the language of the scene voice, and the transcript of a translation in the language of the video.',
+      },
+      show: {
+        label: 'Show the microphone button in text fields',
+        text: 'When off, no field offers dictation. It never appears in passwords, e-mails, web addresses, numbers or keys.',
+      },
+      consent: {
+        given: 'You accepted the browser dictation notice on {{date}}.',
+        withdraw: 'Withdraw acceptance',
+        withdrawn: 'Acceptance withdrawn: dictation is back on the automatic engine',
+      },
+      saved: 'Dictation preferences saved',
     },
   },
   workspace: {

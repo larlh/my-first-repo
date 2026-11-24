@@ -194,6 +194,7 @@ function ScriptSection({ scene }: { scene: Scene }) {
             maxLength={COMPOSITION_LIMITS.maxScriptChars}
             placeholder={t('script.placeholder')}
             value={script.text}
+            dictationLanguage={script.language}
             onChange={(event) =>
               patch(
                 {

@@ -164,16 +164,17 @@ Tras un login/registro correcto: `useSessionState().setSession(respuesta)` y `na
 
 ## Qué ofrece el shell
 
-| Import                      | Contenido                                                                                                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@/shell`                   | `defineFeature`, `PATHS`, `useNextPath`, `safeNextPath`, `RequireRole`, `AuthShell`, `PublicPreferences`, `DocumentTitle`, `PageLoader`, `useRegistry`, `hasRoute` |
-| `@/ui`                      | Kit de componentes (catálogo en `/dev/ui`) y `cn()`                                                                                                                |
-| `@/components/*`            | `Logo`, `VideoPlayer`, `JobStatus` / `JobStatusBadge`, `ProviderBadge` (+ `useProviderName`), `RenderSettings` / `PhotorealNotice`                                 |
-| `@/lib/api`                 | Cliente tipado, hooks de TanStack Query, subida con progreso, `ApiError`, `toAppUrl`, `downloadUrl`                                                                |
-| `@/lib/session`             | `useSession()`, `useSessionState()`                                                                                                                                |
-| `@/lib/jobs`                | `useJobPolling`, `jobPhaseOf`, `EtaEstimator`                                                                                                                      |
-| `@/lib/format`              | `useFormat()` y funciones de fechas, duraciones, tamaños, números, precios                                                                                         |
-| `@/lib/i18n`, `@/lib/theme` | `changeLocale`, `currentLocale`, `useTheme()`                                                                                                                      |
+| Import                      | Contenido                                                                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@/shell`                   | `defineFeature`, `PATHS`, `useNextPath`, `safeNextPath`, `RequireRole`, `AuthShell`, `PublicPreferences`, `DocumentTitle`, `PageLoader`, `useRegistry`, `hasRoute`  |
+| `@/ui`                      | Kit de componentes (catálogo en `/dev/ui`) y `cn()`                                                                                                                 |
+| `@/components/*`            | `Logo`, `VideoPlayer`, `JobStatus` / `JobStatusBadge`, `ProviderBadge` (+ `useProviderName`), `RenderSettings` / `PhotorealNotice`                                  |
+| `@/lib/api`                 | Cliente tipado, hooks de TanStack Query, subida con progreso, `ApiError`, `toAppUrl`, `downloadUrl`                                                                 |
+| `@/lib/session`             | `useSession()`, `useSessionState()`                                                                                                                                 |
+| `@/lib/jobs`                | `useJobPolling`, `jobPhaseOf`, `EtaEstimator`                                                                                                                       |
+| `@/lib/format`              | `useFormat()` y funciones de fechas, duraciones, tamaños, números, precios                                                                                          |
+| `@/lib/i18n`, `@/lib/theme` | `changeLocale`, `currentLocale`, `useTheme()`                                                                                                                       |
+| `@/lib/dictation`           | Dictado por micrófono: `dictation` (controlador), `useDictationState()`, preferencias. Los features casi nunca lo importan: el botón ya viene en los campos del kit |
 
 ### Cliente de API
 
@@ -288,7 +289,7 @@ Consejos de maquetación:
 
 ### Kit de componentes (`@/ui`)
 
-`Button`, `IconButton`, `Input`, `Textarea`, `Select`, `Checkbox`, `Switch`, `Slider`, `Tabs`/`TabPanel`, `SegmentedControl`, `Dialog`, `Drawer`, `ConfirmDialog` + `useConfirm()`, `Menu*` (menú desplegable), `Popover*`, `Tooltip`, `toast` + `Toaster`, `Badge`, `Avatar` (alias `UserAvatar`), `Card*`, `Table*`, `LoadMore`, `Skeleton`, `SkeletonText`, `EmptyState`, `ErrorState`, `ProgressBar`, `Spinner`, `VoiceBars`, `FileDropzone`, `ColorPicker`, `PageHeader`, `Field`, `Label`.
+`Button`, `IconButton`, `Input`, `Textarea`, `DictationButton`, `Select`, `Checkbox`, `Switch`, `Slider`, `Tabs`/`TabPanel`, `SegmentedControl`, `Dialog`, `Drawer`, `ConfirmDialog` + `useConfirm()`, `Menu*` (menú desplegable), `Popover*`, `Tooltip`, `toast` + `Toaster`, `Badge`, `Avatar` (alias `UserAvatar`), `Card*`, `Table*`, `LoadMore`, `Skeleton`, `SkeletonText`, `EmptyState`, `ErrorState`, `ProgressBar`, `Spinner`, `VoiceBars`, `FileDropzone`, `ColorPicker`, `PageHeader`, `Field`, `Label`.
 
 Todos funcionan con teclado, tienen foco visible y roles/nombres ARIA (los interactivos complejos se apoyan en Radix). Catálogo con ejemplos en ambos temas: **`/dev/ui`** (solo en desarrollo; `?view=light|dark|both`).
 
@@ -301,6 +302,61 @@ Comportamientos del kit que conviene conocer:
 - **Un solo formulario de render**: `RenderSettings` (`@/components/RenderSettings`) es el cuerpo del diálogo de render de la página del vídeo y del Studio (resolución, coste, saldo, aviso fotorrealista, rechazos de la API). Los textos viven en `shell:render.*`; cada llamador pone su diálogo y su coste (`renderCostOf` o el suyo) y usa `renderGate` para habilitar el botón.
 - **Nombres de proveedor**: `ProviderBadge` y `useProviderName()` muestran en el idioma de la UI los nombres de los proveedores locales que envía el servidor.
 - **Movimiento reducido**: el CSS global ya anula animaciones y transiciones; para desplazamientos por script usa `scrollBehavior()` de `@/lib/motion`.
+- **Dictado por micrófono**: `Input` y `Textarea` llevan un botón de micrófono por defecto (ver el apartado siguiente).
+
+### Dictado por micrófono en los campos
+
+Todo campo de texto libre del kit ofrece dictado **sin hacer nada**: `<Input>` y `<Textarea>`
+pintan un botón de micrófono dentro del control (a la derecha; en un `Textarea`, arriba a la
+derecha, apartándose de la barra de desplazamiento) y reservan su hueco para que no tape el
+texto. Con sesión iniciada y el botón visible, el campo mide lo mismo que sin él.
+
+```tsx
+<Input label="Título" value={title} onChange={…} />              // con micrófono (por defecto)
+<Input label="Código de cupón" dictation={false} />               // este campo no lo quiere
+<Textarea label="Guion" dictationLanguage={script.language} />    // se dicta en otro idioma
+<Input label="Token del proveedor" secret />                      // secreto: nunca se dicta
+```
+
+| Propiedad           | Para qué                                                                                                                                  |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `dictation`         | `false` quita el micrófono de ese campo. Por defecto está activo                                                                          |
+| `dictationLanguage` | Idioma que se habla en ese campo (`es`, `en-GB`…) cuando no es el del usuario: la voz de la escena, el idioma de origen de una traducción |
+| `secret`            | El campo guarda una clave, un token o un secreto: nunca se dicta, sea del tipo que sea (añade `data-secret` al elemento)                  |
+
+El micrófono **nunca** aparece, diga lo que diga `dictation`, en: `type` distinto de texto o
+búsqueda (contraseña, correo, URL, número, teléfono, fecha, hora, archivo…), campos `readOnly` o
+`disabled`, campos `secret`, `autoComplete` de credenciales o datos de pago, `inputMode`
+numérico / correo / URL y campos con `pattern`. La regla vive en `exclusionOf()`
+(`@/lib/dictation`) y se vuelve a comprobar sobre el elemento real antes de escribir. Tampoco
+aparece sin sesión (el motor local es una ruta con sesión y las preferencias son del usuario)
+ni cuando la persona oculta los botones en _Ajustes → Idioma, tema y dictado_.
+
+Un campo que **no** es del kit (un `<input>` con estilo propio, como el título de la barra del
+Studio) se cubre poniendo el botón al lado:
+
+```tsx
+const field = useRef<HTMLInputElement>(null);
+<input ref={field} aria-label={t('title')} value={title} onChange={…} />
+<DictationButton target={field} size="sm" language={optionalLanguage} />
+```
+
+Qué garantiza el control (no hay que programarlo en cada pantalla):
+
+- El texto entra en el cursor o sustituye la selección, con espacios y mayúscula inicial, y
+  respeta `maxLength`. Se escribe con el comando de edición del navegador (o, sin foco, con el
+  _setter_ nativo + un evento `input`), así que `onChange`, react-hook-form, el historial del
+  Studio y su autoguardado lo ven como texto tecleado.
+- Solo dicta un campo a la vez; se detiene con Esc, con el propio botón (`aria-pressed`), al
+  ocultarse la pestaña o perder el foco, y al desmontarse el campo.
+- Estados y errores traducidos en un panel flotante junto al campo (no mueve el formulario) y
+  anunciados en una región `aria-live`; el panel dice siempre qué motor transcribe.
+- El motor (`local` o `browser`), el idioma por defecto y la aceptación del aviso del motor del
+  navegador son preferencias del usuario (`localStorage`, `parlante.dictation.v1.<userId>`).
+
+El código compartido está en `src/lib/dictation` (captura, corte por frases, cola ordenada,
+inserción, motores, controlador) y `src/ui/Dictation.tsx` (botón, panel y aviso). Textos en
+`shell:dictation.*`.
 
 ## Estructura
 
@@ -309,7 +365,7 @@ src/
   main.tsx, index.css, fonts.css   entrada; fonts.css = fuentes para composiciones de vídeo (canvas)
   shell.ts                         superficie pública del shell para los features
   app/                             registro de features (import.meta.glob), router, guardas, layouts, páginas de sistema, /dev/*
-  lib/                             api, session, i18n, theme, format, jobs
+  lib/                             api, session, i18n, theme, format, jobs, dictation
   ui/                              kit de componentes
   components/                      Logo, VideoPlayer, JobStatus, ProviderBadge
   styles/                          tokens.css, base.css

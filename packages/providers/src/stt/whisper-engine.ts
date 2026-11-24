@@ -100,7 +100,22 @@ export function resolveWhisperThreads(configured: number): number {
   return configured > 0 ? configured : Math.max(1, Math.min(4, os.availableParallelism()));
 }
 
+/**
+ * ONNX Runtime ships with usage telemetry switched ON (measured with onnxruntime-node 1.30.0
+ * on Linux: it connects to mobile.events.data.microsoft.com and keeps a device id and an
+ * event queue under ~/.cache/Microsoft). Parlante promises that nothing leaves the machine,
+ * so it is switched off through the variable the runtime reads when it starts.
+ *
+ * It has to be set HERE: in the real environment of the process (a worker thread's own
+ * `process.env` is a copy that native code never sees) and before the worker loads the
+ * native library.
+ */
+export function disableOnnxRuntimeTelemetry(): void {
+  process.env.ORT_DISABLE_TELEMETRY = '1';
+}
+
 function spawnWorker(data: WhisperWorkerData): WorkerLike {
+  disableOnnxRuntimeTelemetry();
   const file = path.join(path.dirname(fileURLToPath(import.meta.url)), 'whisper-worker.mjs');
   // The worker is plain JavaScript: it must not inherit a TypeScript loader from the parent.
   return new Worker(file, { workerData: data, execArgv: [] }) as unknown as WorkerLike;

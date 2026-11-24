@@ -7,6 +7,7 @@ export * from './Checkbox';
 export * from './ColorPicker';
 export * from './ConfirmDialog';
 export * from './Dialog';
+export * from './Dictation';
 export * from './Drawer';
 export * from './Field';
 export * from './FileDropzone';

@@ -342,6 +342,10 @@ describe('roles: every mutation states who may run it', () => {
     'DELETE /api/members/:memberId',
     // Voice preview: reads nothing and stores only a shared cache entry.
     'POST /api/tts/synthesize',
+    // Dictation: turns the caller's own speech into text in memory. It reads no resource of
+    // the workspace, stores nothing and charges nothing, so any member may use it (search
+    // boxes and profile fields are text fields too).
+    'POST /api/dictation/transcribe',
   ]);
   const mutations = (): RouteDef[] =>
     contractRoutes().filter((route) => route.method !== 'GET' && route.auth === 'session');

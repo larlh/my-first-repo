@@ -6,6 +6,13 @@ import {
   CapabilitiesSchema,
   CompositionSchema,
   CreateVideoBodySchema,
+  DICTATION_AUDIO_ERROR_REASONS,
+  DICTATION_MAX_SEGMENT_MS,
+  DICTATION_MAX_UPLOAD_BYTES,
+  DICTATION_NOT_CONFIGURED,
+  DICTATION_REASON_CODES,
+  DICTATION_SAMPLE_RATE,
+  DictationCapabilitiesSchema,
   PLANS,
   QUEUES,
   TtsCacheMetaSchema,
@@ -335,5 +342,72 @@ describe('storage keys (additions)', () => {
       false,
     );
     expect(body.safeParse({ ...base, sourceVideoId: asset }).success).toBe(false);
+  });
+
+  it('adds dictation: a first-party multipart route and a capabilities block with a default', () => {
+    const route = api.dictation.transcribe;
+    expect(route).toMatchObject({
+      method: 'POST',
+      path: '/api/dictation/transcribe',
+      auth: 'session',
+      feature: 17,
+    });
+    // Any member may dictate: no minimum role beyond the default (viewer).
+    expect('minRole' in route).toBe(false);
+    expect(route.multipart.fileField).toBe('audio');
+    expect(route.multipart.fields.parse({})).toEqual({});
+    expect(route.multipart.fields.parse({ language: 'es' })).toEqual({ language: 'es' });
+    expect(route.multipart.fields.safeParse({ language: 'xx' }).success).toBe(false);
+    expect(route.errors).toEqual(
+      expect.arrayContaining(['PAYLOAD_TOO_LARGE', 'RATE_LIMITED', 'SERVICE_UNAVAILABLE']),
+    );
+    // 30 s of PCM 16-bit mono at 16 kHz, its header and a little room for extra chunks.
+    expect(DICTATION_MAX_SEGMENT_MS).toBe(30_000);
+    expect(DICTATION_SAMPLE_RATE).toBe(16_000);
+    expect(DICTATION_MAX_UPLOAD_BYTES).toBe(44 + 30 * 16_000 * 2 + 4096);
+    expect(DICTATION_AUDIO_ERROR_REASONS).toContain('audio_too_long');
+
+    const provider = {
+      id: 'local-whisper',
+      name: 'Whisper base (local)',
+      quality: 'basic',
+      local: true,
+    };
+    expect(
+      route.response.parse({ text: '', language: null, provider, audioMs: 1200, processingMs: 3 }),
+    ).toMatchObject({ text: '', language: null });
+    expect(
+      route.response.safeParse({ text: 'x', language: 'xx', provider, audioMs: 1, processingMs: 1 })
+        .success,
+    ).toBe(false);
+    // Dictation is not part of the public developer API.
+    expect(Object.values(api.v1).some((r) => r.path.includes('dictation'))).toBe(false);
+
+    // Capabilities: producers that know nothing about dictation still yield the block.
+    const legacy = CapabilitiesSchema.shape.dictation.parse(undefined);
+    expect(legacy).toEqual(DICTATION_NOT_CONFIGURED);
+    expect(legacy.local).toMatchObject({
+      available: false,
+      provider: null,
+      reasonCode: 'not_configured',
+    });
+    expect(DICTATION_REASON_CODES).toEqual([
+      'model_not_installed',
+      'model_incomplete',
+      'runtime_unavailable',
+      'not_configured',
+      'unknown',
+    ]);
+    const ready = DictationCapabilitiesSchema.parse({
+      local: { available: true, provider, reasonCode: null, languages: ['es', 'en'] },
+      maxSegmentMs: 30_000,
+    });
+    expect(ready.local.reason).toBeNull(); // `reason` is optional for producers
+    expect(
+      DictationCapabilitiesSchema.safeParse({
+        local: { available: false, provider, reasonCode: 'made_up', languages: [] },
+        maxSegmentMs: 30_000,
+      }).success,
+    ).toBe(false);
   });
 });

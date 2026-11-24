@@ -59,6 +59,7 @@ export function SecretField({
           <textarea
             id={id}
             readOnly
+            data-secret=""
             rows={3}
             value={value}
             spellCheck={false}
@@ -70,6 +71,7 @@ export function SecretField({
           <input
             id={id}
             readOnly
+            data-secret=""
             value={value}
             spellCheck={false}
             onFocus={(event) => event.currentTarget.select()}
