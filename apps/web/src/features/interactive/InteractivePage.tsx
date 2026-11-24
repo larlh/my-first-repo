@@ -1,4 +1,4 @@
-import { CreateInteractiveSessionBodySchema } from '@parlante/shared';
+import { CREDIT_COSTS, CreateInteractiveSessionBodySchema } from '@parlante/shared';
 import type { Avatar, LanguageCode } from '@parlante/shared';
 import { DEFAULT_STOCK_AVATAR_ID, computeAvatarState } from '@parlante/renderer';
 import { ArrowRight, MessagesSquare, Radio } from 'lucide-react';
@@ -43,8 +43,8 @@ import {
 } from '@/features/script-writer/kit';
 import { INSTRUCTIONS_MAX_CHARS, KNOWLEDGE_MAX_CHARS, PERSONA_NAME_MAX_CHARS } from './lib/talk';
 
-/** Credits a session costs with an external LLM (free in basic mode). */
-const PREMIUM_SESSION_CREDITS = 2;
+/** Credits a session costs with an external LLM (free in basic mode): the API charges this. */
+const PREMIUM_SESSION_CREDITS = CREDIT_COSTS.interactiveSessionPremium;
 
 const PresetSchema = CreateInteractiveSessionBodySchema.partial();
 
@@ -265,7 +265,10 @@ export default function InteractivePage() {
             <ModeNotice
               provider={llm}
               basic={t('setup.mode.basic')}
-              premium={t('setup.mode.premium', { name: llm?.name ?? '' })}
+              premium={t('setup.mode.premium', {
+                name: llm?.name ?? '',
+                count: PREMIUM_SESSION_CREDITS,
+              })}
             />
             {cost !== null && cost > 0 && <CreditCost cost={cost} detail={t('setup.costDetail')} />}
 

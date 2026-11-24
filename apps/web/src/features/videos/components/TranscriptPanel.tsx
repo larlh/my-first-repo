@@ -4,6 +4,7 @@ import { Captions } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatClock } from '@/lib/format';
+import { scrollBehavior } from '@/lib/motion';
 import {
   Card,
   CardContent,
@@ -36,6 +37,8 @@ export interface TranscriptPanelProps {
   /** Playback position, to highlight the line being spoken. */
   currentMs: number;
   lang?: string;
+  /** Jump the player to a line (the line becomes a button). */
+  onSeek?: (ms: number) => void;
 }
 
 /** The subtitles of the render as a readable, time-coded transcript that follows playback. */
@@ -45,6 +48,7 @@ export function TranscriptPanel({
   renderedAt,
   currentMs,
   lang,
+  onSeek,
 }: TranscriptPanelProps) {
   const { t } = useTranslation('videos');
   // Keyed by render, not by URL: signed URLs change on every poll.
@@ -72,7 +76,7 @@ export function TranscriptPanel({
     ) {
       container.scrollTo({
         top: Math.max(0, top - container.clientHeight / 3),
-        behavior: 'smooth',
+        behavior: scrollBehavior(),
       });
     }
   }, [active]);
@@ -104,30 +108,54 @@ export function TranscriptPanel({
           <ol
             ref={list}
             lang={lang}
-            tabIndex={0}
+            tabIndex={onSeek ? undefined : 0}
             aria-label={t('transcript.title')}
             className="relative -mx-2 flex max-h-72 flex-col overflow-y-auto rounded-md"
           >
-            {cues.data.map((cue, index) => (
-              <li
-                key={`${cue.startMs}-${index}`}
-                aria-current={index === active ? 'true' : undefined}
-                className={cn(
-                  'flex gap-3 rounded-md px-2 py-1.5 text-sm transition-colors duration-150',
-                  index === active ? 'bg-accent-soft text-fg' : 'text-fg-muted',
-                )}
-              >
-                <span
-                  className={cn(
-                    'nums w-10 shrink-0 pt-px font-mono text-xs',
-                    index === active ? 'text-accent-text' : 'text-fg-subtle',
+            {cues.data.map((cue, index) => {
+              const current = index === active;
+              const line = (
+                <>
+                  <span
+                    className={cn(
+                      'nums w-10 shrink-0 pt-px font-mono text-xs',
+                      current ? 'text-accent-text' : 'text-fg-subtle',
+                    )}
+                  >
+                    {formatClock(cue.startMs)}
+                  </span>
+                  <span className="min-w-0 whitespace-pre-line">{cue.text}</span>
+                </>
+              );
+              const tone = current ? 'bg-accent-soft text-fg' : 'text-fg-muted';
+              return (
+                <li key={`${cue.startMs}-${index}`} aria-current={current ? 'true' : undefined}>
+                  {onSeek ? (
+                    <button
+                      type="button"
+                      onClick={() => onSeek(cue.startMs)}
+                      title={t('transcript.jump', { time: formatClock(cue.startMs) })}
+                      className={cn(
+                        'flex w-full gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150',
+                        'hover:bg-surface-2 hover:text-fg focus-visible:-outline-offset-2',
+                        tone,
+                      )}
+                    >
+                      {line}
+                    </button>
+                  ) : (
+                    <div
+                      className={cn(
+                        'flex gap-3 rounded-md px-2 py-1.5 text-sm transition-colors duration-150',
+                        tone,
+                      )}
+                    >
+                      {line}
+                    </div>
                   )}
-                >
-                  {formatClock(cue.startMs)}
-                </span>
-                <span className="min-w-0 whitespace-pre-line">{cue.text}</span>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ol>
         )}
       </CardContent>

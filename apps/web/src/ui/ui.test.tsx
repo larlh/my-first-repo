@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -131,6 +132,77 @@ describe('Dialog', () => {
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  function Opened({ children, footer }: { children?: ReactNode; footer?: ReactNode }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <Button onClick={() => setOpen(true)}>Abrir</Button>
+        <Dialog open={open} onOpenChange={setOpen} title="Diálogo" footer={footer}>
+          {children}
+        </Dialog>
+      </>
+    );
+  }
+
+  it('focuses the first field of the body, not the close button, without `autoFocus`', async () => {
+    const user = userEvent.setup();
+    render(
+      <Opened footer={<Button>Guardar</Button>}>
+        <p>Texto de ayuda</p>
+        <Checkbox label="Recordar" checked={false} onCheckedChange={() => undefined} />
+        <Input label="Nombre" defaultValue="Borrador" />
+      </Opened>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Abrir' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Diálogo' });
+    const field = within(dialog).getByLabelText('Nombre');
+    await waitFor(() => expect(field).toHaveFocus());
+    // A prefilled field is selected: typing replaces the old value.
+    await user.keyboard('Nuevo');
+    expect(field).toHaveValue('Nuevo');
+  });
+
+  it('falls back to the first control of the body, then to the main action of the footer', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <Opened footer={<Button>Hecho</Button>}>
+        <SegmentedControl
+          aria-label="Resolución"
+          value="720p"
+          onValueChange={() => undefined}
+          options={[
+            { value: '720p', label: '720p' },
+            { value: '1080p', label: '1080p' },
+          ]}
+        />
+      </Opened>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Abrir' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Diálogo' });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(within(dialog).getByRole('button', { name: 'Cerrar' }));
+    expect(within(dialog).getByRole('radiogroup').contains(document.activeElement)).toBe(true);
+    unmount();
+
+    render(
+      <Opened
+        footer={
+          <>
+            <Button variant="secondary">Cancelar</Button>
+            <Button>Renderizar</Button>
+          </>
+        }
+      >
+        <p>Solo texto.</p>
+      </Opened>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Abrir' }));
+    const second = await screen.findByRole('dialog', { name: 'Diálogo' });
+    await waitFor(() =>
+      expect(within(second).getByRole('button', { name: 'Renderizar' })).toHaveFocus(),
+    );
   });
 });
 

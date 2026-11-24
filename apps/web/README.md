@@ -149,7 +149,7 @@ export default function VideosPage() {
 
 `i18n`: `{ es: {...}, en: {...} }`, ambos obligatorios. `devOnly: true` monta el feature solo en desarrollo.
 
-Los manifiestos inválidos (id repetido, ruta duplicada, ruta sin página…) no rompen la app: se omiten y se listan con `console.error` al arrancar.
+Los manifiestos inválidos (id repetido, ruta duplicada, ruta sin página…) no rompen la app: se omiten y se listan con `console.error` al arrancar. En desarrollo, un `index.tsx` que ni siquiera se puede importar (error de sintaxis, import roto) también se omite: cada manifiesto se carga por separado (`loadManifests`) y el fallo se muestra en un aviso en pantalla; en producción todos los manifiestos van en un solo chunk (`src/app/manifests.ts`).
 
 ### Rutas que el shell conoce (`PATHS` en `@/shell`)
 
@@ -164,16 +164,16 @@ Tras un login/registro correcto: `useSessionState().setSession(respuesta)` y `na
 
 ## Qué ofrece el shell
 
-| Import                      | Contenido                                                                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `@/shell`                   | `defineFeature`, `PATHS`, `useNextPath`, `safeNextPath`, `RequireRole`, `AuthShell`, `PublicPreferences`, `DocumentTitle`, `PageLoader` |
-| `@/ui`                      | Kit de componentes (catálogo en `/dev/ui`) y `cn()`                                                                                     |
-| `@/components/*`            | `Logo`, `VideoPlayer`, `JobStatus` / `JobStatusBadge`, `ProviderBadge`                                                                  |
-| `@/lib/api`                 | Cliente tipado, hooks de TanStack Query, subida con progreso, `ApiError`, `toAppUrl`, `downloadUrl`                                     |
-| `@/lib/session`             | `useSession()`, `useSessionState()`                                                                                                     |
-| `@/lib/jobs`                | `useJobPolling`, `jobPhaseOf`, `EtaEstimator`                                                                                           |
-| `@/lib/format`              | `useFormat()` y funciones de fechas, duraciones, tamaños, números, precios                                                              |
-| `@/lib/i18n`, `@/lib/theme` | `changeLocale`, `currentLocale`, `useTheme()`                                                                                           |
+| Import                      | Contenido                                                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@/shell`                   | `defineFeature`, `PATHS`, `useNextPath`, `safeNextPath`, `RequireRole`, `AuthShell`, `PublicPreferences`, `DocumentTitle`, `PageLoader`, `useRegistry`, `hasRoute` |
+| `@/ui`                      | Kit de componentes (catálogo en `/dev/ui`) y `cn()`                                                                                                                |
+| `@/components/*`            | `Logo`, `VideoPlayer`, `JobStatus` / `JobStatusBadge`, `ProviderBadge` (+ `useProviderName`), `RenderSettings` / `PhotorealNotice`                                 |
+| `@/lib/api`                 | Cliente tipado, hooks de TanStack Query, subida con progreso, `ApiError`, `toAppUrl`, `downloadUrl`                                                                |
+| `@/lib/session`             | `useSession()`, `useSessionState()`                                                                                                                                |
+| `@/lib/jobs`                | `useJobPolling`, `jobPhaseOf`, `EtaEstimator`                                                                                                                      |
+| `@/lib/format`              | `useFormat()` y funciones de fechas, duraciones, tamaños, números, precios                                                                                         |
+| `@/lib/i18n`, `@/lib/theme` | `changeLocale`, `currentLocale`, `useTheme()`                                                                                                                      |
 
 ### Cliente de API
 
@@ -211,7 +211,7 @@ await upload({ file, fields: { name: file.name } });
 - Las cookies van incluidas (`credentials: 'include'`).
 - Todo error es un `ApiError` con `code`, `status`, `message`, `details`, `issues` y `fieldErrors` (para formularios). Códigos propios del cliente: `NETWORK_ERROR`, `ABORTED`, `INVALID_RESPONSE`.
 - Un `401 UNAUTHENTICATED` en una ruta de sesión vacía la sesión y las guardas llevan a `/login?next=…`. No hay que tratarlo en cada pantalla.
-- `<ErrorState error={e} />` y `useErrorText()` traducen los códigos al idioma de la UI.
+- `<ErrorState error={e} />` y `useErrorText()` traducen los códigos al idioma de la UI. La frase del servidor (`error.message`, también la guardada en vídeos, avatares, voces y traducciones fallidos) pasa por `useServerMessage()`: con la UI en español sale traducida si está en `src/lib/api/serverMessages.ts` y, si no, etiquetada como «Detalle técnico (en inglés)». No pintes `error.message` tal cual.
 - En desarrollo, cada respuesta se comprueba contra el esquema de la ruta y se avisa por consola si la API se desvía del contrato.
 
 ### Sesión y workspace
@@ -293,6 +293,14 @@ Consejos de maquetación:
 Todos funcionan con teclado, tienen foco visible y roles/nombres ARIA (los interactivos complejos se apoyan en Radix). Catálogo con ejemplos en ambos temas: **`/dev/ui`** (solo en desarrollo; `?view=light|dark|both`).
 
 Cada vista debe cubrir sus estados: carga (`Skeleton`/`VoiceBars`), vacío (`EmptyState`) y error (`ErrorState` con reintento).
+
+Comportamientos del kit que conviene conocer:
+
+- **`Dialog` / `Drawer`** enfocan al abrirse lo que la persona viene a hacer, no «Cerrar»: un elemento con `autoFocus` o `data-autofocus`, si no el primer campo del cuerpo, si no el primer control del cuerpo y, si no hay ninguno, la acción principal del pie (`src/ui/initialFocus.ts`). Un campo con valor se selecciona entero.
+- **`VideoPlayer`** acepta `controls={ref}` (`VideoPlayerHandle`: `seek(ms, { play })`, `play()`, `pause()`), p. ej. para una transcripción cuyas líneas saltan a su instante.
+- **Un solo formulario de render**: `RenderSettings` (`@/components/RenderSettings`) es el cuerpo del diálogo de render de la página del vídeo y del Studio (resolución, coste, saldo, aviso fotorrealista, rechazos de la API). Los textos viven en `shell:render.*`; cada llamador pone su diálogo y su coste (`renderCostOf` o el suyo) y usa `renderGate` para habilitar el botón.
+- **Nombres de proveedor**: `ProviderBadge` y `useProviderName()` muestran en el idioma de la UI los nombres de los proveedores locales que envía el servidor.
+- **Movimiento reducido**: el CSS global ya anula animaciones y transiciones; para desplazamientos por script usa `scrollBehavior()` de `@/lib/motion`.
 
 ## Estructura
 

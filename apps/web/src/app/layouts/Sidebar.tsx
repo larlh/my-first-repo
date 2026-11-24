@@ -424,7 +424,9 @@ export function Sidebar({ onNavigate, className }: SidebarProps) {
 
       <nav
         aria-label={t('nav.label', { ns: 'shell' })}
-        className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1"
+        // On short screens the list scrolls: the fade at the bottom edge says there is more
+        // (the padding keeps the last entry clear of it once scrolled to the end).
+        className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-5 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.75rem),transparent)]"
       >
         {SIDEBAR_SECTIONS.map((section) => {
           const sectionItems = items.filter((item) => item.section === section && !item.cta);

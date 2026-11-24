@@ -28,7 +28,7 @@ import { analyzeVoice, semitonesBetween } from './analysis';
 
 export const LOCAL_VOICE_CLONE_INFO: ProviderRef = {
   id: 'local',
-  name: 'Voice profile (local)',
+  name: 'Perfil de voz (local)',
   quality: 'basic',
   local: true,
 };

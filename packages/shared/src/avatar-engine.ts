@@ -52,6 +52,24 @@ import { VisemeCueSchema, WordCueSchema } from './runtime';
 /* `EngineModelInfoSchema` (one entry of `EngineHealth.models`) lives in ./entities because
  * `GET /api/capabilities` exposes the same objects; it is exported from the package root. */
 
+/**
+ * Private cache of the engine, INSIDE AVATAR_ENGINE_WORK_DIR: one file per prepared portrait
+ * with the features derived from it (appearance volume, canonical keypoints, mouth
+ * calibration), keyed by the sha256 of the portrait file. It is only a cache — the engine
+ * recomputes a missing entry on first use — but it is derived from a person's face, so the
+ * `local-neural` portrait provider removes the entry when the avatar is deleted or its consent
+ * revoked (`PortraitProvider.forget`). Additive: engines without such a cache ignore it.
+ */
+export const ENGINE_AVATAR_CACHE_DIR = '.cache/avatars';
+
+/** Path of a portrait's cache entry relative to AVATAR_ENGINE_WORK_DIR. */
+export function engineAvatarCacheFile(portraitSha256: string): string {
+  if (!/^[0-9a-f]{64}$/.test(portraitSha256)) {
+    throw new Error('A portrait cache entry is addressed by a lowercase sha256 hex digest');
+  }
+  return `${ENGINE_AVATAR_CACHE_DIR}/${portraitSha256}.npz`;
+}
+
 /** Opaque caller reference for idempotent retries (see "Idempotent retries" above). */
 const ClientRefSchema = z.string().min(1).max(200).optional();
 
@@ -150,6 +168,14 @@ export const EngineJobResultSchema = z.discriminatedUnion('kind', [
     height: z.number().int(),
     landmarks: PhotoLandmarksSchema,
     landmarksSource: z.enum(['detected', 'user', 'estimated']),
+    /* ---- additive, optional ---- */
+    /**
+     * Which model drew the matte: `matting` = the dedicated person-matting model (ORMBG, part
+     * of the default download); otherwise the id of the fallback segmenter that was used
+     * because that model was missing or failed (coarser hair edge); null = no matte at all.
+     * A missing matting model never blocks `prepare`: it degrades, and says so here.
+     */
+    matteModel: z.string().nullable().optional(),
   }),
   z.object({
     kind: z.literal('animate'),

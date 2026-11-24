@@ -335,7 +335,7 @@ describe('POST /api/script-writer/generate — topic', () => {
     llm.fail = null;
     llm.nextScript = {
       basicMode: true,
-      provider: { id: 'local', name: 'Modo básico (local)', quality: 'basic', local: true },
+      provider: { id: 'local', name: 'Heurística local', quality: 'basic', local: true },
     };
     const fallback = await t.call(api.scriptWriter.generate, { as: alice, body });
     expect(fallback.status).toBe(200);

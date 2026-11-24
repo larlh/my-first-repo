@@ -146,9 +146,10 @@ function EnginesPanel() {
             {entries.map(([capability, provider]) => (
               <li
                 key={capability}
-                className="flex min-w-0 items-center justify-between gap-3 border-b border-line py-2.5"
+                // The capability is never cut: a long provider name drops to its own line instead.
+                className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-line py-2.5"
               >
-                <span className="min-w-0 truncate text-sm font-medium">
+                <span className="text-sm font-medium">
                   {t(`workspace.engines.capability.${capability}`)}
                 </span>
                 <ProviderBadge provider={provider} size="sm" />

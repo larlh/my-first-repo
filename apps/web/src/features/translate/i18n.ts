@@ -98,6 +98,7 @@ const es = {
     },
     transcript: {
       title: 'La transcripción',
+      fromVideo: 'Rellenada con los subtítulos de «{{title}}»; puedes corregirla.',
       required:
         'En este servidor el reconocimiento de voz es manual (modo básico): tienes que aportar lo que se dice en el vídeo.',
       optional:
@@ -173,7 +174,8 @@ const es = {
     missing: 'Traducción no disponible',
     progress: 'Progreso de la traducción',
     progressLabel: 'Traducción de «{{name}}»',
-    counts: '{{done}} de {{total}} idiomas listos',
+    counts_one: '{{done}} de {{count}} idioma listo',
+    counts_other: '{{done}} de {{count}} idiomas listos',
     failedCount_one: '{{count}} fallido',
     failedCount_other: '{{count}} fallidos',
     partialText:
@@ -197,6 +199,7 @@ const es = {
     sidecar: 'Solo SRT/VTT',
     providers: 'Quién hizo cada paso',
     providersPending: 'Se sabrá cuando el trabajo empiece.',
+    providersNone: 'El trabajo terminó antes de usar ningún proveedor.',
     voices: 'Voces del doblaje',
     done: '«{{name}}» está traducido',
     partial: '«{{name}}» se ha traducido solo en parte',
@@ -308,6 +311,7 @@ const en: typeof es = {
     },
     transcript: {
       title: 'The transcript',
+      fromVideo: 'Filled in with the subtitles of “{{title}}”; you can correct it.',
       required:
         'On this server speech recognition is manual (basic mode): you have to supply what is said in the video.',
       optional:
@@ -383,7 +387,8 @@ const en: typeof es = {
     missing: 'Translation not available',
     progress: 'Progress of the translation',
     progressLabel: 'Translation of “{{name}}”',
-    counts: '{{done}} of {{total}} languages ready',
+    counts_one: '{{done}} of {{count}} language ready',
+    counts_other: '{{done}} of {{count}} languages ready',
     failedCount_one: '{{count}} failed',
     failedCount_other: '{{count}} failed',
     partialText:
@@ -407,6 +412,7 @@ const en: typeof es = {
     sidecar: 'SRT/VTT only',
     providers: 'Who did each step',
     providersPending: 'Known once the job starts.',
+    providersNone: 'The job ended before any provider was used.',
     voices: 'Dubbing voices',
     done: '“{{name}}” is translated',
     partial: '“{{name}}” was only partly translated',

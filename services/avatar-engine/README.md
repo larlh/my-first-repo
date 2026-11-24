@@ -216,8 +216,9 @@ per size on this machine, so a form can show an estimate before queueing.
 The result is then passed to `POST /v1/portraits/prepare` like any photo. `prepare` gets its matte
 from `parlante_engine.matting.api.matte(image_bgr) -> alpha` (float32 H×W, 1 = person): ORMBG, an
 Apache-2.0 IS-Net trained for humans, 176 MB, ~0.4 s per image; the model is loaded lazily and
-released after two idle minutes. It is part of the default download (`prepare` needs it); if it
-fails at run time `prepare` degrades to the MediaPipe selfie segmenter instead of failing.
+released after two idle minutes. It is part of the default download, but `prepare` does not
+depend on it: when its weights are missing or it fails at run time, `prepare` degrades to the
+MediaPipe selfie segmenter instead of failing (`result.matteModel` says which one was used).
 
 ### Measured cost of a portrait
 
@@ -307,6 +308,7 @@ Environment variables (the repo's `.env` is read by `run.sh`; already-set variab
 | `AVATAR_ENGINE_PORTRAIT_GUIDANCE`                                    | `5.5`                   | classifier-free guidance of portrait generation (1.5…12)                                                      |
 | `AVATAR_ENGINE_PORTRAIT_ATTEMPTS`                                    | `4`                     | attempts (different seeds) while the automatic quality control fails (1…6)                                    |
 | `AVATAR_ENGINE_MAX_IMAGE_MB` / `_MAX_AUDIO_MB` / `_MAX_CLIP_SECONDS` | 25 / 200 / 600          | input limits                                                                                                  |
+| `AVATAR_ENGINE_JOB_TTL_SECONDS`                                      | `3600`                  | how long a finished job stays queryable through `GET /v1/jobs/{jobId}` (60…86400)                             |
 | `AVATAR_ENGINE_STARTUP_BENCHMARK`                                    | `1`                     | measure the generator at first start when no measurement exists                                               |
 | `AVATAR_ENGINE_AUDIO_FEATURES_BACKEND`                               | `onnxruntime`           | `openvino` = faster HuBERT, +0.7 GB RAM                                                                       |
 | `AVATAR_ENGINE_SKIP_DOWNLOAD`, `AVATAR_ENGINE_DOWNLOAD_ARGS`         | —                       | `run.sh` only                                                                                                 |

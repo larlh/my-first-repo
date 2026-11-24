@@ -15,6 +15,8 @@ export interface TranscriptFieldProps {
   required: boolean;
   /** Error forced by the form (missing transcript on submit). */
   error?: string;
+  /** Where the content came from when the form filled it in (the subtitles of a video). */
+  note?: string;
 }
 
 const FORMATS: TranscriptFormat[] = ['srt', 'vtt', 'text'];
@@ -30,6 +32,7 @@ export function TranscriptField({
   durationMs,
   required,
   error,
+  note,
 }: TranscriptFieldProps) {
   const { t } = useTranslation('translate');
   const formatter = useFormat();
@@ -84,7 +87,7 @@ export function TranscriptField({
         maxLength={TRANSCRIPT_MAX_CHARS}
         spellCheck={false}
         placeholder={t(`transcript.placeholders.${format}`)}
-        hint={t(`transcript.hints.${format}`)}
+        hint={note ? `${note} ${t(`transcript.hints.${format}`)}` : t(`transcript.hints.${format}`)}
         error={error}
         className="font-mono text-xs leading-5"
       />

@@ -1,3 +1,4 @@
+import { CREDIT_COSTS } from '@parlante/shared';
 import type { LanguageCode, ProviderRef, ScriptTone } from '@parlante/shared';
 import { Globe, PenLine, Wand2 } from 'lucide-react';
 import type { FormEvent } from 'react';
@@ -171,7 +172,10 @@ export function BriefForm({
         <ModeNotice
           provider={llm}
           basic={t('brief.mode.basic')}
-          premium={t('brief.mode.premium', { name: llm?.name ?? '' })}
+          premium={t('brief.mode.premium', {
+            name: llm?.name ?? '',
+            count: CREDIT_COSTS.scriptPremium,
+          })}
         />
 
         <Button

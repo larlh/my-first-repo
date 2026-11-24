@@ -112,6 +112,19 @@ export function formatNumber(
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 0, ...options }).format(value);
 }
 
+/** A number with a fixed count of decimals in the UI language: 1 → "1,00" (es) / "1.00" (en). */
+export function formatFixed(
+  value: number,
+  digits: number,
+  locale: string = currentLocale(),
+): string {
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  }).format(value);
+}
+
 /** 0..100 → "42 %" */
 export function formatPercent(value: number, locale: string = currentLocale()): string {
   return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(

@@ -55,6 +55,16 @@ export const en: ShellTranslations = {
     NETWORK_ERROR: 'Cannot reach the server',
     ABORTED: 'Operation cancelled',
     INVALID_RESPONSE: 'The server answered something unexpected',
+    technical: 'Technical detail: {{message}}',
+    reasons: {
+      engine_unreachable: 'The local neural engine is not started or has stopped.',
+      engine_timeout: 'The local neural engine did not answer in time.',
+      engine_error: 'The local neural engine answered with an internal error.',
+      engine_invalid: 'The local neural engine answered something this server does not understand.',
+      weights_missing: 'The local neural engine is missing model weights that must be downloaded.',
+      not_configured: 'This server has no avatar engine configured.',
+      unknown: 'The local neural engine is not available.',
+    },
   },
   job: {
     phase: {
@@ -98,6 +108,17 @@ export const en: ShellTranslations = {
     premium: 'High quality',
     basicHint: 'Generated locally with {{name}}, without external services. Basic quality.',
     premiumHint: 'Generated with {{name}}, an external high-quality provider.',
+    names: {
+      localHeuristic: 'Local heuristic',
+      localBlocklist: 'Blocklist (local)',
+      localDisk: 'Local disk',
+      localNeuralEngine: 'Local neural engine',
+      localVoiceProfile: 'Voice profile (local)',
+      localGlossary: 'Basic glossary translation (local)',
+      userTranscript: 'Transcript provided by the user',
+      externalLipsync: 'External lip-sync',
+      avatar2d: '2D avatar',
+    },
   },
   session: {
     loading: 'Opening your session…',
@@ -137,6 +158,38 @@ export const en: ShellTranslations = {
     low: 'You are running low on credits.',
     manage_one: '{{count}} credit. View plan and usage',
     manage_other: '{{count}} credits. View plan and usage',
+  },
+  render: {
+    title: 'Render video',
+    titleAgain: 'Render again',
+    start: 'Render',
+    resolution: 'Resolution',
+    resolutionLocked: 'The {{plan}} plan exports at 720p. A higher plan unlocks 1080p.',
+    duration: 'Estimated length',
+    cost: 'Cost',
+    balance: 'Workspace balance',
+    costNote_one:
+      '{{count}} credit per started 30 s at 720p; ×{{hd}} at 1080p and ×{{photoreal}} with photorealistic avatars. Reserved at the start and settled to the real length when it finishes.',
+    costNote_other:
+      '{{count}} credits per started 30 s at 720p; ×{{hd}} at 1080p and ×{{photoreal}} with photorealistic avatars. Reserved at the start and settled to the real length when it finishes.',
+    reserveNote_one:
+      '{{count}} credit is reserved at the start (the length is estimated before the voice is synthesised); the real cost is charged at the end.',
+    reserveNote_other:
+      '{{count}} credits are reserved at the start (the length is estimated before the voice is synthesised); the real cost is charged at the end.',
+    watermark: 'Your plan adds a small Parlante watermark.',
+    notEnough: 'There are not enough credits for this render.',
+    seePlans: 'See plans and credits',
+    photoreal: {
+      title: 'Photorealistic rendering is slow',
+      measuredVideo:
+        'This video uses photorealistic avatars. At the speed measured on this machine ({{device}}), animating them will take about {{time}}.',
+      measured:
+        'Measured on this machine ({{device}}): animating the avatar takes about {{time}} per 10 s of video.',
+      unmeasured:
+        'Photorealistic avatars are animated by the local neural engine. On CPU it can take several minutes per 10 s of video (not measured on this machine yet); you will see the time left as it advances.',
+      unavailable: 'Photorealistic avatars cannot be rendered right now.',
+      nonCommercial: 'Licence notice: one of the installed models only allows non-commercial use.',
+    },
   },
   prefs: {
     language: 'Language',

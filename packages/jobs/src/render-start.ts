@@ -18,6 +18,7 @@ import {
   PLANS,
   applyVariables,
   collectAvatarIds,
+  collectMediaRefs,
   collectModerationTexts,
   collectVoiceIds,
   creditsForRender,
@@ -32,7 +33,7 @@ import {
 import type { Composition, Providers, Resolution, StoredError } from '@parlante/shared';
 import type { Db, RenderJobRow, VideoRow } from '@parlante/db';
 import { getStockAvatarMeta } from '@parlante/renderer';
-import { getStockPhotorealAvatar } from '@parlante/stock-assets';
+import { getStockAssetMeta, getStockPhotorealAvatar } from '@parlante/stock-assets';
 import { enqueueOrCompensate } from './enqueue';
 import type { QueueClient } from './queue-client';
 import { resolveVoice } from './voices';
@@ -71,7 +72,8 @@ export interface StartedRender {
  *  1. load video + workspace (workspace-scoped; 404 otherwise); reject while a render is active
  *  2. snapshot = composition with variables applied
  *  3. validate what the snapshot references: avatars exist and are ready, voices resolve,
- *     narration audio assets belong to the workspace                     → UNPROCESSABLE
+ *     every media file (narration, music, image / video backgrounds and layers) is an asset of
+ *     the workspace — or a stock asset — of the kind it is used as       → UNPROCESSABLE
  *  4. plan limits: scenes, resolution, estimated duration, concurrency   → PLAN_LIMIT_EXCEEDED
  *  5. moderation of every text (`collectModerationTexts`)                → CONTENT_BLOCKED
  *  6. photorealistic avatars need the engine's `animate` operation       → SERVICE_UNAVAILABLE
@@ -170,6 +172,7 @@ export async function startRender(
     const engine = await providers.lipsync.status().catch((err: unknown) => ({
       available: false,
       reason: err instanceof Error ? err.message : 'Avatar engine status check failed',
+      reasonCode: undefined,
       operations: undefined,
     }));
     if (!(engine.operations?.animate ?? engine.available)) {
@@ -177,7 +180,8 @@ export async function startRender(
         'SERVICE_UNAVAILABLE',
         engine.reason ??
           'Photorealistic avatars cannot be rendered right now: the avatar engine is unavailable',
-        { capability: 'lipsync', operation: 'animate' },
+        // `reason`: stable code for i18n (same values as Capabilities.avatarEngine.reasonCode).
+        { capability: 'lipsync', operation: 'animate', reason: engine.reasonCode ?? 'unknown' },
       );
     }
   }
@@ -242,8 +246,9 @@ export async function startRender(
 }
 
 /**
- * Checks every reference of the snapshot and returns the durations of narration audio assets
- * (assetId → ms) needed for the estimate. Problems are UNPROCESSABLE with `details` naming
+ * Checks every reference of the snapshot (so a render is never charged and queued for a file
+ * that is missing or belongs to another workspace) and returns the durations of narration audio
+ * assets (assetId → ms) needed for the estimate. Problems are UNPROCESSABLE with `details` naming
  * the offending id, so the Studio can point at the scene.
  */
 async function validateReferences(
@@ -295,21 +300,40 @@ async function validateReferences(
     }
   }
 
-  const audioAssetIds = [
-    ...new Set(
-      composition.scenes.flatMap((scene) =>
-        scene.script.kind === 'audio' ? [scene.script.assetId] : [],
-      ),
+  /* ---- media files: narration audio, music, image / video backgrounds and layers ---- */
+  const uses = collectMediaRefs(composition);
+  const narrationIds = new Set(
+    composition.scenes.flatMap((scene) =>
+      scene.script.kind === 'audio' ? [scene.script.assetId] : [],
     ),
+  );
+  const assetIds = [
+    ...new Set(uses.flatMap((use) => (use.ref.source === 'asset' ? [use.ref.assetId] : []))),
   ];
+  // Workspace scope: an asset of another workspace is indistinguishable from a missing one.
+  const rows =
+    assetIds.length > 0
+      ? await db
+          .select({ id: assets.id, kind: assets.kind, durationMs: assets.durationMs })
+          .from(assets)
+          .where(and(eq(assets.workspaceId, workspaceId), inArray(assets.id, assetIds)))
+      : [];
   const durations: Record<string, number> = {};
-  if (audioAssetIds.length > 0) {
-    const rows = await db
-      .select({ id: assets.id, kind: assets.kind, durationMs: assets.durationMs })
-      .from(assets)
-      .where(and(eq(assets.workspaceId, workspaceId), inArray(assets.id, audioAssetIds)));
-    for (const assetId of audioAssetIds) {
-      const row = rows.find((r) => r.id === assetId);
+  for (const use of uses) {
+    if (use.ref.source === 'stock') {
+      const meta = getStockAssetMeta(use.ref.stockId);
+      if (!meta || meta.kind !== use.usage) {
+        throw new AppError(
+          'UNPROCESSABLE',
+          'A stock file used by this video does not exist or is not of the expected type',
+          { stockId: use.ref.stockId, usage: use.usage },
+        );
+      }
+      continue;
+    }
+    const assetId = use.ref.assetId;
+    const row = rows.find((r) => r.id === assetId);
+    if (use.usage === 'audio' && narrationIds.has(assetId)) {
       if (!row || row.kind !== 'audio' || !row.durationMs) {
         throw new AppError(
           'UNPROCESSABLE',
@@ -318,6 +342,14 @@ async function validateReferences(
         );
       }
       durations[assetId] = row.durationMs;
+      continue;
+    }
+    if (!row || row.kind !== use.usage) {
+      throw new AppError(
+        'UNPROCESSABLE',
+        'A file used by this video no longer exists or is not of the expected type. Replace it in the editor and render again.',
+        { assetId, usage: use.usage },
+      );
     }
   }
   return durations;

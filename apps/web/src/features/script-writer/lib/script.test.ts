@@ -43,7 +43,7 @@ const generated = GeneratedScriptSchema.parse({
     },
     { title: 'Cierre', headline: 'Pruébalo', text: 'Empieza hoy mismo.', estimatedSec: 2 },
   ],
-  provider: { id: 'heuristic', name: 'Modo básico (local)', quality: 'basic', local: true },
+  provider: { id: 'heuristic', name: 'Heurística local', quality: 'basic', local: true },
   basicMode: true,
   sourceTitle: null,
 });

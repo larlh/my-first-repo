@@ -146,3 +146,42 @@ export function usageLines(
     level: usageLevel(used, limit),
   }));
 }
+
+/* ---------- ledger detail ---------- */
+
+/** What the server writes next to a refund, in Spanish (the reason label says "Reembolso"). */
+const LEDGER_DETAIL_ES: Readonly<Record<string, string>> = {
+  'Render cancelled — credits refunded': 'Render cancelado',
+  'Render failed — credits refunded': 'Render fallido',
+  'Video deleted while rendering — credits refunded': 'Vídeo eliminado durante el render',
+  'Translation cancelled — credits refunded': 'Traducción cancelada',
+  'Translation could not be queued — credits refunded': 'La traducción no llegó a ponerse en cola',
+  'Translation failed — credits refunded': 'Traducción fallida',
+  'Avatar could not be queued — credits refunded': 'El avatar no llegó a ponerse en cola',
+  'Avatar deleted before it was ready — credits refunded': 'Avatar eliminado antes de estar listo',
+  'Voice cloning could not start — credits refunded': 'El clonado de voz no llegó a empezar',
+  'Voice cloning failed — credits refunded': 'Clonado de voz fallido',
+  'Voice deleted before it was ready — credits refunded': 'Voz eliminada antes de estar lista',
+};
+
+/**
+ * Second line of a ledger row. The API describes every movement with an English sentence
+ * (`Render "Bienvenida" (720p)`, `Translation failed — credits refunded`); the translated reason
+ * is the first line, so in a non-English interface only what adds information is kept: the name
+ * the person gave (with its resolution or target language) or the translated cause of a refund.
+ */
+export function ledgerDetail(description: string | null | undefined, locale: string): string {
+  const raw = (description ?? '').trim();
+  if (raw === '' || locale.toLowerCase().startsWith('en')) return raw;
+  const known = LEDGER_DETAIL_ES[raw];
+  if (known) return known;
+  const pack = /^(\d+) credit pack\b/.exec(raw);
+  if (pack) return `Paquete de ${pack[1]} créditos (pago simulado)`;
+  const quoted = /"(.+)"(.*)$/.exec(raw);
+  if (!quoted) return '';
+  // Keep the tail only when it is language-neutral: "(720p)", "→ en", "→ en, fr".
+  const tail = /^\s*(\((?:720p|1080p)\)|→\s*[a-z]{2}(?:-[A-Za-z]{2})?(?:,\s*[a-z]{2})*)\s*$/.exec(
+    quoted[2] ?? '',
+  );
+  return `«${quoted[1]}»${tail ? ` ${tail[1]}` : ''}`;
+}

@@ -61,8 +61,10 @@ const es = {
     mode: {
       basic:
         'Lo escribirá la heurística local: una estructura de partida con tu tema repartido en escenas, sin redacción creativa. Es gratis. Con una clave de Anthropic en el servidor lo escribe Claude.',
-      premium:
-        'Lo escribirá {{name}}. Cada guion cuesta 1 crédito; si la generación falla, se devuelve.',
+      premium_one:
+        'Lo escribirá {{name}}. Cada guion cuesta {{count}} crédito; si la generación falla, se devuelve.',
+      premium_other:
+        'Lo escribirá {{name}}. Cada guion cuesta {{count}} créditos; si la generación falla, se devuelve.',
     },
     submit: 'Escribir el guion',
     again: 'Escribirlo de nuevo',
@@ -249,8 +251,10 @@ const en: typeof es = {
     mode: {
       basic:
         'The local heuristic will write it: a starting structure with your topic spread over scenes, no creative writing. It is free. With an Anthropic key on the server, Claude writes it.',
-      premium:
-        '{{name}} will write it. Each script costs 1 credit; if the generation fails it is refunded.',
+      premium_one:
+        '{{name}} will write it. Each script costs {{count}} credit; if the generation fails it is refunded.',
+      premium_other:
+        '{{name}} will write it. Each script costs {{count}} credits; if the generation fails it is refunded.',
     },
     submit: 'Write the script',
     again: 'Write it again',

@@ -51,8 +51,10 @@ export function registerCoreRoutes(app: FastifyInstance): void {
       .header('Content-Security-Policy', "default-src 'none'; sandbox")
       .header('Cross-Origin-Resource-Policy', 'cross-origin');
     if (query.download) {
-      const name = sanitizeFilename(query.download, 'download');
-      void reply.header('Content-Disposition', `attachment; filename="${name}"`);
+      void reply.header(
+        'Content-Disposition',
+        `attachment; filename="${downloadFilename(query.download, key)}"`,
+      );
     }
 
     const range = parseRange(request.headers.range, info.size);
@@ -70,6 +72,19 @@ export function registerCoreRoutes(app: FastifyInstance): void {
     if (request.method === 'HEAD') return reply.send();
     return reply.send(Readable.from(await storage.getStream(key)));
   });
+}
+
+/**
+ * File name of a download. `download` is NOT covered by the signature of the link, so whoever
+ * holds a valid link can change it: the name is sanitised and always ends with the extension
+ * of the stored object (a server-generated key). A picture can therefore never be handed out
+ * by this origin as `invoice.html` or `setup.exe`.
+ */
+export function downloadFilename(requested: string, key: string): string {
+  const name = sanitizeFilename(requested, 'download');
+  const ext = /\.([A-Za-z0-9]{1,5})$/.exec(key)?.[1]?.toLowerCase();
+  if (!ext || name.toLowerCase().endsWith(`.${ext}`)) return name;
+  return `${name}.${ext}`;
 }
 
 function parseRange(

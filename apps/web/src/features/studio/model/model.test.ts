@@ -1,16 +1,31 @@
-import { CompositionSchema, compositionFromScript, createComposition } from '@parlante/shared';
+import {
+  CompositionSchema,
+  applyVariables,
+  compositionFromScript,
+  createComposition,
+  estimateCompositionDurationMs,
+} from '@parlante/shared';
 import type { Composition } from '@parlante/shared';
 import { computeTimeline } from '@parlante/renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Autosaver } from './autosave';
 import type { AutosaveSnapshot, SavePayload } from './autosave';
-import { applyAction, createEditorState, editorReducer, paintOrder } from './editor';
+import {
+  applyAction,
+  createEditorState,
+  defaultAvatarBox,
+  editorReducer,
+  paintOrder,
+  refitBox,
+} from './editor';
 import type { EditorAction, EditorDoc, EditorState } from './editor';
 import { clampBox, resizeBox, snapMove, snapResize } from './geometry';
 import { createHistory, pushHistory, redoHistory, undoHistory } from './history';
 import {
   editInstantMs,
   previewComposition,
+  previewVariableValues,
+  quoteRender,
   sceneDurationInfo,
   spokenText,
   wordCount,
@@ -198,6 +213,27 @@ describe('applyAction', () => {
     expect(headlinePx(back.composition)).toBeCloseTo(headlinePx(doc.composition), 6);
     const square = applyAction(doc, { type: 'aspect.set', aspect: '1:1' }).doc;
     expect(headlinePx(square.composition)).toBeCloseTo(headlinePx(doc.composition), 6);
+
+    // The presenter stays a presenter: a box that only followed the canvas left a 16:9 avatar
+    // as a small figure at the bottom of the 9:16 frame, behind the subtitles.
+    const avatarOf = (c: Composition) => {
+      const layer = c.scenes[0]!.layers.find((l) => l.type === 'avatar')!;
+      const { x, y, w, h } = layer.box;
+      return { x, y, w, h, px: { w: w * c.canvas.width, h: h * c.canvas.height } };
+    };
+    const wide = avatarOf(doc.composition);
+    const tall = avatarOf(vertical.composition);
+    expect(tall.px.w / tall.px.h).toBeCloseTo(wide.px.w / wide.px.h, 6);
+    // …sized like a presenter of the new format (64 % of a vertical frame, 86 % of the rest).
+    expect(tall.h / wide.h).toBeCloseTo(0.64 / 0.86, 6);
+    expect(tall.px.h).toBeGreaterThan(wide.px.h);
+    expect(tall.x + tall.w / 2).toBeCloseTo(wide.x + wide.w / 2, 6);
+    expect(tall.y + tall.h).toBeCloseTo(wide.y + wide.h, 6);
+    const restored = avatarOf(back.composition);
+    for (const key of ['x', 'y', 'w', 'h'] as const)
+      expect(restored[key]).toBeCloseTo(wide[key], 6);
+    expect(valid(square.composition)).toBe(true);
+    expect(valid(back.composition)).toBe(true);
     const scene = doc.composition.scenes[0]!;
     const changed = applyAction(doc, {
       type: 'scene.scriptPatch',
@@ -403,7 +439,10 @@ describe('timing', () => {
       layerId: text.id,
       patch: { text: 'Hola {{nombre}} de {{empresa}}' },
     }).doc;
-    expect(previewComposition(next.composition)).toBe(next.composition);
+    // Without values the export drops the placeholders (`applyVariables`): so does the preview.
+    expect(
+      previewComposition(next.composition).scenes[0]!.layers.find((l) => l.id === text.id),
+    ).toMatchObject({ text: 'Hola  de ' });
     next = applyAction(next, {
       type: 'variable.patch',
       name: 'nombre',
@@ -411,11 +450,125 @@ describe('timing', () => {
     }).doc;
     const preview = previewComposition(next.composition);
     const shown = preview.scenes[0]!.layers.find((l) => l.id === text.id);
-    expect(shown).toMatchObject({ text: 'Hola Marta de {{empresa}}' });
+    expect(shown).toMatchObject({ text: 'Hola Marta de ' });
     expect(preview.scenes[1]).toBe(next.composition.scenes[1]);
     expect(spokenText(' Hola {{nombre}} de {{empresa}} ', { nombre: 'Marta' })).toBe(
-      'Hola Marta de empresa',
+      'Hola Marta de',
     );
+    // A document without placeholders is returned as it is (no needless redraws).
+    const plain = sampleDoc().composition;
+    expect(previewComposition(plain)).toBe(plain);
+  });
+
+  it('previews exactly what the export renders: same texts and same speech as applyVariables', () => {
+    let doc = sampleDoc();
+    const scene = doc.composition.scenes[0]!;
+    const text = scene.layers.find((l) => l.type === 'text')!;
+    doc = applyAction(doc, {
+      type: 'layer.patch',
+      sceneId: scene.id,
+      layerId: text.id,
+      patch: { text: '{{saludo}}, {{nombre}} — {{sin_valor}}' },
+    }).doc;
+    doc = applyAction(doc, {
+      type: 'scene.scriptPatch',
+      sceneId: scene.id,
+      patch: { text: '{{saludo}}, {{nombre}}. Te escribe {{sin_valor}} hoy.' },
+    }).doc;
+    doc = applyAction(doc, {
+      type: 'variable.patch',
+      name: 'saludo',
+      patch: { defaultValue: 'Buenos días' },
+    }).doc;
+    doc = applyAction(doc, {
+      type: 'variable.patch',
+      name: 'nombre',
+      patch: { defaultValue: 'Marta' },
+    }).doc;
+    expect(doc.composition.variables.map((v) => v.name).sort()).toEqual([
+      'nombre',
+      'saludo',
+      'sin_valor',
+    ]);
+
+    const exported = applyVariables(doc.composition, {});
+    const preview = previewComposition(doc.composition);
+    const textsOf = (composition: Composition) =>
+      composition.scenes.flatMap((s) =>
+        s.layers.flatMap((l) => (l.type === 'text' ? [l.text] : [])),
+      );
+    expect(textsOf(preview)).toEqual(textsOf(exported));
+    expect(textsOf(preview)[0]).toBe('Buenos días, Marta — ');
+
+    const exportedScript = exported.scenes[0]!.script;
+    const draftScript = doc.composition.scenes[0]!.script;
+    if (exportedScript.kind !== 'tts' || draftScript.kind !== 'tts')
+      throw new Error('tts expected');
+    expect(spokenText(draftScript.text, previewVariableValues(doc.composition))).toBe(
+      exportedScript.text.trim(),
+    );
+  });
+});
+
+describe('default presenter box', () => {
+  it('stands on the bottom edge, centred, and a format change keeps it presenter-sized', () => {
+    const wide = createComposition({ aspect: '16:9' }).canvas;
+    const tall = createComposition({ aspect: '9:16' }).canvas;
+    expect(defaultAvatarBox(wide)).toEqual({ x: 0.3, y: 0.14, w: 0.4, h: 0.86 });
+    const vertical = defaultAvatarBox(tall);
+    expect(vertical.h).toBe(0.64);
+    expect(vertical.x + vertical.w / 2).toBeCloseTo(0.5, 6);
+    expect(vertical.y + vertical.h).toBeCloseTo(1, 6);
+
+    // 16:9 → 9:16: as tall as a presenter added in vertical, same shape in pixels, same footing.
+    const refit = refitBox(defaultAvatarBox(wide), wide, tall);
+    expect(refit.h).toBeCloseTo(vertical.h, 6);
+    expect(refit.y + refit.h).toBeCloseTo(1, 6);
+    expect(refit.x + refit.w / 2).toBeCloseTo(0.5, 6);
+    expect((refit.w * tall.width) / (refit.h * tall.height)).toBeCloseTo(
+      (0.4 * wide.width) / (0.86 * wide.height),
+      6,
+    );
+    // …and back gives the original box.
+    const back = refitBox(refit, tall, wide);
+    expect(back.w).toBeCloseTo(0.4, 6);
+    expect(back.h).toBeCloseTo(0.86, 6);
+  });
+});
+
+describe('render quote', () => {
+  it('needs the balance to cover what the API reserves, not only the measured cost', () => {
+    // 430 characters at the estimator's 15 chars/s ≈ 28.7 s of voice + 0.8 s of pauses: the
+    // API (which prices its estimate) reserves one 30 s step…
+    const text = 'palabra '.repeat(54).trim();
+    const composition = compositionFromScript([{ text, title: 'Larga' }], {
+      avatarId: 'stock_lucia',
+      voiceId: 'espeak:es-f1',
+      language: 'es',
+    });
+    const estimated = estimateCompositionDurationMs(composition);
+    expect(estimated).toBeGreaterThan(29_000);
+    expect(estimated).toBeLessThan(30_000);
+
+    // …and when the synthesised voice turns out slower (31 s measured), the real cost is two.
+    expect(quoteRender(composition, 31_000, '720p')).toEqual({ cost: 2, reserve: 1, needed: 2 });
+    // The other way round (measured 27 s, estimate past 30 s): one credit is charged in the
+    // end, but the API holds two while it renders — a balance of 1 would be refused.
+    const longer = compositionFromScript([{ text: `${text} ${text.slice(0, 40)}`, title: 'x' }], {
+      avatarId: 'stock_lucia',
+      voiceId: 'espeak:es-f1',
+      language: 'es',
+    });
+    expect(estimateCompositionDurationMs(longer)).toBeGreaterThan(30_000);
+    expect(quoteRender(longer, 27_000, '720p')).toEqual({ cost: 1, reserve: 2, needed: 2 });
+    expect(quoteRender(longer, 27_000, '1080p')).toEqual({ cost: 2, reserve: 4, needed: 4 });
+    // Variables are priced with their defaults, like the snapshot the API renders.
+    const withVariable = structuredClone(longer);
+    const script = withVariable.scenes[0]!.script;
+    if (script.kind !== 'tts') throw new Error('tts expected');
+    script.text = `{{intro}} ${text.slice(0, 200)}`;
+    withVariable.variables = [{ name: 'intro', label: '', defaultValue: text }];
+    expect(quoteRender(withVariable, 20_000, '720p').reserve).toBe(2);
   });
 });
 

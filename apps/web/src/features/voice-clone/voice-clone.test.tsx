@@ -186,7 +186,8 @@ describe('clone a voice', () => {
     await user.click(screen.getByRole('button', { name: 'Clonar voz' }));
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Hay datos que no son válidos');
-    expect(alert).toHaveTextContent('between 10 seconds and 5 minutes');
+    // The sentence of the API is shown in the language of the interface.
+    expect(alert).toHaveTextContent('La muestra de voz debe durar entre 10 segundos y 5 minutos.');
   });
 
   it('respects the plan allowance of cloned voices', async () => {

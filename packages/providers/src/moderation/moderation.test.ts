@@ -41,6 +41,21 @@ describe('text normalisation', () => {
     expect(normalizedVariants('asss')).toContain('ass');
     expect(normalizedVariants('f.u.c.k and f u c k')).toContain('fuck and fuck');
   });
+
+  it('ignores invisible characters hidden inside a word (zero-width space, soft hyphen, BOM)', async () => {
+    // Neither spoken nor drawn: the word reaches the voice and the subtitles intact.
+    const hidden = 'bo\u200Bm\u00ADba ca\u200Dse\uFEFFra';
+    expect(normalizedVariants(hidden)).toContain('bomba casera');
+    const custom = createModerationProvider(
+      providerEnvSchema.parse({ MODERATION_EXTRA_BLOCKLIST: 'acme corp' }),
+    );
+    expect(
+      (await custom.check({ text: 'Mejor que Ac\u200Bme\u2060 Corp', context: 'script' })).allowed,
+    ).toBe(false);
+    expect((await custom.check({ text: 'Mejor que nadie\u200B', context: 'script' })).allowed).toBe(
+      true,
+    );
+  });
 });
 
 describe('local moderation: general rules (every context)', () => {

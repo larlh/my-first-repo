@@ -1,3 +1,4 @@
+import { DEV_APP_SECRET } from '@parlante/shared/node';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 
@@ -22,6 +23,12 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
+  if (config.APP_SECRET === DEV_APP_SECRET) {
+    // Production refuses to start with it (parseEnv); anything else gets told, loudly.
+    app.log.warn(
+      'APP_SECRET is the public development default: file links can be forged and stored webhook secrets decrypted by anyone who has read the source. Set APP_SECRET (and NODE_ENV=production) before exposing this server.',
+    );
+  }
   await app.listen({ host: config.API_HOST, port: config.API_PORT });
   app.log.info(
     `Parlante API ready on port ${config.API_PORT} — docs at ${config.PUBLIC_API_URL}/docs`,

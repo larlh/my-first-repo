@@ -7,6 +7,7 @@ import {
   comparisonValue,
   exceededLimits,
   isByteLimit,
+  ledgerDetail,
   ledgerKind,
   planChange,
   signedAmount,
@@ -107,5 +108,29 @@ describe('usage', () => {
       ['apiKeys', 50, 'ok'],
       ['webhookEndpoints', 100, 'full'],
     ]);
+  });
+});
+
+describe('ledgerDetail', () => {
+  it('keeps the English sentence in English', () => {
+    expect(ledgerDetail('Render "Bienvenida" (720p)', 'en')).toBe('Render "Bienvenida" (720p)');
+  });
+
+  it('keeps only what adds information in Spanish, never an English sentence', () => {
+    expect(ledgerDetail('Render "Saludos — 02" (720p)', 'es')).toBe('«Saludos — 02» (720p)');
+    expect(ledgerDetail('Translation "Saludo en inglés" → en', 'es')).toBe(
+      '«Saludo en inglés» → en',
+    );
+    expect(ledgerDetail('Voice clone "Mi voz"', 'es')).toBe('«Mi voz»');
+    expect(ledgerDetail('Translation failed — credits refunded', 'es')).toBe('Traducción fallida');
+    expect(ledgerDetail('50 credit pack (simulated checkout, no payment taken)', 'es')).toBe(
+      'Paquete de 50 créditos (pago simulado)',
+    );
+    // Nothing worth repeating under "Créditos de bienvenida" / "Créditos del plan".
+    expect(ledgerDetail('Welcome credits', 'es')).toBe('');
+    expect(ledgerDetail('Creator plan credits (simulated checkout, no payment taken)', 'es')).toBe(
+      '',
+    );
+    expect(ledgerDetail(null, 'es')).toBe('');
   });
 });

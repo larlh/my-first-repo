@@ -95,6 +95,29 @@ describe('errors', () => {
     });
     expect(toStoredError(new Error('boom'))).toEqual({ code: 'INTERNAL', message: 'boom' });
   });
+
+  it('toStoredError removes paths, URLs and addresses from unexpected errors', () => {
+    const stored = (message: string) => toStoredError(new Error(message)).message;
+    expect(
+      stored(
+        'ffmpeg exited with code 183: Error opening input file /tmp/parlante-x/job-1/in.wav. | Invalid data',
+      ),
+    ).toBe('ffmpeg exited with code 183: Error opening input file [path] | Invalid data');
+    expect(
+      stored("ENOENT: no such file or directory, open '/srv/data/storage/ws/ws_1/a.bin'"),
+    ).toBe("ENOENT: no such file or directory, open '[path]'");
+    expect(stored('C:\\data\\storage\\ws\\a.bin is locked')).toBe('[path] is locked');
+    expect(stored('connect ECONNREFUSED 10.1.2.3:5432')).toBe('connect ECONNREFUSED [address]');
+    expect(stored('fetch http://engine.internal:8090/v1/jobs/7 failed')).toBe('fetch [url] failed');
+    // Ordinary wording survives: ratios, codecs, sizes, single slashes.
+    for (const plain of ['Render crashed', 'H.264/AAC at 1280x720, 3/4 done', 'and/or 1.5 s']) {
+      expect(stored(plain)).toBe(plain);
+    }
+    // Messages written for the user (AppError) are never rewritten.
+    expect(
+      toStoredError(new AppError('UNPROCESSABLE', 'See https://example.com/help')).message,
+    ).toBe('See https://example.com/help');
+  });
 });
 
 describe('pagination', () => {

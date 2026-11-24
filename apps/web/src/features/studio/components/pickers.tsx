@@ -7,11 +7,12 @@ import {
 } from '@parlante/shared';
 import type { AssetKind, Avatar, MediaRef, Voice } from '@parlante/shared';
 import { getStockAvatarRig, restingAvatarState } from '@parlante/renderer';
-import { Film, Music, Pause, Play, Search, TriangleAlert, Upload } from 'lucide-react';
+import { Film, Music, Pause, Play, Search, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ProviderBadge } from '@/components/ProviderBadge';
+import { PhotorealNotice as SharedPhotorealNotice } from '@/components/RenderSettings';
 import { api, apiClient, toAppUrl, useUpload } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useSession } from '@/lib/session';
@@ -138,39 +139,20 @@ export function AvatarThumb({
   );
 }
 
-/** Honest note about photorealistic avatars: measured render time, availability, licence. */
+/**
+ * Honest note about photorealistic avatars (measured render time, availability, licence): the
+ * shell's notice with the engine status the Studio already loaded, plus what only applies here.
+ */
 export function PhotorealNotice({ className }: { className?: string }) {
   const { t } = useTranslation('studio');
-  const format = useFormat();
   const { library } = useStudio();
-  const engine = library.avatarEngine;
   return (
-    <div
-      className={cn(
-        'flex gap-2.5 rounded-lg border border-line bg-saffron-soft p-3 text-xs text-saffron-text',
-        className,
-      )}
-    >
-      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-      <div className="min-w-0">
-        <p className="font-semibold">{t('avatar.photorealTitle')}</p>
-        <p className="mt-0.5">
-          {engine?.secondsPerVideoSecond
-            ? t('avatar.photorealMeasured', {
-                time: format.duration(Math.round(engine.secondsPerVideoSecond * 10) * 1000),
-                device: engine.device === 'gpu' ? 'GPU' : 'CPU',
-              })
-            : t('avatar.photorealUnmeasured')}
-        </p>
-        {engine && !engine.operations.animate && (
-          <p className="mt-1 font-medium">
-            {t('avatar.engineUnavailable')}
-            {engine.reason ? ` (${engine.reason})` : ''}
-          </p>
-        )}
-        {engine?.nonCommercial && <p className="mt-1">{t('avatar.nonCommercial')}</p>}
-      </div>
-    </div>
+    <SharedPhotorealNotice
+      engine={library.avatarEngine}
+      note={t('avatar.photorealPreview')}
+      size="sm"
+      className={className}
+    />
   );
 }
 

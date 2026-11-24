@@ -85,6 +85,30 @@ export const EngineOperationsSchema = z.object({
 });
 export type EngineOperations = z.infer<typeof EngineOperationsSchema>;
 
+/**
+ * Stable, TRANSLATABLE reason why the avatar engine (or one of its operations) is not
+ * available. `reason` stays as an English sentence for logs; UIs map this code to their own
+ * text (additive: clients that ignore it keep showing `reason`).
+ *  - `engine_unreachable`  nothing answers at AVATAR_ENGINE_URL (the engine is not running)
+ *  - `engine_timeout`      it did not answer its health check in time (busy or starting)
+ *  - `engine_error`        it answered the health check with an HTTP error
+ *  - `engine_invalid`      something answers there, but it is not the Parlante avatar engine
+ *  - `weights_missing`     it runs, but model weights of an operation are not downloaded
+ *  - `not_configured`      credentials / token missing or rejected
+ *  - `unknown`             anything else (see `reason`)
+ */
+export const ENGINE_REASON_CODES = [
+  'engine_unreachable',
+  'engine_timeout',
+  'engine_error',
+  'engine_invalid',
+  'weights_missing',
+  'not_configured',
+  'unknown',
+] as const;
+export const EngineReasonCodeSchema = z.enum(ENGINE_REASON_CODES);
+export type EngineReasonCode = z.infer<typeof EngineReasonCodeSchema>;
+
 export const CapabilitiesSchema = z.object({
   /** Active provider per capability. */
   active: z.record(CapabilitySchema, ProviderRefSchema),
@@ -101,6 +125,11 @@ export const CapabilitiesSchema = z.object({
     available: z.boolean(),
     /** Why it is not available (service not running, weights not downloaded…). */
     reason: z.string().nullable(),
+    /**
+     * The same reason as a stable code the UI translates (null when everything is available or
+     * the provider gave none). Additive: `reason` is still filled for logs and old clients.
+     */
+    reasonCode: EngineReasonCodeSchema.nullable().default(null),
     device: z.enum(['cpu', 'gpu']).nullable(),
     /**
      * MEASURED cost of animating: seconds of computation per second of video on this machine
@@ -324,6 +353,23 @@ export const StockPhotorealAvatarMetaSchema = z.object({
 });
 export type StockPhotorealAvatarMeta = z.infer<typeof StockPhotorealAvatarMetaSchema>;
 
+/**
+ * What the engine's automatic checks found on a workspace avatar (honesty rule: a portrait
+ * that did not pass is never presented as a clean one).
+ *  - `issues`: stable snake_case keys for i18n. From portrait generation: `mouth_open`,
+ *    `head_tilted`, `not_frontal`, `off_center`, `face_too_small`, `eyes_closed`,
+ *    `not_looking_at_camera`… From preparation: `matte_fallback` (the dedicated matting model
+ *    was not usable: coarser hair edge) and `no_matte` (no background matte at all: the avatar
+ *    is composed as a rectangle).
+ *  - `attempts`: portraits the engine drew before keeping this one (null when unknown).
+ */
+export const AvatarQualitySchema = z.object({
+  passed: z.boolean(),
+  issues: z.array(z.string().max(60)).max(20),
+  attempts: z.number().int().min(1).nullable().default(null),
+});
+export type AvatarQuality = z.infer<typeof AvatarQualitySchema>;
+
 export const AvatarSchema = z.object({
   id: AvatarIdSchema,
   /**
@@ -371,6 +417,13 @@ export const AvatarSchema = z.object({
   seed: z.number().int().nullable().default(null),
   /** Model that generated the portrait (provenance / licence, see docs/MODELS.md). */
   model: z.string().nullable().default(null),
+  /**
+   * Automatic quality control of a GENERATED portrait and of its matte (null = nothing to
+   * report: stock avatars, photos, portraits generated before this field existed). An avatar
+   * can be `ready` with `passed: false`: the engine kept its least bad attempt, and the UI
+   * must say so next to the avatar (see `AvatarQualitySchema`).
+   */
+  quality: AvatarQualitySchema.nullable().default(null),
   /**
    * Never null in the DTO. DB rows have `provider` null until the job finishes: the API
    * writes `providers.portrait.info` when it inserts the row (and mappers fall back to it).
@@ -1069,6 +1122,11 @@ export const PublicShareSchema = z.object({
    * page shows an "AI-generated" label (the MP4 also carries `AI_GENERATED_METADATA`).
    */
   aiGenerated: z.boolean().default(false),
+  /**
+   * True when the rendered picture already carries its subtitles (burnt in): the public player
+   * then starts with its caption overlay off, so the same line is not drawn twice.
+   */
+  burnedInSubtitles: z.boolean().default(false),
   createdAt: IsoDateSchema,
 });
 export type PublicShare = z.infer<typeof PublicShareSchema>;

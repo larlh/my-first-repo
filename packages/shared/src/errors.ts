@@ -115,11 +115,39 @@ export function isAppError(err: unknown): err is AppError {
 export const StoredErrorSchema = z.object({
   code: ErrorCodeSchema,
   message: z.string(),
+  /**
+   * Additive, optional: stable snake_case key of the cause for i18n, when the failing layer
+   * gave one in `AppError.details.reason` — e.g. `engine_unreachable`, `weights_missing`
+   * (avatar engine), `no_face`, `multiple_faces` (portrait preparation). UIs translate it and
+   * fall back to `code` / `message`.
+   */
+  reason: z.string().max(60).optional(),
 });
 export type StoredError = z.infer<typeof StoredErrorSchema>;
 
+const STORED_REASON = /^[a-z][a-z0-9_]{0,59}$/;
+
 export function toStoredError(err: unknown): StoredError {
-  if (isAppError(err)) return { code: err.code, message: err.message };
+  if (isAppError(err)) {
+    const reason = (err.details as { reason?: unknown } | null | undefined)?.reason;
+    return {
+      code: err.code,
+      message: err.message,
+      ...(typeof reason === 'string' && STORED_REASON.test(reason) ? { reason } : {}),
+    };
+  }
   const message = err instanceof Error ? err.message : String(err);
-  return { code: 'INTERNAL', message: message.slice(0, 500) };
+  return { code: 'INTERNAL', message: scrubInternals(message).slice(0, 500) };
+}
+
+/**
+ * The message of an UNEXPECTED error is shown to users, sent in `video.failed` webhooks and
+ * returned by the public API: what it says about the server (file-system paths, URLs and
+ * addresses of internal services) is replaced. The full error stays in the server log.
+ */
+export function scrubInternals(message: string): string {
+  return message
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s'"`|]+/gi, '[url]')
+    .replace(/(?<![\w.-])(?:[A-Za-z]:)?(?:[\\/][^\s'"`:|,;()]+){2,}/g, '[path]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g, '[address]');
 }

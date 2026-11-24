@@ -193,6 +193,23 @@ describe('sessions', () => {
 });
 
 describe('API keys', () => {
+  it("creates the key inside the caller's transaction: rolled back with it, kept on commit", async () => {
+    const alice = await t.signUp();
+    const input = { workspaceId: alice.workspace.id, name: 'tx', createdBy: alice.user.id };
+    let rolledBack = '';
+    await expect(
+      t.db.transaction(async (tx) => {
+        rolledBack = (await createApiKey(tx, input)).key;
+        throw new Error('abort');
+      }),
+    ).rejects.toThrow('abort');
+    expect(await resolveApiKey(t.db, `Bearer ${rolledBack}`)).toBeNull();
+    expect(await t.db.$count(apiKeys, eq(apiKeys.workspaceId, alice.workspace.id))).toBe(0);
+
+    const kept = await t.db.transaction((tx) => createApiKey(tx, input));
+    expect(await resolveApiKey(t.db, `Bearer ${kept.key}`)).toMatchObject({ kind: 'apiKey' });
+  });
+
   it('stores a hash, resolves the workspace and stops working once revoked', async () => {
     const alice = await t.signUp();
     const { row, key } = await createApiKey(t.db, {

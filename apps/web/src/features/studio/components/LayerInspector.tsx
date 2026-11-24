@@ -33,6 +33,7 @@ import {
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatFixed } from '@/lib/format';
 import {
   Button,
   EmptyState,
@@ -173,7 +174,7 @@ function AnimationFields({
           max={2000}
           step={50}
           value={value.durationMs}
-          formatValue={(ms) => `${(ms / 1000).toFixed(2)} s`}
+          formatValue={(ms) => `${formatFixed(ms / 1000, 2)} s`}
           onValueChange={(durationMs) => onChange({ ...value, durationMs }, 'duration')}
           onValueCommit={onCommit}
         />
@@ -499,7 +500,7 @@ function TextFields({ layer, scene }: { layer: Extract<Layer, { type: 'text' }>;
         max={0.3}
         step={0.0025}
         value={style.fontSize}
-        formatValue={(value) => `${(value * 100).toFixed(1)} %`}
+        formatValue={(value) => `${formatFixed(value * 100, 1)} %`}
         onValueChange={(fontSize) => set({ fontSize }, 'size')}
         onValueCommit={seal}
       />
@@ -554,7 +555,7 @@ function TextFields({ layer, scene }: { layer: Extract<Layer, { type: 'text' }>;
         max={2}
         step={0.05}
         value={style.lineHeight}
-        formatValue={(value) => value.toFixed(2)}
+        formatValue={(value) => formatFixed(value, 2)}
         onValueChange={(lineHeight) => set({ lineHeight }, 'lineHeight')}
         onValueCommit={seal}
       />
@@ -762,7 +763,7 @@ function ShapeFields({ layer, patch }: { layer: Extract<Layer, { type: 'shape' }
           max={0.05}
           step={0.001}
           value={layer.stroke.width}
-          formatValue={(value) => `${(value * 100).toFixed(1)} %`}
+          formatValue={(value) => `${formatFixed(value * 100, 1)} %`}
           onValueChange={(width) =>
             patch({ stroke: layer.stroke ? { ...layer.stroke, width } : null }, 'strokeWidth')
           }

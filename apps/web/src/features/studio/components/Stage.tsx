@@ -28,7 +28,7 @@ import {
   cn,
   isLightColor,
 } from '@/ui';
-import { paintOrder } from '../model/editor';
+import { defaultAvatarBox, paintOrder } from '../model/editor';
 import { HANDLES, clampBox, moveBox, resizeBox, snapMove, snapResize } from '../model/geometry';
 import type { Guide, Handle } from '../model/geometry';
 import { selectScene, useEditor, usePreviewState, useStudio } from '../state/context';
@@ -232,12 +232,11 @@ function AddLayerBar({ scene }: { scene: Scene }) {
         onOpenChange={(open) => !open && setPicker(null)}
         value={null}
         onPick={(avatar) => {
-          const w = ratio < 1 ? 0.8 : 0.4;
           add({
             type: 'avatar',
             name: avatar.name.slice(0, 80),
             avatarId: avatar.id,
-            box: { x: (1 - w) / 2, y: ratio < 1 ? 0.36 : 0.14, w, h: ratio < 1 ? 0.64 : 0.86 },
+            box: defaultAvatarBox(canvas),
           });
           setPicker(null);
         }}

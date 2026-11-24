@@ -93,8 +93,9 @@ función**. Secuencia (cada paso que falla no deja nada cobrado ni creado):
 1. Carga vídeo y workspace filtrando por `workspaceId`; rechaza si ya hay un render activo.
 2. `applyVariables(composition, variables)` → **snapshot** concreto (el vídeo conserva sus
    `{{variables}}`).
-3. Valida referencias: avatares existen y están `ready`, voces resuelven (`resolveVoice`),
-   audios de narración son del workspace → `UNPROCESSABLE`.
+3. Valida referencias: avatares existen y están `ready`, voces resuelven (`resolveVoice`), y
+   todo archivo del documento (audios de narración, imágenes, vídeos y música) existe y es del
+   workspace → `UNPROCESSABLE`, sin cobrar.
 4. Límites del plan: escenas, resolución, duración estimada
    (`estimateCompositionDurationMs`), simultaneidad (`maxConcurrentRenders`; el lote está
    exento) → `PLAN_LIMIT_EXCEEDED`.
@@ -218,6 +219,9 @@ vista previa. La exportación sustituye el stand-in por el clip neuronal en el m
 
 ## 6. Dónde se cumple cada regla de seguridad (§5 del prompt maestro)
 
+Modelo de amenazas, controles con más detalle, límites conocidos y hallazgos de la revisión de
+la fase 3: [`SECURITY.md`](SECURITY.md).
+
 | Regla                                    | Dónde                                                                                                                                                                                                                |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Consentimiento obligatorio               | `apps/api/src/lib/consent.ts` (`consumeConsent`, dentro de la transacción) + check SQL `avatars_photo_requires_consent` + `voices.consent_id NOT NULL`. Revocar borra avatar/voz, sus archivos y el asset de origen. |
@@ -231,15 +235,38 @@ vista previa. La exportación sustituye el stand-in por el clip neuronal en el m
 | SSRF                                     | `@parlante/shared/node` `assertPublicUrl` / `safeRequest` (webhooks y "URL → guion").                                                                                                                                |
 | Secretos                                 | Contraseñas scrypt; sesiones y API keys guardadas como hash; secretos de webhook cifrados con `APP_SECRET`; `.env.example` documenta todo. Motor: `AVATAR_ENGINE_TOKEN` fuera de loopback.                           |
 
-## 7. Estado de la base al cerrar la fase de contratos (qué es real y qué es esqueleto)
+## 7. Estado al cierre (fase 3)
 
-Implementado y con tests: contratos (`shared`), esquema y migraciones (`db`), cola y servicios
-compartidos (`jobs`), almacenamiento local, esqueleto de API (auth, sesiones, API keys, roles,
-subidas, archivos firmados, OpenAPI, módulo de referencia), esqueleto de worker (runner, ffmpeg,
-estado de render, recuperación de jobs muertos), renderer base (línea de tiempo, reloj de
-medios, `renderFrame` con dibujo simplificado, subtítulos, colocación fotorrealista).
+Todo lo descrito arriba está implementado; no quedan _stubs_ en rutas que el usuario ejecuta.
+Qué significa «probado» en cada pieza (detalle y cifras en el README y en los informes de cierre):
 
-Esqueleto con _stub_ honesto (lanzan `NOT_IMPLEMENTED` o informan "no disponible"): proveedores
-de TTS, LLM, traducción, clonado, moderación, lip-sync y retratos; rigs de avatar (placeholder);
-módulos de dominio de la API y jobs del worker distintos de `system`. Cada uno tiene dueño en
-`docs/OWNERSHIP.md` y su contrato en `docs/CONTRACTS.md`.
+| Pieza                                                                      | Estado                                                                                                                                      |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contratos, BD, colas, API (114 rutas), worker (7 colas)                    | Tests de integración con PostgreSQL y Redis reales; matriz de aislamiento entre workspaces (`apps/api/src/security`).                       |
+| Render 2D de extremo a extremo                                             | `e2e/core.mjs`: navegador real contra web + API + worker, MP4 verificado con ffprobe y comparado fotograma a fotograma con la vista previa. |
+| Proveedores locales (eSpeak, heurísticas, perfil de voz)                   | Ejercitados de verdad en los e2e. Son «modo básico» y así se etiquetan.                                                                     |
+| Motor neuronal (generar, preparar, animar)                                 | Ejercitado de verdad en CPU (`e2e/ai.mjs` con `E2E_ENGINE=1`). GPU implementada, **no verificada**.                                         |
+| Adaptadores externos (Anthropic, ElevenLabs, OpenAI, S3, lip-sync externo) | Implementados; **solo probados con respuestas simuladas** (no hay claves en el entorno de construcción).                                    |
+| Docker (`docker-compose.yml`, `docker/`)                                   | Escrito y validado de forma estática (`docker compose config`); **nunca ejecutado** (sin daemon en el entorno de construcción).             |
+
+Piezas añadidas en la fase 3 que no aparecen en las secciones anteriores:
+
+- **`scripts/e2e.sh` + `e2e/`**: lanzador que crea una base de datos y un prefijo de cola
+  propios, arranca la pila real y ejecuta los recorridos con Playwright como librería
+  (`e2e/README.md`).
+- **`apps/api/src/security/`**: matriz de aislamiento (cada ruta con parámetro × actor ajeno,
+  anónimo o con credencial equivocada) como test y como script contra una API en marcha.
+  Añadir una ruta con un parámetro nuevo hace fallar el test hasta mapearlo.
+- **Calidad y motivo del motor**: `avatars.quality` (veredicto del control de calidad del
+  retrato) y `reasonCode` / `StoredError.reason` (por qué no está el motor), ambos traducidos
+  por la web (CONTRACTS §8).
+- **Olvido en el motor**: `PortraitProvider.forget` borra los rasgos faciales que el motor
+  guarda en su caché cuando se borra un avatar o se revoca su consentimiento.
+- **Habla de voces clonadas bajo el prefijo de la voz** (`ws/<ws>/voices/<id>/tts/`), para que
+  desaparezca al revocar; la caché compartida `cache/tts/` queda solo para voces de stock.
+- **Configuración**: `parseDotEnv` (comentarios en línea y valores vacíos de `.env`),
+  `refuseDevOnlySwitches` (`ALLOW_PRIVATE_URLS` rechazada en producción), `WEB_PORT` y lectura
+  del `.env` raíz por el servidor de desarrollo de la web.
+
+Límites conocidos y deuda declarada: sección «Límites conocidos» del [README](../README.md) y
+[`SECURITY.md`](SECURITY.md) §3.

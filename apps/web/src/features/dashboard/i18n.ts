@@ -18,8 +18,8 @@ const es = {
   create: {
     title: 'Empezar un vídeo',
     blank: {
-      title: 'En blanco',
-      text: 'Elige el formato y monta las escenas a tu manera en el Studio.',
+      title: 'Desde cero',
+      text: 'Elige el formato y empieza con un presentador y una frase de ejemplo en el Studio.',
     },
     template: {
       title: 'Desde una plantilla',
@@ -109,8 +109,8 @@ const en: DashboardTranslations = {
   create: {
     title: 'Start a video',
     blank: {
-      title: 'Blank',
-      text: 'Pick the format and build the scenes your way in the Studio.',
+      title: 'From scratch',
+      text: 'Pick the format and start with a presenter and an example line in the Studio.',
     },
     template: {
       title: 'From a template',

@@ -15,6 +15,8 @@ export const ROUTES = {
   templates: '/templates',
   scriptWriter: '/script-writer',
   billing: '/settings/billing',
+  /** New translation with this video as the source (the translate feature reads `?video=`). */
+  translateVideo: (videoId: string) => `/translate/new?video=${videoId}`,
 } as const;
 
 /** Concrete sample URLs used to probe the registry (any param name matches). */
@@ -23,6 +25,7 @@ const PROBES = {
   templates: ROUTES.templates,
   scriptWriter: ROUTES.scriptWriter,
   billing: ROUTES.billing,
+  translate: '/translate/new',
 } as const;
 
 export type ExternalRoute = keyof typeof PROBES;
@@ -43,6 +46,7 @@ export function useAvailableRoutes(): AvailableRoutes {
       templates: routeExists(patterns, PROBES.templates),
       scriptWriter: routeExists(patterns, PROBES.scriptWriter),
       billing: routeExists(patterns, PROBES.billing),
+      translate: routeExists(patterns, PROBES.translate),
     };
   }, [registry]);
 }

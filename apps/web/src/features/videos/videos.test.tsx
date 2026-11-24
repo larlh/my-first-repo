@@ -1,7 +1,8 @@
+import { CompositionSchema } from '@parlante/shared';
 import type { Video } from '@parlante/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/lib/i18n';
 import { defineFeature } from '@/shell';
 import { toast } from '@/ui';
@@ -335,10 +336,28 @@ describe('new video', () => {
 
     expect(await screen.findByRole('heading', { name: 'Studio' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe(`/studio/${videoId(9)}`);
-    expect(api.requests('POST', '/api/videos')[0]?.body).toEqual({
-      aspect: '9:16',
-      title: 'Reel de otoño',
+    // "From scratch" is not an empty black scene: the draft starts with a presenter, a voice in
+    // the language of the interface and an example line, in the chosen format.
+    const body = api.requests('POST', '/api/videos')[0]?.body as {
+      aspect: string;
+      title: string;
+      composition: unknown;
+    };
+    expect(body.aspect).toBe('9:16');
+    expect(body.title).toBe('Reel de otoño');
+    const composition = CompositionSchema.parse(body.composition);
+    expect(composition.canvas.aspect).toBe('9:16');
+    expect(composition.scenes).toHaveLength(1);
+    const scene = composition.scenes[0];
+    expect(scene?.script).toMatchObject({
+      kind: 'tts',
+      language: 'es',
+      voiceId: 'espeak:es-f1',
+      text: 'Hola, soy Lucía. Escribe aquí tu guion y yo lo cuento en tu vídeo.',
     });
+    expect(scene?.layers.map((layer) => layer.type)).toEqual(['avatar']);
+    expect(scene?.layers[0]).toMatchObject({ avatarId: 'stock_lucia' });
+    expect(composition.subtitles.enabled).toBe(true);
   });
 
   it('is not offered to viewers', async () => {
@@ -379,6 +398,18 @@ describe('video detail', () => {
     expect(within(transcript).getByText('Hola, soy Marta.')).toBeInTheDocument();
     expect(within(transcript).getByText('Te doy la bienvenida al equipo.')).toBeInTheDocument();
     expect(within(transcript).getByText('0:01')).toBeInTheDocument();
+
+    // Each line is a button that jumps the player to its instant and plays from there.
+    const media = document.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(media, 'duration', { configurable: true, value: 6 });
+    Object.defineProperty(media, 'readyState', { configurable: true, value: 4 });
+    fireEvent.loadedMetadata(media);
+    const play = vi.spyOn(media, 'play').mockResolvedValue();
+    const second = within(transcript).getByRole('button', { name: /Te doy la bienvenida/ });
+    await userEvent.setup().click(second);
+    expect(media.currentTime).toBeGreaterThan(0);
+    expect(play).toHaveBeenCalled();
+    await waitFor(() => expect(second.closest('li')).toHaveAttribute('aria-current', 'true'));
 
     // Provenance: which provider produced each part, and the honest "basic mode" note.
     expect(screen.getByText('Modo básico · eSpeak NG')).toBeInTheDocument();
@@ -498,7 +529,7 @@ describe('video detail', () => {
     expect(within(dialog).getByText('212 créditos')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('radio', { name: '1080p' }));
     expect(within(dialog).getByText('4 créditos')).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'Empezar render' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Renderizar' }));
 
     expect(
       await screen.findByText('Generando la voz', undefined, { timeout: 5000 }),
@@ -528,7 +559,7 @@ describe('video detail', () => {
     renderFeatures([videos, others], `/videos/${draft.id}`, api);
     await user.click(await screen.findByRole('button', { name: 'Renderizar' }));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByRole('button', { name: 'Empezar render' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Renderizar' }));
     const alert = await within(dialog).findByRole('alert');
     expect(alert).toHaveTextContent('El contenido no cumple las normas de uso');
     expect(alert).toHaveTextContent('Scene 2 contains blocked terms');
@@ -550,7 +581,7 @@ describe('video detail', () => {
     expect(
       within(dialog).getByText('No hay créditos suficientes para este render.'),
     ).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Empezar render' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Renderizar' })).toBeDisabled();
     expect(within(dialog).getByRole('radio', { name: '1080p' })).toBeDisabled();
     expect(within(dialog).getByText(/El plan Free exporta a 720p/)).toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: 'Ver planes y créditos' })).toHaveAttribute(

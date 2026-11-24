@@ -4,7 +4,8 @@
 #
 #   pnpm services
 #
-# On a machine with Docker you can use `docker compose up -d postgres redis` instead.
+# On a machine with Docker you can use `docker compose up -d postgres redis` instead (Compose
+# needs APP_SECRET in `.env` even for that: it interpolates the whole file).
 # Environment overrides: PGPORT (5432), REDIS_PORT (6379), PARLANTE_DB_USER, PARLANTE_DB_PASSWORD.
 set -euo pipefail
 

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CapabilitiesSchema, EngineHealthSchema } from '@parlante/shared';
 import type { EngineHealth, EngineStatus } from '@parlante/shared';
+import { createLocalNeuralLipSyncProvider } from './lipsync/index';
 import {
   createEngineJobDir,
   createProvidersFromEnv,
@@ -189,5 +190,69 @@ describe('engine status', () => {
       operations: { generate: false, prepare: false, animate: true },
       reason: 'connect ECONNREFUSED 127.0.0.1:8090',
     });
+  });
+
+  it('gives the reason as a translatable code next to the English sentence', async () => {
+    // Everything usable: no reason, no code.
+    expect(engineStatusFromHealth(health(), 'lipsync')).toMatchObject({
+      reason: null,
+      reasonCode: null,
+    });
+    // Running without the weights of one operation.
+    const noAnim = health({ capabilities: { generate: true, prepare: true, animate: false } });
+    const merged = mergeEngineStatus(
+      engineStatusFromHealth(noAnim, 'lipsync'),
+      engineStatusFromHealth(noAnim, 'portrait'),
+    );
+    expect(merged).toMatchObject({ available: true, reasonCode: 'weights_missing' });
+    expect(merged.reason).toMatch(/weights/);
+
+    // A provider that gives a reason without a code (older / external) is `unknown`, never null:
+    // a UI that translates codes must not show "available" wording for a stopped engine.
+    const legacy: EngineStatus = {
+      available: false,
+      reason: 'Engine stopped',
+      device: null,
+      secondsPerVideoSecond: null,
+    };
+    expect(mergeEngineStatus(legacy, legacy)).toMatchObject({
+      available: false,
+      reason: 'Engine stopped',
+      reasonCode: 'unknown',
+    });
+
+    // The real providers against a closed port: the engine is not running.
+    const providers = createProvidersFromEnv({
+      STORAGE_LOCAL_DIR: workDir,
+      AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
+    });
+    const caps = await describeCapabilities(providers);
+    expect(CapabilitiesSchema.parse(caps)).toEqual(caps);
+    expect(caps.avatarEngine).toMatchObject({
+      available: false,
+      reasonCode: 'engine_unreachable',
+      operations: { generate: false, prepare: false, animate: false },
+    });
+    expect(caps.avatarEngine.reason).toMatch(/pnpm avatar-engine/);
+
+    // Something else answers on that port: not our engine.
+    const notEngine: typeof fetch = async () => Response.json({ hello: 'world' });
+    expect(
+      await createLocalNeuralLipSyncProvider(providerEnvSchema.parse({}), {
+        fetch: notEngine,
+      }).status(),
+    ).toMatchObject({ available: false, reasonCode: 'engine_invalid' });
+    const broken: typeof fetch = async () => new Response('nope', { status: 500 });
+    expect(
+      await createLocalNeuralLipSyncProvider(providerEnvSchema.parse({}), {
+        fetch: broken,
+      }).status(),
+    ).toMatchObject({ available: false, reasonCode: 'engine_error' });
+    const slow: typeof fetch = async () => {
+      throw new DOMException('The operation timed out', 'TimeoutError');
+    };
+    expect(
+      await createLocalNeuralLipSyncProvider(providerEnvSchema.parse({}), { fetch: slow }).status(),
+    ).toMatchObject({ available: false, reasonCode: 'engine_timeout' });
   });
 });

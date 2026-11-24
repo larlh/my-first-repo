@@ -1,9 +1,11 @@
 import { X } from 'lucide-react';
 import { Dialog as RadixDialog, VisuallyHidden } from 'radix-ui';
+import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { IconButton } from './Button';
+import { focusInitialControl } from './initialFocus';
 import { useReturnFocus } from './useReturnFocus';
 
 const WIDTHS = {
@@ -32,6 +34,10 @@ export interface DialogProps {
 /**
  * Modal dialog: focus is trapped and restored, Escape closes, the page behind is inert.
  * On phones it docks to the bottom edge as a sheet.
+ *
+ * Focus on open goes to what the person came to do, not to the close button: an element
+ * marked `autoFocus` / `data-autofocus`, else the first field of the body, else the first
+ * control of the body, else the main action of the footer (see `focusInitialControl`).
  */
 export function Dialog({
   open,
@@ -47,6 +53,8 @@ export function Dialog({
 }: DialogProps) {
   const { t } = useTranslation('shell');
   const returnFocus = useReturnFocus(open);
+  const body = useRef<HTMLDivElement | null>(null);
+  const actions = useRef<HTMLDivElement | null>(null);
   const block = (event: Event) => {
     if (!dismissible) event.preventDefault();
   };
@@ -59,6 +67,7 @@ export function Dialog({
           onPointerDownOutside={block}
           onInteractOutside={block}
           onCloseAutoFocus={returnFocus}
+          onOpenAutoFocus={(event) => focusInitialControl(event, body.current, actions.current)}
           {...(description ? {} : { 'aria-describedby': undefined })}
           className={cn(
             'fixed z-50 flex max-h-[92dvh] w-full flex-col border border-line bg-surface text-fg shadow-lg outline-none',
@@ -93,10 +102,15 @@ export function Dialog({
             )}
           </div>
           {children !== undefined && children !== null && (
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">{children}</div>
+            <div ref={body} className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+              {children}
+            </div>
           )}
           {footer && (
-            <div className="flex flex-col-reverse gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+            <div
+              ref={actions}
+              className="flex flex-col-reverse gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-end sm:px-6"
+            >
               {footer}
             </div>
           )}

@@ -37,6 +37,7 @@ import {
   comparisonValue,
   exceededLimits,
   isByteLimit,
+  ledgerDetail,
   ledgerKind,
   planChange,
   signedAmount,
@@ -442,7 +443,8 @@ function TopUpPanel({ isOwner }: { isOwner: boolean }) {
       });
       setPack(null);
     },
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
   return (
     <Panel id="top-up" title={t('billing.topUp.title')} description={t('billing.topUp.text')}>
@@ -506,15 +508,16 @@ const LEDGER_TONE = {
 } as const;
 
 function LedgerRow({ entry }: { entry: CreditLedgerEntry }) {
-  const { t } = useTranslation('settings');
+  const { t, i18n } = useTranslation('settings');
   const format = useFormat();
   const kind = ledgerKind(entry.reason, entry.delta);
+  const detail = ledgerDetail(entry.description, i18n.language);
   return (
     <Tr>
       <Td className="whitespace-nowrap text-fg-muted">{format.dateTime(entry.createdAt)}</Td>
       <Td className="min-w-48">
         <p className="font-medium">{t(`billing.ledger.reason.${entry.reason}`)}</p>
-        {entry.description && <p className="text-xs text-fg-muted">{entry.description}</p>}
+        {detail && <p className="text-xs text-fg-muted">{detail}</p>}
       </Td>
       <Td align="right" className={cn('nums font-semibold whitespace-nowrap', LEDGER_TONE[kind])}>
         {signedAmount(entry.delta, format.number)}

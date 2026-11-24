@@ -21,6 +21,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm -r test",
+    "e2e": "bash scripts/e2e.sh",
     "db:generate": "pnpm --filter @parlante/db db:generate",
     "db:migrate": "pnpm --filter @parlante/db db:migrate",
     "db:seed": "pnpm --filter @parlante/db db:seed",

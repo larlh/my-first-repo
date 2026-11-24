@@ -188,6 +188,8 @@ describe('public page', () => {
       durationMs: 5300,
       workspaceName: alice.workspace.name,
       aiGenerated: false,
+      // The rendered snapshot has burnt-in subtitles (the default of a composition).
+      burnedInSubtitles: true,
       providers: { tts: { id: 'espeak', name: 'eSpeak NG (local)', quality: 'basic' } },
     });
     // Exactly the public fields: no ids, no composition, no workspace internals.

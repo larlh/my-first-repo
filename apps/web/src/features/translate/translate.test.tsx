@@ -82,7 +82,7 @@ describe('translations list', () => {
       within(running).getByRole('progressbar', { name: 'Traducción de «Presentación 1»' }),
     ).toHaveAttribute('aria-valuenow', '40');
     const done = screen.getByRole('link', { name: /Presentación 2/ });
-    expect(within(done).getByText('1 de 1 idiomas listos')).toBeVisible();
+    expect(within(done).getByText('1 de 1 idioma listo')).toBeVisible();
     expect(within(done).getByText(/4 créditos/)).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Nueva traducción' })).not.toBeInTheDocument();
   });
@@ -170,6 +170,40 @@ describe('new translation', () => {
       transcript: { format: 'srt', content: SRT },
       voices: {},
       options: { originalAudioVolume: 0.08, burnSubtitles: true },
+    });
+    expect(contract.translations.create.body.safeParse(body).success).toBe(true);
+  });
+
+  it('opens from a finished video with it selected and its subtitles as the transcript', async () => {
+    const user = userEvent.setup();
+    const video = makeVideo(1, { title: 'Bienvenida al equipo' });
+    const job = makeTranslation(9, { status: 'queued', targetLanguages: ['en'] });
+    const api = withForm(createFakeApi())
+      .on('GET', `/api/videos/${video.id}`, () => video)
+      .on('POST', '/api/translations', () => new Response(JSON.stringify(job), { status: 202 }))
+      .on('GET', `/api/translations/${job.id}`, () => job);
+    renderFeatures([translate, others], `/translate/new?video=${video.id}`, api);
+
+    // Step 1 is already answered and the local mode's mandatory transcript is filled in with
+    // the subtitles file of the render (the test harness serves a WebVTT for any file).
+    expect(await screen.findByText(/Vídeo del workspace/)).toBeVisible();
+    const transcript = screen.getByLabelText(/Transcripción del vídeo original/);
+    await waitFor(() => expect((transcript as HTMLTextAreaElement).value).toMatch(/-->/));
+    const filled = (transcript as HTMLTextAreaElement).value;
+    expect(
+      screen.getByText(/Rellenada con los subtítulos de «Bienvenida al equipo»/),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('checkbox', { name: /English/ }));
+    await user.click(screen.getByRole('button', { name: 'Traducir a 1 idioma' }));
+    await waitFor(() => expect(api.requests('POST', '/api/translations')).toHaveLength(1));
+    const body = api.requests('POST', '/api/translations')[0]?.body;
+    expect(body).toMatchObject({
+      name: 'Bienvenida al equipo',
+      sourceVideoId: video.id,
+      sourceLanguage: 'es',
+      targetLanguages: ['en'],
+      transcript: { format: filled.startsWith('WEBVTT') ? 'vtt' : 'srt', content: filled },
     });
     expect(contract.translations.create.body.safeParse(body).success).toBe(true);
   });
@@ -322,7 +356,8 @@ describe('translation detail', () => {
       await screen.findByText(/Los créditos de los idiomas fallidos se han devuelto/),
     ).toBeVisible();
     expect(screen.getByText(/1 de 2 idiomas listos · 1 fallido/)).toBeVisible();
-    expect(screen.getByText('TTS provider timed out')).toBeVisible();
+    // A sentence of the worker with no Spanish wording is shown, labelled as a technical detail.
+    expect(screen.getByText('Detalle técnico (en inglés): TTS provider timed out')).toBeVisible();
 
     await user.click(screen.getByRole('button', { name: 'Eliminar' }));
     const dialog = await screen.findByRole('alertdialog');

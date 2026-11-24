@@ -23,8 +23,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ProviderBadge } from '@/components/ProviderBadge';
-import { useFormat } from '@/lib/format';
+import { ProviderBadge, useProviderName } from '@/components/ProviderBadge';
+import { formatFixed, useFormat } from '@/lib/format';
 import { useSession } from '@/lib/session';
 import {
   Button,
@@ -40,6 +40,7 @@ import {
   toast,
   useErrorText,
 } from '@/ui';
+import { defaultAvatarBox } from '../model/editor';
 import { sceneDurationInfo, wordCount } from '../model/timing';
 import {
   selectComposition,
@@ -119,6 +120,7 @@ function MediaSlot({
 /* ---------- scene: script ---------- */
 
 function ScriptSection({ scene }: { scene: Scene }) {
+  const providerName = useProviderName();
   const { t } = useTranslation('studio');
   const format = useFormat();
   const describe = useErrorText();
@@ -256,7 +258,7 @@ function ScriptSection({ scene }: { scene: Scene }) {
                 </span>
                 <span className="block truncate text-xs text-fg-muted">
                   {voice
-                    ? `${voice.provider.name} · ${script.language}`
+                    ? `${providerName(voice.provider)} · ${script.language}`
                     : library.voices.isPending
                       ? t('common.loading')
                       : t('voice.unknown')}
@@ -271,7 +273,7 @@ function ScriptSection({ scene }: { scene: Scene }) {
             max={2}
             step={0.05}
             value={script.speed}
-            formatValue={(value) => `${value.toFixed(2)}×`}
+            formatValue={(value) => `${formatFixed(value, 2)}×`}
             onValueChange={(speed) =>
               patch({ type: 'scene.scriptPatch', sceneId: scene.id, patch: { speed } }, 'speed')
             }
@@ -395,7 +397,6 @@ function AvatarSection({ scene }: { scene: Scene }) {
   const layer = scene.layers.find((l) => l.type === 'avatar');
   const avatar = layer ? library.avatarById(layer.avatarId) : undefined;
   const photoreal = layer ? avatarRenderingOf(layer.avatarId) === 'photoreal' : false;
-  const ratio = canvas.width / canvas.height;
   return (
     <Section title={t('avatar.title')}>
       {layer ? (
@@ -447,7 +448,6 @@ function AvatarSection({ scene }: { scene: Scene }) {
               patch: { avatarId: picked.id, name: picked.name.slice(0, 80) },
             });
           } else {
-            const w = ratio < 1 ? 0.8 : 0.4;
             apply({
               type: 'layer.add',
               sceneId: scene.id,
@@ -455,7 +455,7 @@ function AvatarSection({ scene }: { scene: Scene }) {
                 type: 'avatar',
                 name: picked.name.slice(0, 80),
                 avatarId: picked.id,
-                box: { x: (1 - w) / 2, y: ratio < 1 ? 0.36 : 0.14, w, h: ratio < 1 ? 0.64 : 0.86 },
+                box: defaultAvatarBox(canvas),
               },
             });
           }
@@ -701,7 +701,7 @@ function TimingSection({ scene, first }: { scene: Scene; first: boolean }) {
                 max={2000}
                 step={50}
                 value={scene.transition.durationMs}
-                formatValue={(value) => `${(value / 1000).toFixed(2)} s`}
+                formatValue={(value) => `${formatFixed(value / 1000, 2)} s`}
                 onValueChange={(durationMs) =>
                   apply(
                     { type: 'scene.transition', sceneId: scene.id, patch: { durationMs } },
@@ -927,7 +927,7 @@ function VideoTab() {
               max={0.1}
               step={0.0025}
               value={subtitles.fontSize}
-              formatValue={(value) => `${(value * 100).toFixed(1)} %`}
+              formatValue={(value) => `${formatFixed(value * 100, 1)} %`}
               onValueChange={(fontSize) => sub({ fontSize }, 'size')}
               onValueCommit={seal}
             />
@@ -1094,6 +1094,7 @@ function VideoTab() {
               placeholder={t('variables.placeholder')}
               maxLength={500}
               value={variable.defaultValue}
+              hint={variable.defaultValue.trim() === '' ? t('variables.empty') : undefined}
               onChange={(event) =>
                 apply(
                   {

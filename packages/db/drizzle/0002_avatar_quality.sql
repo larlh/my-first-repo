@@ -1,0 +1,1 @@
+ALTER TABLE "avatars" ADD COLUMN "quality" jsonb;

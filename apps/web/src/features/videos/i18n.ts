@@ -75,6 +75,7 @@ const es = {
     edit: 'Editar en el Studio',
     rename: 'Renombrar',
     duplicate: 'Duplicar',
+    translate: 'Traducir a otros idiomas',
     delete: 'Eliminar',
     render: 'Renderizar',
     renderAgain: 'Volver a renderizar',
@@ -102,31 +103,8 @@ const es = {
     done: '«{{title}}» eliminado',
   },
   render: {
-    title: 'Renderizar vídeo',
-    titleAgain: 'Volver a renderizar',
     description:
       'Se revisa el guion, se reservan los créditos y el vídeo entra en la cola. Puedes cerrar esta página: el render sigue.',
-    start: 'Empezar render',
-    resolution: 'Resolución',
-    resolutionLocked: 'El plan {{plan}} exporta a 720p. Con un plan superior podrás elegir 1080p.',
-    estimatedDuration: 'Duración estimada',
-    cost: 'Se reservan',
-    credits_one: '{{count}} crédito',
-    credits_other: '{{count}} créditos',
-    balance: 'Saldo del workspace',
-    costNote:
-      '{{base}} crédito por cada {{seconds}} s a 720p; el doble a 1080p y el doble con avatares fotorrealistas. Al terminar se ajusta a la duración real.',
-    watermark: 'El plan gratuito añade una marca de agua de Parlante.',
-    photorealTitle: 'Render neuronal en tu equipo: es lento',
-    photorealMeasured:
-      'Este vídeo usa avatares fotorrealistas. Con la velocidad medida en esta máquina ({{device}}), animarlos llevará unos {{time}}.',
-    photorealUnmeasured:
-      'Este vídeo usa avatares fotorrealistas. En CPU, animarlos puede llevar varios minutos por cada 10 s de vídeo; verás el tiempo restante mientras avanza.',
-    engineUnavailable: 'El motor neuronal local no puede animar ahora mismo',
-    nonCommercial:
-      'Alguno de los modelos descargados solo permite uso no comercial: no uses este vídeo con fines comerciales.',
-    notEnough: 'No hay créditos suficientes para este render.',
-    seePlans: 'Ver planes y créditos',
     started: 'Render en marcha',
     done: '«{{title}}» está listo',
     failedToast: 'El render de «{{title}}» ha fallado',
@@ -196,7 +174,9 @@ const es = {
   },
   transcript: {
     title: 'Subtítulos',
-    description: 'Lo que se dice en el vídeo, con su minuto. Sigue a la reproducción.',
+    description:
+      'Lo que se dice en el vídeo, con su minuto. Sigue a la reproducción; pulsa una línea para saltar a ella.',
+    jump: 'Ir a {{time}}',
     failed: 'No se han podido cargar los subtítulos',
     empty: 'Este render no tiene texto hablado.',
   },
@@ -261,8 +241,9 @@ const es = {
     failed: 'No se ha podido crear el vídeo',
     unavailable: 'Esta sección no está disponible en esta instalación.',
     blank: {
-      title: 'En blanco',
-      text: 'Una escena vacía con el formato que elijas. Tú pones el guion, el avatar y la voz.',
+      title: 'Desde cero',
+      text: 'Una escena lista para editar en el formato que elijas: un presentador, una voz y una frase de ejemplo. Cambia lo que quieras.',
+      sampleScript: 'Hola, soy Lucía. Escribe aquí tu guion y yo lo cuento en tu vídeo.',
       format: 'Formato',
       name: 'Título',
       namePlaceholder: 'Bienvenida al equipo',
@@ -369,6 +350,7 @@ const en: VideosTranslations = {
     edit: 'Edit in the Studio',
     rename: 'Rename',
     duplicate: 'Duplicate',
+    translate: 'Translate into other languages',
     delete: 'Delete',
     render: 'Render',
     renderAgain: 'Render again',
@@ -396,31 +378,8 @@ const en: VideosTranslations = {
     done: '“{{title}}” deleted',
   },
   render: {
-    title: 'Render video',
-    titleAgain: 'Render again',
     description:
       'The script is reviewed, credits are reserved and the video joins the queue. You can close this page: the render keeps going.',
-    start: 'Start render',
-    resolution: 'Resolution',
-    resolutionLocked: 'The {{plan}} plan exports at 720p. A higher plan unlocks 1080p.',
-    estimatedDuration: 'Estimated duration',
-    cost: 'Reserved',
-    credits_one: '{{count}} credit',
-    credits_other: '{{count}} credits',
-    balance: 'Workspace balance',
-    costNote:
-      '{{base}} credit per {{seconds}} s at 720p; double at 1080p and double with photorealistic avatars. It is adjusted to the real duration when the render ends.',
-    watermark: 'The free plan adds a Parlante watermark.',
-    photorealTitle: 'Neural render on your machine: it is slow',
-    photorealMeasured:
-      'This video uses photorealistic avatars. At the speed measured on this machine ({{device}}), animating them will take about {{time}}.',
-    photorealUnmeasured:
-      'This video uses photorealistic avatars. On CPU, animating them can take several minutes per 10 s of video; you will see the time left as it progresses.',
-    engineUnavailable: 'The local neural engine cannot animate right now',
-    nonCommercial:
-      'One of the downloaded models only allows non-commercial use: do not use this video commercially.',
-    notEnough: 'There are not enough credits for this render.',
-    seePlans: 'See plans and credits',
     started: 'Render started',
     done: '“{{title}}” is ready',
     failedToast: 'The render of “{{title}}” failed',
@@ -489,7 +448,9 @@ const en: VideosTranslations = {
   },
   transcript: {
     title: 'Subtitles',
-    description: 'What is said in the video, with its timestamp. It follows playback.',
+    description:
+      'What is said in the video, with its timestamp. It follows playback; press a line to jump to it.',
+    jump: 'Go to {{time}}',
     failed: 'The subtitles could not be loaded',
     empty: 'This render has no spoken text.',
   },
@@ -554,8 +515,9 @@ const en: VideosTranslations = {
     failed: 'The video could not be created',
     unavailable: 'This section is not available in this installation.',
     blank: {
-      title: 'Blank',
-      text: 'An empty scene in the format you choose. You bring the script, the avatar and the voice.',
+      title: 'From scratch',
+      text: 'One scene ready to edit in the format you choose: a presenter, a voice and an example line. Change anything you like.',
+      sampleScript: "Hi, I'm Lucía. Write your script here and I will say it in your video.",
       format: 'Format',
       name: 'Title',
       namePlaceholder: 'Welcome to the team',

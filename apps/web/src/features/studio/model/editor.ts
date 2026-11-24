@@ -134,20 +134,61 @@ function sceneAfter(reference: Scene | undefined, name: string): Scene {
 
 const clampTo = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
+type Size = { width: number; height: number };
+
+/** Share of the canvas height a presenter takes by default: lower in vertical formats. */
+const presenterHeight = (canvas: Size): number => (canvas.width < canvas.height ? 0.64 : 0.86);
+
+/** Box of a new presenter: a bust standing on the bottom edge, centred. */
+export function defaultAvatarBox(canvas: Size): { x: number; y: number; w: number; h: number } {
+  const h = presenterHeight(canvas);
+  const w = canvas.width < canvas.height ? 0.8 : 0.4;
+  return { x: (1 - w) / 2, y: 1 - h, w, h };
+}
+
+/**
+ * The box of a figure moved to a canvas of another shape: same shape in pixels, same size
+ * relative to what a presenter takes in each format (so 16:9 ↔ 9:16 ↔ 16:9 gives the original
+ * box back), same horizontal centre and same bottom edge — presenters stand on the bottom of
+ * the frame.
+ */
+export function refitBox<T extends { x: number; y: number; w: number; h: number }>(
+  box: T,
+  from: Size,
+  to: Size,
+): T {
+  const shape = (box.w * from.width) / (box.h * from.height);
+  if (!Number.isFinite(shape) || shape <= 0) return box;
+  const h = (box.h * presenterHeight(to)) / presenterHeight(from);
+  const w = (h * to.height * shape) / to.width;
+  const centre = box.x + box.w / 2;
+  const bottom = box.y + box.h;
+  return { ...box, x: centre - w / 2, y: bottom - h, w, h };
+}
+
 /**
  * Change the format. Boxes are normalised, so the layout follows the canvas (`withAspect`).
  * Text sizes are fractions of the canvas HEIGHT: they are rescaled so every text keeps its
  * size in pixels. A box keeps its area in pixels when the canvas is rotated (narrower but
  * taller), so a headline made for 16:9 re-wraps and still fits in 9:16 instead of overflowing.
+ * An avatar is drawn to the height of its box: a box that only followed the canvas would turn a
+ * presenter who fills a 16:9 frame into a small figure at the bottom of a 9:16 one, so avatar
+ * boxes keep their shape in pixels and their size relative to the format (`refitBox`).
  */
 export function retarget(composition: Composition, aspect: AspectRatio): Composition {
   const next = withAspect(composition, aspect);
-  const k = composition.canvas.height / next.canvas.height;
-  if (Math.abs(k - 1) < 1e-6) return next;
+  const from = composition.canvas;
+  const to = next.canvas;
+  if (from.width === to.width && from.height === to.height) return next;
+  const k = from.height / to.height;
   return produce(next, (draft) => {
     for (const scene of draft.scenes) {
       for (const layer of scene.layers) {
-        if (layer.type !== 'text') continue;
+        if (layer.type === 'avatar') {
+          layer.box = refitBox(layer.box, from, to);
+          continue;
+        }
+        if (layer.type !== 'text' || Math.abs(k - 1) < 1e-6) continue;
         const style = layer.style;
         style.fontSize = clampTo(style.fontSize * k, 0.005, 0.5);
         if (style.background) {

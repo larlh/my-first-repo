@@ -1,3 +1,7 @@
+// The WASM package ships no types. The ambient declaration must travel with this file: apps that
+// compile the providers from source (api, worker) only see what this module graph references.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference -- ambient module declaration, not importable
+/// <reference path="./espeak-ng.d.ts" />
 import { AppError } from '@parlante/shared';
 import type { EspeakRawEvent, EspeakWorker } from '@echogarden/espeak-ng-emscripten';
 import { concatPcm } from './wav';

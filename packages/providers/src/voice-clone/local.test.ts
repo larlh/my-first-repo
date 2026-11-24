@@ -64,7 +64,7 @@ describe('local voice cloning (voice profile — basic mode)', () => {
   it('is honest about what it is', () => {
     expect(clone.info).toEqual({
       id: 'local',
-      name: 'Voice profile (local)',
+      name: 'Perfil de voz (local)',
       quality: 'basic',
       local: true,
     });

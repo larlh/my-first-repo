@@ -161,7 +161,8 @@ function KeyRow({ apiKey }: { apiKey: ApiKey }) {
   const revoke = useApiMutation(api.apiKeys.revoke, {
     invalidates: [api.apiKeys.list, api.billing.overview],
     onSuccess: () => toast.success(t('apiKeys.revoked', { name: apiKey.name })),
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
   const onRevoke = async () => {
     const ok = await confirm({

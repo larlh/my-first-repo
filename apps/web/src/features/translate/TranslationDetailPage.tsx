@@ -161,7 +161,7 @@ export default function TranslationDetailPage() {
             <p className="nums mt-3 text-sm text-fg-muted">
               {t('detail.counts', {
                 done: counts.completed,
-                total: results.length,
+                count: results.length,
               })}
               {counts.failed > 0 && <> · {t('detail.failedCount', { count: counts.failed })}</>}
             </p>
@@ -243,7 +243,11 @@ export default function TranslationDetailPage() {
                 })}
               </ul>
             ) : (
-              <p className="mt-2 text-sm text-fg-muted">{t('detail.providersPending')}</p>
+              <p className="mt-2 text-sm text-fg-muted">
+                {job.status === 'queued' || job.status === 'processing'
+                  ? t('detail.providersPending')
+                  : t('detail.providersNone')}
+              </p>
             )}
             {translationBasic && (
               <p className="mt-3 text-sm text-pretty text-warning-text">{t('new.basic.text')}</p>

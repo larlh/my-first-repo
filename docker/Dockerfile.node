@@ -29,7 +29,10 @@ COPY tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
 COPY apps/worker ./apps/worker
-RUN mkdir -p /data/storage && chown -R node:node /data /app
+# Both volume mount points must exist and belong to `node`: a named volume mounted on a path the
+# image does not have is created root-owned, and then neither this user nor the engine (same
+# uid) could write to the directory they exchange files through.
+RUN mkdir -p /data/storage /data/avatar-engine && chown -R node:node /data /app
 USER node
 ENV STORAGE_LOCAL_DIR=/data/storage
 EXPOSE 4000

@@ -24,9 +24,11 @@ import {
   AvatarStage,
   Callout,
   EngineStrip,
+  QualityNote,
   animationSeconds,
   engineCan,
   nonCommercialModels,
+  useFailureReason,
   useSpeechPreview,
   useStartVideo,
 } from '../kit';
@@ -104,6 +106,7 @@ export function AvatarSheet({ avatar, engine, onClose }: AvatarSheetProps) {
   const session = useSession();
   const describe = useErrorText();
   const confirm = useConfirm();
+  const failureReason = useFailureReason();
   const speech = useSpeechPreview();
   const [framing, setFraming] = useState<AvatarFraming>('bust');
   const [renaming, setRenaming] = useState(false);
@@ -142,6 +145,7 @@ export function AvatarSheet({ avatar, engine, onClose }: AvatarSheetProps) {
   const instant = current.rendering === 'instant';
   const own = isOwnAvatar(current);
   const ready = current.status === 'ready';
+  const failure = failureReason(current.error, t('sheet.failedText'));
   const canEdit = session.can('editor');
   const speaking = speech.status === 'playing';
   const canAnimate = engineCan(engine, 'animate');
@@ -295,7 +299,10 @@ export function AvatarSheet({ avatar, engine, onClose }: AvatarSheetProps) {
               icon={<TriangleAlert />}
               title={t('sheet.failedTitle')}
             >
-              {current.error?.message ?? t('sheet.failedText')}
+              <p data-failure-reason={current.error?.reason ?? undefined}>{failure.text}</p>
+              {failure.detail && (
+                <p className="mt-1 font-mono text-xs break-words opacity-80">{failure.detail}</p>
+              )}
             </Callout>
           )}
 
@@ -331,6 +338,7 @@ export function AvatarSheet({ avatar, engine, onClose }: AvatarSheetProps) {
             </div>
           )}
 
+          {!instant && ready && <QualityNote quality={current.quality} />}
           {!instant && ready && (
             <div className="flex flex-col gap-2">
               <EngineStrip engine={engine} needs={['animate']} />

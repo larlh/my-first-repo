@@ -246,6 +246,53 @@ const es = {
       },
       manage: 'Ver consentimientos',
     },
+    quality: {
+      failedTitle: 'El retrato no pasó el control de calidad',
+      failedText_one:
+        'El motor lo intentó {{count}} vez y se quedó con este retrato. Puedes usarlo, pero la animación puede salir peor.',
+      failedText_other:
+        'El motor lo intentó {{count}} veces y se quedó con el mejor retrato. Puedes usarlo, pero la animación puede salir peor.',
+      failedTextOnce:
+        'El motor se quedó con este retrato aunque tiene defectos. Puedes usarlo, pero la animación puede salir peor.',
+      remarksTitle: 'Retrato listo, con observaciones',
+      issues: {
+        no_face: 'No se detecta ninguna cara.',
+        multiple_faces: 'Hay más de una cara.',
+        face_not_clear: 'La cara no se ve con claridad.',
+        face_too_small: 'La cara ocupa muy poco del retrato.',
+        face_too_large: 'La cara está demasiado cerca.',
+        head_tilted: 'La cabeza está inclinada.',
+        not_frontal: 'La cara no está de frente.',
+        head_pitched: 'La cabeza mira hacia arriba o hacia abajo.',
+        off_center: 'La cara no está centrada.',
+        mouth_open: 'La boca está abierta: la animación parte mejor de una boca cerrada.',
+        eyes_closed: 'Los ojos están cerrados.',
+        not_looking_at_camera: 'No mira a cámara.',
+        matte_fallback:
+          'El fondo se separó con el modelo de reserva: el borde del recorte puede ser menos fino.',
+        no_matte: 'No se pudo separar el fondo: el avatar se muestra con el fondo de su foto.',
+      },
+    },
+    reasons: {
+      engine_unreachable: 'El motor neuronal se detuvo o no está arrancado.',
+      engine_timeout: 'El motor neuronal no contestó a tiempo.',
+      engine_error: 'El motor neuronal respondió con un error interno.',
+      engine_invalid: 'El motor neuronal respondió algo que este servidor no entiende.',
+      weights_missing: 'Al motor neuronal le faltan pesos de modelos por descargar.',
+      not_configured: 'Este servidor no tiene configurado ningún motor de avatares.',
+      unsupported_image: 'La imagen no es un PNG, JPEG o WebP válido.',
+      image_unreadable: 'El archivo de imagen está dañado y no se pudo leer.',
+      image_too_small: 'La imagen es demasiado pequeña.',
+      image_too_large: 'La imagen es demasiado grande.',
+      no_face: 'No se detecta ninguna cara en la foto. Usa un retrato de frente y bien iluminado.',
+      no_face_at_landmarks: 'No se encuentra una cara donde marcaste los puntos.',
+      multiple_faces: 'En la foto hay más de una persona. Usa una con una sola cara.',
+      face_unclear: 'La cara no se ve con claridad. Usa una foto más nítida y de frente.',
+      face_too_small: 'La cara ocupa muy poco de la foto. Usa un retrato más cercano.',
+      face_cut_off: 'La cara queda cortada por el borde de la foto.',
+      not_frontal: 'La cara no está de frente. Usa una foto mirando a cámara.',
+      head_tilted: 'La cabeza está demasiado inclinada. Usa una foto con la cabeza recta.',
+    },
     engine: {
       title: 'Motor neuronal local',
       dialogTitle: 'Motor de avatares fotorrealistas',
@@ -276,6 +323,17 @@ const es = {
       unknownText:
         'El servidor no ha informado del estado del motor. Si los fotorrealistas fallan, arráncalo con este comando.',
       reason: 'Motivo:',
+      reasons: {
+        engine_unreachable:
+          'no hay nada escuchando en la dirección del motor: no está arrancado o se ha detenido.',
+        engine_timeout: 'el motor no contesta a tiempo: puede estar arrancando o saturado.',
+        engine_error: 'el motor ha respondido con un error interno.',
+        engine_invalid:
+          'el motor ha respondido algo que este servidor no entiende (¿otra versión?).',
+        weights_missing: 'al motor le faltan pesos de modelos por descargar.',
+        not_configured: 'este servidor no tiene configurado ningún motor de avatares.',
+        unknown: 'el motor no ha dicho por qué.',
+      },
       howTo: 'Arráncalo en una terminal, en la raíz del repositorio:',
       howToHint:
         'La primera vez instala el entorno de Python, descarga los pesos (con suma de verificación) y mide la velocidad de este equipo. Después pulsa «Volver a comprobar».',
@@ -567,6 +625,54 @@ const en: typeof es = {
       },
       manage: 'See consent records',
     },
+    quality: {
+      failedTitle: 'The portrait did not pass quality control',
+      failedText_one:
+        'The engine tried {{count}} time and kept this portrait. You can use it, but the animation may look worse.',
+      failedText_other:
+        'The engine tried {{count}} times and kept the best portrait. You can use it, but the animation may look worse.',
+      failedTextOnce:
+        'The engine kept this portrait although it has flaws. You can use it, but the animation may look worse.',
+      remarksTitle: 'Portrait ready, with remarks',
+      issues: {
+        no_face: 'No face is detected.',
+        multiple_faces: 'There is more than one face.',
+        face_not_clear: 'The face is not clearly visible.',
+        face_too_small: 'The face takes up very little of the portrait.',
+        face_too_large: 'The face is too close.',
+        head_tilted: 'The head is tilted.',
+        not_frontal: 'The face is not front-facing.',
+        head_pitched: 'The head looks up or down.',
+        off_center: 'The face is not centred.',
+        mouth_open: 'The mouth is open: the animation starts better from a closed mouth.',
+        eyes_closed: 'The eyes are closed.',
+        not_looking_at_camera: 'The person is not looking at the camera.',
+        matte_fallback:
+          'The background was separated with the fallback model: the edge of the cut-out may be rougher.',
+        no_matte:
+          'The background could not be separated: the avatar keeps the background of its photo.',
+      },
+    },
+    reasons: {
+      engine_unreachable: 'The neural engine stopped or is not started.',
+      engine_timeout: 'The neural engine did not answer in time.',
+      engine_error: 'The neural engine answered with an internal error.',
+      engine_invalid: 'The neural engine answered something this server does not understand.',
+      weights_missing: 'The neural engine is missing model weights that must be downloaded.',
+      not_configured: 'This server has no avatar engine configured.',
+      unsupported_image: 'The image is not a valid PNG, JPEG or WebP.',
+      image_unreadable: 'The image file is damaged and could not be read.',
+      image_too_small: 'The image is too small.',
+      image_too_large: 'The image is too large.',
+      no_face: 'No face is detected in the photo. Use a well-lit, front-facing portrait.',
+      no_face_at_landmarks: 'No face was found where you marked the points.',
+      multiple_faces: 'There is more than one person in the photo. Use one with a single face.',
+      face_unclear: 'The face is not clearly visible. Use a sharper, front-facing photo.',
+      face_too_small: 'The face takes up very little of the photo. Use a closer portrait.',
+      face_cut_off: 'The face is cut off by the edge of the photo.',
+      not_frontal: 'The face is not front-facing. Use a photo looking at the camera.',
+      head_tilted: 'The head is tilted too much. Use a photo with the head upright.',
+    },
     engine: {
       title: 'Local neural engine',
       dialogTitle: 'Photorealistic avatar engine',
@@ -597,6 +703,17 @@ const en: typeof es = {
       unknownText:
         'The server did not report the state of the engine. If photorealistic avatars fail, start it with this command.',
       reason: 'Reason:',
+      reasons: {
+        engine_unreachable:
+          'nothing is listening at the address of the engine: it is not started or it stopped.',
+        engine_timeout: 'the engine does not answer in time: it may be starting or overloaded.',
+        engine_error: 'the engine answered with an internal error.',
+        engine_invalid:
+          'the engine answered something this server does not understand (another version?).',
+        weights_missing: 'the engine is missing model weights that must be downloaded.',
+        not_configured: 'this server has no avatar engine configured.',
+        unknown: 'the engine did not say why.',
+      },
       howTo: 'Start it in a terminal, at the root of the repository:',
       howToHint:
         'The first run installs the Python environment, downloads the weights (checksum verified) and measures the speed of this machine. Then press "Check again".',

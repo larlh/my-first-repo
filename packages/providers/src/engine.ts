@@ -7,6 +7,7 @@ import type {
   EngineJob,
   EngineJobResult,
   EngineProgress,
+  EngineReasonCode,
   EngineStatus,
   ErrorCode,
 } from '@parlante/shared';
@@ -199,6 +200,8 @@ export function engineStatusFromHealth(
   return {
     available,
     reason,
+    // An operation the engine cannot do while it is running = its weights are not there.
+    reasonCode: reason === null ? null : 'weights_missing',
     device: health.device,
     secondsPerVideoSecond: health.secondsPerVideoSecond,
     operations,
@@ -211,11 +214,15 @@ export function engineStatusFromHealth(
 const START_HINT =
   'Start it with `pnpm avatar-engine` (see services/avatar-engine/README.md); instant 2D avatars work without it.';
 
-/** Status reported while the engine cannot be reached. */
-export function engineUnavailable(reason: string): EngineStatus {
+/** Status reported while the engine cannot be reached (`reasonCode`: translatable cause). */
+export function engineUnavailable(
+  reason: string,
+  reasonCode: EngineReasonCode = 'unknown',
+): EngineStatus {
   return {
     available: false,
     reason,
+    reasonCode,
     device: null,
     secondsPerVideoSecond: null,
     operations: { generate: false, prepare: false, animate: false },
@@ -236,13 +243,52 @@ function engineUrl(env: Pick<ProviderEnv, 'AVATAR_ENGINE_URL'>, pathname: string
   return env.AVATAR_ENGINE_URL.replace(/\/+$/, '') + pathname;
 }
 
+function timedOut(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+}
+
 /** Why a request to the engine failed at the network level, as a sentence for the user. */
 function unreachableMessage(env: Pick<ProviderEnv, 'AVATAR_ENGINE_URL'>, err: unknown): string {
   const cause = (err as { cause?: { code?: string } } | null)?.cause?.code;
-  const timedOut =
-    err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-  const detail = timedOut ? 'it did not answer in time' : (cause ?? 'connection failed');
+  const detail = timedOut(err) ? 'it did not answer in time' : (cause ?? 'connection failed');
   return `The local avatar engine is not reachable at ${env.AVATAR_ENGINE_URL} (${detail}). ${START_HINT}`;
+}
+
+/**
+ * AppError('SERVICE_UNAVAILABLE') for an engine that cannot be reached. `details.reason` is
+ * the stable, translatable code (`engine_unreachable` / `engine_timeout`): it travels to the
+ * API error, to `EngineStatus.reasonCode` and to the `StoredError` of a failed job.
+ */
+function unreachableError(env: Pick<ProviderEnv, 'AVATAR_ENGINE_URL'>, err: unknown): AppError {
+  const reason: EngineReasonCode = timedOut(err) ? 'engine_timeout' : 'engine_unreachable';
+  return new AppError(
+    'SERVICE_UNAVAILABLE',
+    unreachableMessage(env, err),
+    { reason },
+    {
+      cause: err,
+    },
+  );
+}
+
+const REASON_CODES: ReadonlySet<string> = new Set<EngineReasonCode>([
+  'engine_unreachable',
+  'engine_timeout',
+  'engine_error',
+  'engine_invalid',
+  'weights_missing',
+  'not_configured',
+  'unknown',
+]);
+
+/** `details.reason` of an engine AppError as an EngineReasonCode (`unknown` when it has none). */
+export function engineReasonCodeOf(err: unknown): EngineReasonCode {
+  if (!(err instanceof AppError)) return 'unknown';
+  if (err.code === 'PROVIDER_NOT_CONFIGURED') return 'not_configured';
+  const reason = (err.details as { reason?: unknown } | undefined)?.reason;
+  return typeof reason === 'string' && REASON_CODES.has(reason)
+    ? (reason as EngineReasonCode)
+    : 'unknown';
 }
 
 /**
@@ -261,14 +307,13 @@ export async function fetchEngineHealth(
       signal: AbortSignal.timeout(options.timeoutMs ?? 3000),
     });
   } catch (err) {
-    throw new AppError('SERVICE_UNAVAILABLE', unreachableMessage(env, err), undefined, {
-      cause: err,
-    });
+    throw unreachableError(env, err);
   }
   if (!response.ok) {
     throw new AppError(
       'SERVICE_UNAVAILABLE',
       `The avatar engine at ${env.AVATAR_ENGINE_URL} answered HTTP ${response.status} to its health check`,
+      { reason: 'engine_error' satisfies EngineReasonCode, httpStatus: response.status },
     );
   }
   const parsed = EngineHealthSchema.safeParse(await response.json().catch(() => null));
@@ -276,6 +321,7 @@ export async function fetchEngineHealth(
     throw new AppError(
       'SERVICE_UNAVAILABLE',
       `The service at ${env.AVATAR_ENGINE_URL} does not look like the Parlante avatar engine (unexpected /health answer)`,
+      { reason: 'engine_invalid' satisfies EngineReasonCode },
     );
   }
   return parsed.data;
@@ -308,6 +354,7 @@ export async function engineStatus(
       err instanceof Error
         ? err.message
         : `The local avatar engine is not available. ${START_HINT}`,
+      engineReasonCodeOf(err),
     );
   }
 }
@@ -456,9 +503,7 @@ export async function runEngineJob<K extends EngineJobResult['kind']>(
   } catch (err) {
     if (signal?.aborted) throw abortError(signal);
     if (err instanceof AppError) throw err;
-    throw new AppError('SERVICE_UNAVAILABLE', unreachableMessage(env, err), undefined, {
-      cause: err,
-    });
+    throw unreachableError(env, err);
   }
 
   /* ---- poll ---- */
@@ -502,7 +547,7 @@ export async function runEngineJob<K extends EngineJobResult['kind']>(
       throw new AppError(
         'SERVICE_UNAVAILABLE',
         'The avatar engine job was cancelled before it finished',
-        { jobId: job.jobId },
+        { jobId: job.jobId, reason: 'engine_canceled' },
       );
     }
 
@@ -513,7 +558,7 @@ export async function runEngineJob<K extends EngineJobResult['kind']>(
       throw new AppError(
         'SERVICE_UNAVAILABLE',
         `The avatar engine made no progress for ${env.AVATAR_ENGINE_STALL_SEC} seconds; the job was cancelled`,
-        { jobId: job.jobId },
+        { jobId: job.jobId, reason: 'engine_stalled' },
       );
     }
 
@@ -532,7 +577,7 @@ export async function runEngineJob<K extends EngineJobResult['kind']>(
         throw new AppError(
           'SERVICE_UNAVAILABLE',
           'The avatar engine no longer knows this job (it was restarted); retry the operation',
-          { jobId: job.jobId },
+          { jobId: job.jobId, reason: 'engine_restarted' },
         );
       }
       job = await readJob(response, `GET /v1/jobs/${job.jobId}`);
@@ -548,9 +593,7 @@ export async function runEngineJob<K extends EngineJobResult['kind']>(
       failures += 1;
       if (failures >= MAX_POLL_FAILURES) {
         await cancel(job.jobId);
-        throw new AppError('SERVICE_UNAVAILABLE', unreachableMessage(env, err), undefined, {
-          cause: err,
-        });
+        throw unreachableError(env, err);
       }
     }
   }

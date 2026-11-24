@@ -160,7 +160,7 @@ describe('asset library', () => {
     expect(await within(queue).findByText('Subido')).toBeInTheDocument();
     expect(
       await within(queue).findByText(
-        'Ese tipo de archivo no está admitido. The file is not a PNG image',
+        'Ese tipo de archivo no está admitido. Detalle técnico (en inglés): The file is not a PNG image',
       ),
     ).toBeInTheDocument();
     expect(within(queue).getByRole('status')).toHaveTextContent(

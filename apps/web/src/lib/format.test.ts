@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatFixed,
   formatBytes,
   formatClock,
   formatDate,
@@ -48,6 +49,10 @@ describe('format', () => {
     expect(formatPercent(140, 'en')).toBe('100%');
     expect(nbsp(formatPrice(2400, 'es'))).toBe('24 €');
     expect(formatPrice(2400, 'en')).toBe('€24');
+    // Fixed decimals follow the language too (the Studio showed "1.00×" in Spanish).
+    expect(formatFixed(1, 2, 'es')).toBe('1,00');
+    expect(formatFixed(1, 2, 'en')).toBe('1.00');
+    expect(formatFixed(1234.5, 1, 'es')).toBe('1234,5');
   });
 
   it('formats dates and relative times', () => {

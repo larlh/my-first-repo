@@ -2,7 +2,11 @@
 #   web  http://localhost:8080      API docs  http://localhost:8080/docs
 # Without Docker use `pnpm services` + `pnpm dev` (see README).
 #
-# Set APP_SECRET (>= 32 chars) in a `.env` file next to this one before exposing it anywhere.
+# Required: a `.env` file next to this one with APP_SECRET (>= 32 random characters; the stack
+# runs with NODE_ENV=production and refuses to start without it). Generate one with
+#   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+# Photorealistic avatars (optional, several GB of weights on first start):
+#   set AVATAR_ENGINE_TOKEN in .env too, then   docker compose --profile neural up --build
 x-node-env: &node-env
   NODE_ENV: production
   DATABASE_URL: postgres://parlante:parlante@postgres:5432/parlante
@@ -114,7 +118,10 @@ services:
       AVATAR_ENGINE_WORK_DIR: /data/avatar-engine
       AVATAR_ENGINE_MODELS_DIR: /models
       AVATAR_ENGINE_HOST: 0.0.0.0
-      AVATAR_ENGINE_TOKEN: ${AVATAR_ENGINE_TOKEN:?Set AVATAR_ENGINE_TOKEN in .env to use the neural profile}
+      # Required for this profile: the engine refuses to listen on 0.0.0.0 without it. It is not
+      # written as `${VAR:?…}` because Compose interpolates every service, also the ones of a
+      # profile that is not active, and that made plain `docker compose up` fail.
+      AVATAR_ENGINE_TOKEN: ${AVATAR_ENGINE_TOKEN:-}
     volumes:
       - engine:/data/avatar-engine
       - models:/models

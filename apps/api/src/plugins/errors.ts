@@ -58,6 +58,13 @@ export function registerErrorHandling(app: FastifyInstance): void {
   });
 
   app.setErrorHandler((error: FastifyError | AppError | Error, request, reply) => {
+    // The response has already started — typically a file download the client aborted (video
+    // players do it on every seek). Nothing can be sent any more, and it is not a server error.
+    if (reply.sent || reply.raw.headersSent) {
+      request.log.debug({ err: error }, 'error after the response started');
+      // Returning nothing: Fastify would try to send (and warn about) any returned value.
+      return undefined;
+    }
     if (isAppError(error)) {
       if (error.status >= 500) request.log.error({ err: error }, 'request failed');
       return reply.status(error.status).send(error.toBody());

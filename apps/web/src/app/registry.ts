@@ -1,30 +1,30 @@
 import { registerTranslations } from '@/lib/i18n';
-import { collectFeatures } from './features';
-import type { FeatureManifest } from './features';
+import { collectFeatures, loadManifests } from './features';
+import type { ManifestModule } from './features';
 
-/* Autoload: every src/features/<name>/index.ts(x). Manifests are tiny and eager; pages are
- * code-split through `lazy`. Adding a folder is all it takes to add a feature.
+/* Autoload: every src/features/<name>/index.ts(x). Adding a folder is all it takes to add a
+ * feature. Manifests are tiny; pages are code-split through `lazy`.
  *
- * Folders whose name starts with `_` (examples, playgrounds) are development-only: the literal
- * `import.meta.env.DEV` check keeps them out of production bundles altogether. */
-type ManifestModule = { default?: FeatureManifest; feature?: FeatureManifest };
-
-const modules: Record<string, ManifestModule> = import.meta.glob<ManifestModule>(
-  ['../features/*/index.{ts,tsx}', '!../features/_*/**'],
-  { eager: true },
-);
+ * - Production: all manifests come eagerly in one chunk (`./manifests`).
+ * - Development: each manifest is imported on its own, so a feature whose `index.tsx` is broken
+ *   (half-written by someone else, a bad import) is skipped and listed in `registry.problems`
+ *   instead of leaving a blank page for everybody. Folders starting with `_` (examples,
+ *   playgrounds) are development-only: the literal `import.meta.env.DEV` check keeps them and
+ *   the per-feature loaders out of production bundles altogether. */
+let modules: Record<string, ManifestModule>;
+const loadProblems: string[] = [];
 
 if (import.meta.env.DEV) {
-  // Lazy on purpose: an eager glob would be hoisted out of this branch and bundled anyway.
-  const loaders = import.meta.glob<ManifestModule>('../features/_*/index.{ts,tsx}');
-  await Promise.all(
-    Object.entries(loaders).map(async ([file, load]) => {
-      modules[file] = await load();
-    }),
-  );
+  const loaders = import.meta.glob<ManifestModule>('../features/*/index.{ts,tsx}');
+  const loaded = await loadManifests(loaders);
+  modules = loaded.modules;
+  loadProblems.push(...loaded.problems);
+} else {
+  modules = (await import('./manifests')).manifests;
 }
 
 export const registry = collectFeatures(modules, { dev: import.meta.env.DEV });
+registry.problems.unshift(...loadProblems);
 
 for (const feature of registry.features) {
   if (feature.i18n) registerTranslations(feature.id, feature.i18n);

@@ -218,7 +218,26 @@ describe('POST /api/photo-avatars (from a photo of a real person)', () => {
     expect(down.error).toMatchObject({
       code: 'SERVICE_UNAVAILABLE',
       message: 'El motor de avatares no está en marcha (pnpm avatar-engine)',
-      details: { capability: 'portrait', operation: 'prepare' },
+      // A provider that gives no code: the UI falls back to the message.
+      details: { capability: 'portrait', operation: 'prepare', reason: 'unknown' },
+    });
+
+    // The engine is stopped: the cause arrives as a code the UI translates, not only as an
+    // English sentence.
+    engineStatus = () =>
+      Promise.resolve({
+        available: false,
+        reason: 'The local avatar engine is not reachable at http://127.0.0.1:8090 (ECONNREFUSED).',
+        reasonCode: 'engine_unreachable',
+        device: null,
+        secondsPerVideoSecond: null,
+        operations: { generate: false, prepare: false, animate: false },
+      });
+    const stopped = await t.call(api.photoAvatars.create, { as: alice, body });
+    expect(stopped.status).toBe(503);
+    expect(stopped.error).toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      details: { capability: 'portrait', operation: 'prepare', reason: 'engine_unreachable' },
     });
 
     // Weights of the matting model missing: `prepare` is off although the engine answers.
@@ -228,14 +247,16 @@ describe('POST /api/photo-avatars (from a photo of a real person)', () => {
         reason: 'Faltan pesos: matting',
         operations: { generate: true, prepare: false, animate: true },
       });
-    expect((await t.call(api.photoAvatars.create, { as: alice, body })).error.message).toBe(
-      'Faltan pesos: matting',
-    );
+    const noWeights = await t.call(api.photoAvatars.create, { as: alice, body });
+    expect(noWeights.error.message).toBe('Faltan pesos: matting');
+    // An engine that answers but cannot do this operation is missing its weights.
+    expect(noWeights.error.details).toMatchObject({ reason: 'weights_missing' });
 
     engineStatus = () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:8090'));
     const unreachable = await t.call(api.photoAvatars.create, { as: alice, body });
     expect(unreachable.status).toBe(503);
     expect(unreachable.error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(unreachable.error.details).toMatchObject({ reason: 'unknown' });
 
     engineStatus = () =>
       Promise.reject(new AppError('PROVIDER_NOT_CONFIGURED', 'No portrait provider is configured'));
@@ -452,6 +473,7 @@ describe('POST /api/photo-avatars/generate (synthetic person from text)', () => 
 
   it('needs the engine to generate AND prepare; needs credits', async () => {
     const alice = await t.signUp();
+    const before = await balanceOf(t, alice);
     const body = { name: 'Presentadora', prompt: PROMPT };
     engineStatus = () =>
       Promise.resolve({
@@ -463,8 +485,25 @@ describe('POST /api/photo-avatars/generate (synthetic person from text)', () => 
     expect(res.status).toBe(503);
     expect(res.error).toMatchObject({
       message: 'Faltan pesos: portrait-generation',
-      details: { operation: 'generate' },
+      details: { operation: 'generate', reason: 'weights_missing' },
     });
+
+    engineStatus = () =>
+      Promise.resolve({
+        available: false,
+        reason: 'The local avatar engine is not reachable',
+        reasonCode: 'engine_unreachable',
+        device: null,
+        secondsPerVideoSecond: null,
+        operations: { generate: false, prepare: false, animate: false },
+      });
+    const stopped = await t.call(api.photoAvatars.generate, { as: alice, body });
+    expect(stopped.status).toBe(503);
+    expect(stopped.error.details).toMatchObject({
+      operation: 'generate',
+      reason: 'engine_unreachable',
+    });
+    expect(await balanceOf(t, alice)).toBe(before);
     expect(await avatarRows(alice)).toEqual([]);
 
     engineStatus = () => Promise.resolve(ENGINE_UP);

@@ -35,6 +35,17 @@ blocked.addSubnet('fe80::', 10, 'ipv6');
 blocked.addSubnet('ff00::', 8, 'ipv6');
 blocked.addSubnet('2001:db8::', 32, 'ipv6');
 blocked.addSubnet('64:ff9b::', 96, 'ipv6');
+// Ranges that EMBED an IPv4 address (so `::127.0.0.1` or a 6to4 form of 10.0.0.1 cannot stand
+// in for the blocked IPv4 one) and other ranges that are never a public web server.
+blocked.addSubnet('::', 96, 'ipv6'); // IPv4-compatible (deprecated), includes :: and ::1
+blocked.addSubnet('64:ff9b:1::', 48, 'ipv6'); // local-use NAT64 (RFC 8215)
+blocked.addSubnet('100::', 64, 'ipv6'); // discard-only
+blocked.addSubnet('2001::', 32, 'ipv6'); // Teredo
+blocked.addSubnet('2001:10::', 28, 'ipv6'); // ORCHID
+blocked.addSubnet('2001:20::', 28, 'ipv6'); // ORCHIDv2
+blocked.addSubnet('2002::', 16, 'ipv6'); // 6to4
+blocked.addSubnet('3fff::', 20, 'ipv6'); // documentation (RFC 9637)
+blocked.addSubnet('fec0::', 10, 'ipv6'); // site-local (deprecated)
 
 /** True for addresses that must never be reached from user-supplied URLs. */
 export function isBlockedAddress(address: string): boolean {

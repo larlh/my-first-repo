@@ -43,7 +43,11 @@ async function main(): Promise<void> {
   const database = await createTestDatabase();
   process.env.DATABASE_URL = database.url;
   process.env.PARLANTE_TEST_DATABASE = database.name;
-  const t = await createTestWorker({ LOG_LEVEL: 'silent' });
+  const t = await createTestWorker({
+    LOG_LEVEL: 'silent',
+    // The test harness is isolated from the engine; this demo is the one caller that wants it.
+    AVATAR_ENGINE_URL: process.env.AVATAR_ENGINE_URL ?? 'http://127.0.0.1:8090',
+  });
   // The job logs its measured speed ("render completed"): capture it for the report below.
   const completed: Record<string, unknown>[] = [];
   t.ctx.logger = pino(

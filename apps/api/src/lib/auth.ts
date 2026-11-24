@@ -27,7 +27,15 @@ import {
   users,
   workspaces,
 } from '@parlante/db';
-import type { ApiKeyRow, Db, MemberRow, SessionRow, UserRow, WorkspaceRow } from '@parlante/db';
+import type {
+  ApiKeyRow,
+  Db,
+  DbOrTx,
+  MemberRow,
+  SessionRow,
+  UserRow,
+  WorkspaceRow,
+} from '@parlante/db';
 import { cookieSecure } from '../config';
 import type { ApiConfig } from '../config';
 import type { ApiKeyAuth, AuthContext, SessionAuth } from '../types';
@@ -288,9 +296,12 @@ export async function changePassword(
 
 /* ---------- API keys ---------- */
 
-/** Create an API key for a workspace. `key` is the plain key — return it once, never store it. */
+/**
+ * Create an API key for a workspace. `key` is the plain key — return it once, never store it.
+ * Accepts a transaction, so a caller can count and insert under the same lock.
+ */
 export async function createApiKey(
-  db: Db,
+  db: DbOrTx,
   input: { workspaceId: string; name: string; createdBy: string | null },
 ): Promise<{ row: ApiKeyRow; key: string }> {
   const generated = generateApiKey();

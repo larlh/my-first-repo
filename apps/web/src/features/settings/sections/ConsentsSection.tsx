@@ -2,7 +2,7 @@ import type { ConsentKind, ConsentRecord } from '@parlante/shared';
 import { Camera, Mic, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { api, useApiInfiniteQuery, useApiMutation } from '@/lib/api';
+import { api, useApiInfiniteQuery, useApiMutation, useApiQuery } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useSession } from '@/lib/session';
 import {
@@ -52,7 +52,14 @@ function RevokeEffects({ kind }: { kind: ConsentKind }) {
   );
 }
 
-function ConsentCard({ record }: { record: ConsentRecord }) {
+function ConsentCard({
+  record,
+  resourceName,
+}: {
+  record: ConsentRecord;
+  /** Name of the avatar or voice the consent backs, when it could be looked up. */
+  resourceName?: string;
+}) {
   const { t } = useTranslation('settings');
   const format = useFormat();
   const errorText = useErrorText();
@@ -62,11 +69,15 @@ function ConsentCard({ record }: { record: ConsentRecord }) {
   const revoke = useApiMutation(api.consents.revoke, {
     invalidates: [api.consents.list],
     onSuccess: () => toast.success(t('consents.revoke.done', { name: record.subjectName })),
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
 
   return (
-    <li className="rounded-lg border border-line bg-surface shadow-xs">
+    <li
+      className="rounded-lg border border-line bg-surface shadow-xs"
+      data-resource-id={record.resourceId ?? undefined}
+    >
       <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start">
         <span
           aria-hidden="true"
@@ -110,7 +121,11 @@ function ConsentCard({ record }: { record: ConsentRecord }) {
           {record.resourceId && !revoked && (
             <p className="mt-1 text-sm text-fg-muted">
               {t(`consents.resource.${record.kind}`)}{' '}
-              <code className="font-mono text-xs text-fg">{record.resourceId}</code>
+              {resourceName ? (
+                <span className="font-medium text-fg">{resourceName}</span>
+              ) : (
+                <code className="font-mono text-xs text-fg">{record.resourceId}</code>
+              )}
             </p>
           )}
           <details className="mt-3">
@@ -156,6 +171,12 @@ function Consents() {
   const consents = useApiInfiniteQuery(api.consents.list, {
     query: { limit: 20, ...(kind === 'all' ? {} : { kind }) },
   });
+  // A consent stores the id of what was created with it; people know it by its name.
+  const voices = useApiQuery(api.voices.list, { query: { kind: 'cloned' } });
+  const avatars = useApiQuery(api.avatars.list, { query: {} });
+  const names = new Map<string, string>();
+  for (const voice of voices.data?.items ?? []) names.set(voice.id, voice.name);
+  for (const avatar of avatars.data?.items ?? []) names.set(avatar.id, avatar.name);
 
   return (
     <>
@@ -206,7 +227,11 @@ function Consents() {
           <>
             <ul className="flex flex-col gap-4" aria-label={t('consents.list')}>
               {consents.items.map((record) => (
-                <ConsentCard key={record.id} record={record} />
+                <ConsentCard
+                  key={record.id}
+                  record={record}
+                  resourceName={record.resourceId ? names.get(record.resourceId) : undefined}
+                />
               ))}
             </ul>
             <LoadMore

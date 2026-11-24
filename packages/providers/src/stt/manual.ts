@@ -19,7 +19,7 @@ import { splitPlainText } from '../tts/text';
 
 export const MANUAL_STT_INFO: ProviderRef = {
   id: 'manual',
-  name: 'Transcript provided by the user',
+  name: 'Transcripción aportada por el usuario',
   quality: 'basic',
   local: true,
 };

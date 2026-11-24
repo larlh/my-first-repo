@@ -154,6 +154,10 @@ export async function createTestApp(
     PUBLIC_WEB_URL: 'http://web.test',
     WEB_ORIGIN: 'http://web.test',
     RATE_LIMIT_ENABLED: 'false',
+    // Hermetic by default: nothing listens on port 9, so a neural engine that happens to run on
+    // this machine (:8090) never changes a test's outcome. Tests of a running engine stub the
+    // provider or pass their own AVATAR_ENGINE_URL.
+    AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
     ...env,
   });
   const app = await buildApp({ ...buildOptions, config, db: handle.db, queues });

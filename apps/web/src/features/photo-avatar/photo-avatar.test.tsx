@@ -264,6 +264,63 @@ describe('create a photorealistic avatar', () => {
     expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeVisible();
   });
 
+  it('explains in Spanish why the engine is off, from its stable reason code', async () => {
+    const off = {
+      ...engineOff('connect ECONNREFUSED 127.0.0.1:8090'),
+      reasonCode: 'engine_unreachable' as const,
+    };
+    renderFeatures(features, '/avatars/new', withEngine(createFakeApi(), off));
+    const panel = await screen.findByRole('region', { name: 'Motor neuronal local' });
+    expect(
+      await within(panel).findByText(/no hay nada escuchando en la dirección del motor/),
+    ).toBeVisible();
+    // The engine's own sentence stays as the technical detail.
+    expect(within(panel).getByText(/ECONNREFUSED 127\.0\.0\.1:8090/)).toBeVisible();
+  });
+
+  it('translates the stored cause of a failed job without repeating it in English', async () => {
+    const noFace = ownAvatar(5, {
+      status: 'failed',
+      name: 'Paisaje',
+      error: {
+        code: 'UNPROCESSABLE',
+        message: 'No face was found in the image.',
+        reason: 'no_face',
+      },
+    });
+    const api = withEngine(createFakeApi(), engineReady(), [noFace]).on(
+      'GET',
+      `/api/avatars/${noFace.id}`,
+      () => noFace,
+    );
+    renderFeatures(features, `/avatars/new?job=${noFace.id}`, api);
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText(/No se detecta ninguna cara en la foto/)).toBeVisible();
+    // The cause is explained in the language of the interface; the worker's English sentence
+    // says the same and is not shown next to it in a Spanish screen.
+    expect(within(alert).queryByText(/No face was found/)).not.toBeInTheDocument();
+  });
+
+  it('says next to a ready avatar that its portrait did not pass quality control, issue by issue', async () => {
+    const flawed = ownAvatar(6, {
+      kind: 'generated',
+      name: 'Retrato torcido',
+      quality: { passed: false, issues: ['head_tilted', 'brand_new_code'], attempts: 3 },
+    });
+    const api = withEngine(createFakeApi(), engineReady(), [flawed]).on(
+      'GET',
+      `/api/avatars/${flawed.id}`,
+      () => flawed,
+    );
+    renderFeatures(features, `/avatars/new?job=${flawed.id}`, api);
+    expect(await screen.findByText('El retrato no pasó el control de calidad')).toBeVisible();
+    expect(screen.getByText(/El motor lo intentó 3 veces/)).toBeVisible();
+    expect(screen.getByText('La cabeza está inclinada.')).toBeVisible();
+    // A code this build does not know is shown as it comes, never hidden.
+    expect(screen.getByText('brand_new_code')).toBeVisible();
+    expect(screen.getByText('Avatar listo')).toBeVisible();
+  });
+
   it('respects the plan allowance and is closed to viewers', async () => {
     const full = withEngine(
       createFakeApi(

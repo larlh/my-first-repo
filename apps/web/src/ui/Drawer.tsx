@@ -1,9 +1,11 @@
 import { X } from 'lucide-react';
 import { Dialog as RadixDialog, VisuallyHidden } from 'radix-ui';
+import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { IconButton } from './Button';
+import { focusInitialControl } from './initialFocus';
 import { useReturnFocus } from './useReturnFocus';
 
 export interface DrawerProps {
@@ -39,6 +41,7 @@ export function Drawer({
 }: DrawerProps) {
   const { t } = useTranslation('shell');
   const returnFocus = useReturnFocus(open);
+  const body = useRef<HTMLDivElement | null>(null);
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -46,6 +49,10 @@ export function Drawer({
         <RadixDialog.Content
           {...(description ? {} : { 'aria-describedby': undefined })}
           onCloseAutoFocus={returnFocus}
+          onOpenAutoFocus={(event) => {
+            // Navigation drawers (`bare`) keep the default: their first link is the right start.
+            if (!bare) focusInitialControl(event, body.current, null);
+          }}
           className={cn(
             'fixed inset-y-0 z-50 flex flex-col bg-surface text-fg shadow-lg outline-none',
             side === 'left'
@@ -79,7 +86,9 @@ export function Drawer({
           {bare ? (
             children
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+            <div ref={body} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {children}
+            </div>
           )}
           {footer && (
             <div className="flex flex-col-reverse gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-end">

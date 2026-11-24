@@ -12,6 +12,7 @@ import {
 import type {
   LanguageCode,
   STTProvider,
+  TTSProvider,
   TimedText,
   TranslationOptions,
   TranslationProvider,
@@ -670,6 +671,67 @@ describe('translation job — failures, credits and idempotency', () => {
       expect(await charged(blocked)).toBe(0);
     } finally {
       t.ctx.providers.stt = realStt;
+    }
+  }, 120_000);
+
+  it('moderates the TRANSLATED text before dubbing: a blocked language fails, nothing of it is spoken', async () => {
+    const realTranslation = t.ctx.providers.translation;
+    const realTts = t.ctx.providers.tts;
+    const spoken: string[] = [];
+    t.ctx.providers.translation = {
+      info: { id: 'fake-llm', name: 'Fake translator', quality: 'premium', local: false },
+      // The source passed moderation; the French translation introduces a blocked term.
+      translate: (request) =>
+        Promise.resolve({
+          texts: request.texts.map((text, index) =>
+            request.targetLanguage === 'fr' ? `Zarandajas ${index}` : `Line ${index}: ${text}`,
+          ),
+          provider: { id: 'fake-llm', name: 'Fake translator', quality: 'premium', local: false },
+        }),
+    };
+    const wrap = (tts: TTSProvider): TTSProvider => ({
+      ...tts,
+      info: tts.info,
+      listVoices: () => tts.listVoices(),
+      synthesize: (request) => {
+        spoken.push(request.text);
+        return tts.synthesize(request);
+      },
+    });
+    t.ctx.providers.tts = {
+      default: wrap(realTts.default),
+      get: (id) => {
+        const found = realTts.get(id);
+        return found ? wrap(found) : null;
+      },
+      all: () => realTts.all().map(wrap),
+    };
+    try {
+      const seeded = await seedTranslation({ targets: ['en', 'fr'] });
+      const { result } = await t.run(job, seeded.payload);
+      expect(result.completedLanguages).toEqual(['en']);
+      expect(result.failedLanguages).toEqual(['fr']);
+      const { outputs } = await state(seeded);
+      expect(outputs.get('fr')).toMatchObject({ status: 'failed', videoKey: null, segments: null });
+      expect(outputs.get('fr')?.error?.code).toBe('CONTENT_BLOCKED');
+      // Not one blocked line reached the voice provider or the storage.
+      expect(spoken.length).toBeGreaterThan(0);
+      expect(spoken.some((text) => /zarandajas/i.test(text))).toBe(false);
+      expect(
+        await t.ctx.providers.storage.exists(
+          storageKeys.translationOutput(
+            seeded.workspaceId,
+            seeded.translationJobId,
+            'fr',
+            'video.mp4',
+          ),
+        ),
+      ).toBe(false);
+      // Only the language that was delivered is paid for.
+      expect(await charged(seeded)).toBe(2);
+    } finally {
+      t.ctx.providers.translation = realTranslation;
+      t.ctx.providers.tts = realTts;
     }
   }, 120_000);
 

@@ -68,6 +68,18 @@ describe('job loading and config', () => {
     expect(enabledQueues(config)).toEqual(['render', 'system']);
     expect(enabledQueues(loadConfig({})).length).toBe(7);
   });
+
+  it('keeps the SSRF guard on by default and refuses to lift it in production', () => {
+    const secret = { APP_SECRET: 'a-private-secret-of-at-least-32-characters' };
+    expect(loadConfig({}).ALLOW_PRIVATE_URLS).toBe(false);
+    expect(loadConfig({ NODE_ENV: 'production', ...secret }).ALLOW_PRIVATE_URLS).toBe(false);
+    expect(
+      loadConfig({ NODE_ENV: 'development', ALLOW_PRIVATE_URLS: 'true' }).ALLOW_PRIVATE_URLS,
+    ).toBe(true);
+    expect(() =>
+      loadConfig({ NODE_ENV: 'production', ALLOW_PRIVATE_URLS: 'true', ...secret }),
+    ).toThrow(/ALLOW_PRIVATE_URLS is a development-only switch/);
+  });
 });
 
 describe('example job (system ping)', () => {
@@ -676,6 +688,12 @@ describe('final-failure hook', () => {
       message: 'The job failed',
     });
     expect(storedErrorFromFailedReason('NOT_A_CODE: hi').code).toBe('INTERNAL');
+    // What an unexpected failure says about the server never reaches the row (and the user).
+    expect(
+      storedErrorFromFailedReason(
+        "ENOENT: no such file or directory, open '/srv/parlante/tmp/job-1/in.wav'",
+      ),
+    ).toEqual({ code: 'INTERNAL', message: "ENOENT: no such file or directory, open '[path]'" });
   });
 });
 

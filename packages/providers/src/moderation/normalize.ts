@@ -51,7 +51,10 @@ function unleet(text: string): string {
 
 /** Lowercase, accent-free, punctuation-free text with single spaces. */
 function baseNormalize(text: string, leet: boolean): string {
-  const lowered = stripDiacritics(text.toLowerCase());
+  // Invisible format characters (zero-width space / joiners, soft hyphen, BOM, bidi marks) are
+  // removed first: inside a word they are neither spoken nor drawn, so they must not split it.
+  const visible = text.replace(/\p{Cf}+/gu, '');
+  const lowered = stripDiacritics(visible.toLowerCase());
   const mapped = leet ? unleet(lowered) : lowered;
   return mapped
     .replace(/[^\p{L}\p{N}]+/gu, ' ')

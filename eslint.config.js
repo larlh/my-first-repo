@@ -79,6 +79,13 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    // End-to-end scripts (scripts/e2e.sh): Node CLIs that print their report and hand functions
+    // to the browser through Playwright (`page.evaluate`), where browser globals exist.
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: { 'no-console': 'off' },
+  },
+  {
     // Tests may use Math.random for fixtures and console for debugging output.
     files: ['**/*.test.{ts,tsx}', '**/test/**', '**/testing/**'],
     rules: { 'no-restricted-syntax': 'off' },

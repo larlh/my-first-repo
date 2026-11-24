@@ -58,7 +58,7 @@ function JobRow({ job }: { job: TranslationJob }) {
             />
           ) : (
             <p className="nums text-xs text-fg-muted">
-              {t('detail.counts', { done: counts.completed, total: job.targetLanguages.length })}
+              {t('detail.counts', { done: counts.completed, count: job.targetLanguages.length })}
             </p>
           )}
         </div>

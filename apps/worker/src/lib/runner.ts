@@ -1,6 +1,6 @@
 import { UnrecoverableError, Worker } from 'bullmq';
 import type { Job } from 'bullmq';
-import { ErrorCodeSchema, QUEUES, toStoredError } from '@parlante/shared';
+import { ErrorCodeSchema, QUEUES, scrubInternals, toStoredError } from '@parlante/shared';
 import type { QueueKey, QueueProgress, StoredError } from '@parlante/shared';
 import { createRedisConnection } from '@parlante/jobs';
 import { concurrencyFor } from '../config';
@@ -74,7 +74,8 @@ export function storedErrorFromFailedReason(reason: string | undefined): StoredE
       message: 'The worker stopped while processing this job. Nothing was charged; try again.',
     };
   }
-  return { code: 'INTERNAL', message: text.slice(0, 500) || 'The job failed' };
+  // Unexpected failure: its text may name paths or internal services (see `scrubInternals`).
+  return { code: 'INTERNAL', message: scrubInternals(text).slice(0, 500) || 'The job failed' };
 }
 
 /**

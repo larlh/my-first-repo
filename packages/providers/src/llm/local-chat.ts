@@ -37,6 +37,8 @@ const QUESTION_PREFIX = /^\s*(?:q|p|pregunta|question|frage|domanda|pergunta|vra
 const ANSWER_PREFIX =
   /^\s*(?:a|r|respuesta|answer|réponse|reponse|antwort|risposta|resposta|antwoord)\s*[:.)-]\s*/iu;
 const HEADING = /^\s*#{1,6}\s+/u;
+/** A line that OPENS with one question (no earlier sentence end) and goes on with its answer. */
+const INLINE_QUESTION = /^\s*([^.!?？…]{3,200}[?？])\s+(\S.*)$/u;
 const BULLET = /^\s*(?:[-–—•*]|\d{1,2}[.)])\s+/u;
 
 /** Sentences of the instructions that order the avatar around are not facts to recite. */
@@ -92,6 +94,15 @@ export function parseKnowledge(knowledge: string): Passage[] {
       if (HEADING.test(line) || isQuestion || /[?？]$/u.test(line)) {
         flush();
         title = line.replace(HEADING, '').replace(QUESTION_PREFIX, '');
+        continue;
+      }
+      // "¿Cuál es el horario? De lunes a viernes." — question and answer on ONE line, the way
+      // people type a FAQ (and the way the product's own example shows it).
+      const inline = INLINE_QUESTION.exec(line.replace(BULLET, ''));
+      if (inline) {
+        flush();
+        title = inline[1]!;
+        body.push(inline[2]!.replace(ANSWER_PREFIX, ''));
         continue;
       }
       body.push(line.replace(ANSWER_PREFIX, '').replace(BULLET, ''));

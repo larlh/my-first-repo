@@ -145,6 +145,7 @@ describe('avatar catalogue', () => {
       prompt: null,
       seed: null,
       model: null,
+      quality: null,
       provider: { id: 'canvas2d', name: 'Parlante 2D (Canvas)', quality: 'basic', local: true },
       workspaceId: null,
       consentId: null,
@@ -223,6 +224,8 @@ describe('avatar catalogue', () => {
       provider: t.app.providers.portrait.info,
       consentId: null,
       error: null,
+      // Nothing was reported by the engine's checks.
+      quality: null,
     });
     // Signed storage URLs that really serve the files.
     for (const [url, file] of [
@@ -255,6 +258,34 @@ describe('avatar catalogue', () => {
       imageUrl: null,
       error: { code: 'UNPROCESSABLE', message: 'No usable face was found in the photo' },
     });
+  });
+
+  it('exposes the quality verdict of a ready avatar, and only then', async () => {
+    const alice = await t.signUp();
+    const flagged = await seedReadyAvatar(alice, {
+      quality: { passed: false, issues: ['head_tilted', 'matte_fallback'], attempts: 4 },
+    });
+    const clean = await seedReadyAvatar(alice, {
+      quality: { passed: true, issues: [], attempts: 1 },
+    });
+    // The verdict is written with the raw portrait, while the avatar is still being prepared:
+    // it is not shown before there is a picture to judge.
+    const processing = await seedPhotoAvatar(alice, {
+      status: 'processing',
+      quality: { passed: false, issues: ['mouth_open'], attempts: 4 },
+    });
+
+    const one = await t.call(api.avatars.get, { as: alice, params: { avatarId: flagged } });
+    expect(one.body).toMatchObject({
+      status: 'ready',
+      quality: { passed: false, issues: ['head_tilted', 'matte_fallback'], attempts: 4 },
+    });
+    const list = await t.call(api.avatars.list, { as: alice, query: { rendering: 'photoreal' } });
+    const byId = new Map(list.body.items.map((a) => [a.id, a]));
+    expect(byId.get(clean)?.quality).toEqual({ passed: true, issues: [], attempts: 1 });
+    expect(byId.get(processing)).toMatchObject({ status: 'processing', quality: null });
+    // Stock avatars were reviewed by hand: nothing to report.
+    expect(byId.get(photoreal[0]!.id)?.quality).toBeNull();
   });
 
   it('filters by kind, rendering, gender, age group and style', async () => {
@@ -365,6 +396,8 @@ describe('avatar catalogue', () => {
     expect(down.status).toBe(200);
     expect(down.body.engine).toMatchObject({
       available: false,
+      // …and with a code the UI translates (the engine is not running).
+      reasonCode: 'engine_unreachable',
       device: null,
       secondsPerVideoSecond: null,
       operations: { generate: false, prepare: false, animate: false },
@@ -402,6 +435,8 @@ describe('avatar catalogue', () => {
     expect(up.body.engine).toEqual({
       available: true,
       reason: 'Portrait generation weights are not downloaded',
+      // A provider that explains itself without a code.
+      reasonCode: 'unknown',
       device: 'cpu',
       secondsPerVideoSecond: 14.5,
       operations: { generate: false, prepare: true, animate: true },

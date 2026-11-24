@@ -13,6 +13,7 @@ import {
   gte,
   isNull,
   members,
+  ne,
   notInArray,
   renderJobs,
   sum,
@@ -69,8 +70,16 @@ export async function computeUsage(
   return {
     storageBytes: Number(storage?.bytes ?? 0),
     members: await db.$count(members, eq(members.workspaceId, workspaceId)),
-    photoAvatars: await db.$count(avatars, eq(avatars.workspaceId, workspaceId)),
-    clonedVoices: await db.$count(voices, eq(voices.workspaceId, workspaceId)),
+    // Same rule as the modules that enforce the allowance (photo-avatars, voice-clones): a
+    // FAILED avatar / voice was refunded and does not take a place of the plan.
+    photoAvatars: await db.$count(
+      avatars,
+      and(eq(avatars.workspaceId, workspaceId), ne(avatars.status, 'failed')),
+    ),
+    clonedVoices: await db.$count(
+      voices,
+      and(eq(voices.workspaceId, workspaceId), ne(voices.status, 'failed')),
+    ),
     apiKeys: await db.$count(
       apiKeys,
       and(eq(apiKeys.workspaceId, workspaceId), isNull(apiKeys.revokedAt)),

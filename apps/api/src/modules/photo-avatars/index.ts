@@ -48,8 +48,10 @@ const OPERATION_LABEL: Record<EngineOperation, string> = {
 };
 
 /**
- * The local engine must be able to do the work right now. Checked BEFORE charging; the
- * engine's own reason ("not running", "weights missing"…) goes to the user verbatim.
+ * The local engine must be able to do the work right now. Checked BEFORE charging. The
+ * engine's own reason ("not running", "weights missing"…) is the message, and its stable code
+ * travels in `details.reason` (`engine_unreachable`, `weights_missing`… — the same values as
+ * `Capabilities.avatarEngine.reasonCode`) so the UI can say it in the user's language.
  */
 async function assertEngineCan(
   providers: Pick<Providers, 'portrait'>,
@@ -63,6 +65,7 @@ async function assertEngineCan(
     status = {
       available: false,
       reason: err instanceof Error ? err.message : 'The avatar engine status check failed',
+      reasonCode: 'unknown',
       device: null,
       secondsPerVideoSecond: null,
     };
@@ -73,7 +76,13 @@ async function assertEngineCan(
         'SERVICE_UNAVAILABLE',
         status.reason ??
           `The local avatar engine cannot ${OPERATION_LABEL[operation]} right now. Nothing was charged`,
-        { capability: 'portrait', operation, provider: providers.portrait.info.id },
+        {
+          capability: 'portrait',
+          operation,
+          provider: providers.portrait.info.id,
+          // A running engine that cannot do ONE operation is missing that operation's weights.
+          reason: status.reasonCode ?? (status.available ? 'weights_missing' : 'unknown'),
+        },
       );
     }
   }

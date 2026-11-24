@@ -4,7 +4,9 @@ import { generateLocalScript } from './local-script';
 
 const INFO: ProviderRef = {
   id: 'local',
-  name: 'Modo básico (local)',
+  // The provider's own name. "Modo básico" is how the UI labels `quality: 'basic'`; repeating it
+  // here made every badge read "Modo básico · Modo básico (local)".
+  name: 'Heurística local',
   quality: 'basic',
   local: true,
 };

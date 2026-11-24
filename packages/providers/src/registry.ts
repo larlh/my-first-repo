@@ -42,6 +42,7 @@ function statusOrUnavailable(status: Promise<EngineStatus>): Promise<EngineStatu
   return status.catch((err: unknown) => ({
     available: false,
     reason: err instanceof Error ? err.message : 'Avatar engine status check failed',
+    reasonCode: 'unknown' as const,
     device: null,
     secondsPerVideoSecond: null,
   }));
@@ -71,6 +72,14 @@ export function mergeEngineStatus(
   return {
     available,
     reason: allUp ? null : (lipsync.reason ?? portrait.reason),
+    // Same precedence as `reason`, so code and sentence always describe the same cause.
+    reasonCode: allUp
+      ? null
+      : lipsync.reason !== null
+        ? (lipsync.reasonCode ?? 'unknown')
+        : portrait.reason !== null
+          ? (portrait.reasonCode ?? 'unknown')
+          : 'unknown',
     device: lipsync.device ?? portrait.device,
     secondsPerVideoSecond: lipsync.secondsPerVideoSecond,
     operations,

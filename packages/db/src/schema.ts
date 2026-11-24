@@ -18,6 +18,7 @@ import type {
   AssetPurpose,
   AsyncJobStatus,
   AsyncResourceStatus,
+  AvatarQuality,
   BrandColors,
   BrandFonts,
   Composition,
@@ -243,6 +244,11 @@ export const avatars = pgTable(
     /** Landmarks supplied by the user at creation (null = estimate). */
     requestedLandmarks: jsonb('requested_landmarks').$type<PhotoAvatarRig['landmarks']>(),
     rig: jsonb('rig').$type<PhotoAvatarRig>(),
+    /**
+     * Verdict of the engine's automatic checks (generated portrait, matte), written by the
+     * photo-avatar job; null = nothing to report. A `ready` avatar may carry `passed: false`.
+     */
+    quality: jsonb('quality').$type<AvatarQuality>(),
     /** Set by the API on insert (`providers.portrait.info`); the job confirms it. */
     provider: jsonb('provider').$type<ProviderRef>(),
     /**

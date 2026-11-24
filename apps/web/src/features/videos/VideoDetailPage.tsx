@@ -7,6 +7,7 @@ import {
   Copy,
   FileQuestion,
   History,
+  Languages,
   MoreHorizontal,
   PenLine,
   SquarePen,
@@ -20,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { JobStatus } from '@/components/JobStatus';
 import { VideoPlayer } from '@/components/VideoPlayer';
+import type { VideoPlayerHandle } from '@/components/VideoPlayer';
 import { api, apiQueryKey, useApiMutation, useInvalidateApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { currentLocale } from '@/lib/i18n';
@@ -176,6 +178,7 @@ export default function VideoDetailPage() {
 
   const [renderOpen, setRenderOpen] = useState(false);
   const [currentMs, setCurrentMs] = useState(0);
+  const player = useRef<VideoPlayerHandle | null>(null);
   // A cancelled render falls back to the previous output: that is not "render finished".
   const canceled = useRef(false);
 
@@ -338,6 +341,14 @@ export default function VideoDetailPage() {
                   >
                     {t('actions.duplicate')}
                   </MenuItem>
+                  {hasOutput && available.translate && (
+                    <MenuItem
+                      icon={<Languages aria-hidden="true" />}
+                      onSelect={() => void navigate(ROUTES.translateVideo(video.id))}
+                    >
+                      {t('actions.translate')}
+                    </MenuItem>
+                  )}
                   <MenuSeparator />
                   <MenuItem
                     tone="danger"
@@ -450,8 +461,12 @@ export default function VideoDetailPage() {
                 poster={media.thumbnailUrl}
                 aspect={video.aspect}
                 subtitles={subtitles}
+                // Burnt-in subtitles are already in the picture: the caption overlay starts off
+                // so the same line is not drawn twice (it can still be turned on).
+                defaultSubtitleLang={video.composition.subtitles.enabled ? null : undefined}
                 downloadUrl={media.downloadUrl}
                 onTimeUpdate={setCurrentMs}
+                controls={player}
                 className="shadow-md"
               />
             ) : (
@@ -482,6 +497,7 @@ export default function VideoDetailPage() {
               renderedAt={video.renderedAt}
               currentMs={currentMs}
               lang={lang}
+              onSeek={(ms) => player.current?.seek(ms, { play: true })}
             />
           )}
         </div>

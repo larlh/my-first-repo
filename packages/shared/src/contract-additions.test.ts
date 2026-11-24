@@ -307,6 +307,7 @@ describe('storage keys (additions)', () => {
     };
     expect(response.parse({ items: [], engine }).engine).toEqual({
       ...engine,
+      reasonCode: null,
       operations: { generate: false, prepare: false, animate: false },
       models: [],
       nonCommercial: false,

@@ -13,8 +13,11 @@ export interface PcmAudio {
 
 const HEADER_BYTES = 44;
 
-/** Wrap mono PCM16 samples in a canonical 44-byte RIFF/WAVE header. */
-export function encodeWav(samples: Int16Array, sampleRate: number): Uint8Array {
+/**
+ * Wrap mono PCM16 samples in a canonical 44-byte RIFF/WAVE header. The result owns a fresh
+ * `ArrayBuffer` (never a shared one), which is what `Blob` / `fetch` bodies require.
+ */
+export function encodeWav(samples: Int16Array, sampleRate: number): Uint8Array<ArrayBuffer> {
   const dataBytes = samples.length * 2;
   const out = new Uint8Array(HEADER_BYTES + dataBytes);
   const view = new DataView(out.buffer);

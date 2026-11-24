@@ -15,6 +15,7 @@ import {
 } from '@parlante/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  MusicTrackSchema,
   PublicVideoSchema,
   TtsCacheMetaSchema,
   createComposition,
@@ -33,6 +34,7 @@ import type {
 } from '@parlante/shared';
 import { storageKeys, ttsCacheKey } from '@parlante/shared/node';
 import type { DbHandle } from '@parlante/db';
+import { listStockAssets } from '@parlante/stock-assets';
 import { connectTestDb, resetDatabase, seedAccount } from '@parlante/db/testing';
 import {
   InMemoryQueueClient,
@@ -488,6 +490,105 @@ describe('startRender', () => {
     expect(await tableCounts()).toEqual({ renderJobs: 0, ledger: 0 });
   });
 
+  it('rejects images, videos and music that are missing, of the wrong kind or of another workspace', async () => {
+    const a = await seedAccount(handle.db, { credits: 30 });
+    const b = await seedAccount(handle.db, { credits: 30 });
+    const deps = { db: handle.db, queues, providers: fakeProviders().providers };
+    const asset = async (workspaceId: string, kind: 'image' | 'video' | 'audio') => {
+      const id = newId('asset');
+      await handle.db.insert(assets).values({
+        id,
+        workspaceId,
+        kind,
+        name: kind,
+        mimeType: `${kind}/x`,
+        sizeBytes: 10,
+        durationMs: kind === 'image' ? null : 3000,
+        storageKey: storageKeys.asset(workspaceId, id, 'bin'),
+      });
+      return id;
+    };
+    const mine = {
+      image: await asset(a.workspace.id, 'image'),
+      video: await asset(a.workspace.id, 'video'),
+      audio: await asset(a.workspace.id, 'audio'),
+    };
+    const foreign = {
+      image: await asset(b.workspace.id, 'image'),
+      video: await asset(b.workspace.id, 'video'),
+      audio: await asset(b.workspace.id, 'audio'),
+    };
+    const ref = (assetId: string) => ({ source: 'asset' as const, assetId });
+    const box = { x: 0, y: 0, w: 0.5, h: 0.5 };
+    const build = (ids: { image: string; video: string; audio: string }): Composition[] => [
+      createComposition({ scenes: [{ background: { type: 'image', src: ref(ids.image) } }] }),
+      createComposition({ scenes: [{ background: { type: 'video', src: ref(ids.video) } }] }),
+      createComposition({ scenes: [{ layers: [{ type: 'image', src: ref(ids.image), box }] }] }),
+      createComposition({ scenes: [{ layers: [{ type: 'video', src: ref(ids.video), box }] }] }),
+      { ...createComposition(), music: MusicTrackSchema.parse({ src: ref(ids.audio) }) },
+    ];
+    const run = (composition: Composition) =>
+      seedVideo(a.workspace.id, { composition }).then((video) =>
+        startRender(deps, {
+          workspaceId: a.workspace.id,
+          videoId: video.id,
+          resolution: '720p',
+          createdBy: null,
+        }),
+      );
+
+    // Another workspace's file looks exactly like a missing one, wherever it is referenced.
+    const missing = { image: newId('asset'), video: newId('asset'), audio: newId('asset') };
+    for (const ids of [foreign, missing]) {
+      for (const composition of build(ids)) {
+        await expect(run(composition)).rejects.toMatchObject({ code: 'UNPROCESSABLE' });
+      }
+    }
+    // A file of the wrong kind (an image used as a video, audio as a picture…).
+    for (const composition of build({ image: mine.audio, video: mine.image, audio: mine.video })) {
+      await expect(run(composition)).rejects.toMatchObject({ code: 'UNPROCESSABLE' });
+    }
+    await expect(
+      run(
+        createComposition({
+          scenes: [
+            { background: { type: 'image', src: { source: 'stock', stockId: 'no-such-stock' } } },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'UNPROCESSABLE', details: { stockId: 'no-such-stock' } });
+    // Nothing was charged or queued for any of them.
+    expect(await tableCounts()).toEqual({ renderJobs: 0, ledger: 0 });
+    expect(queues.size).toBe(0);
+    expect(await getCreditBalance(handle.db, a.workspace.id)).toBe(30);
+
+    // The workspace's own files (and real stock assets) render.
+    const stockImage = listStockAssets().find((item) => item.kind === 'image');
+    const stockAudio = listStockAssets().find((item) => item.kind === 'audio');
+    if (!stockImage || !stockAudio) throw new Error('the stock catalogue has no image / music');
+    const own = build(mine);
+    own.push({
+      ...createComposition({
+        scenes: [
+          { background: { type: 'image', src: { source: 'stock', stockId: stockImage.id } } },
+        ],
+      }),
+      music: MusicTrackSchema.parse({ src: { source: 'stock', stockId: stockAudio.id } }),
+    });
+    const skip = { ...deps };
+    for (const composition of own) {
+      const video = await seedVideo(a.workspace.id, { composition });
+      const started = await startRender(skip, {
+        workspaceId: a.workspace.id,
+        videoId: video.id,
+        resolution: '720p',
+        createdBy: null,
+        skipConcurrencyLimit: true,
+      });
+      expect(started.renderJob.status).toBe('queued');
+    }
+  });
+
   it('uses the real length of uploaded narration for limits and cost', async () => {
     const { workspace } = await seedAccount(handle.db, { credits: 30 });
     const assetId = newId('asset');
@@ -543,20 +644,31 @@ describe('startRender', () => {
     } as const;
     await expect(
       startRender({ db: handle.db, queues, providers: fake.providers }, input),
-    ).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE', message: 'Engine stopped' });
+    ).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Engine stopped',
+      // A provider that gives no code: the UI falls back to the message.
+      details: { capability: 'lipsync', operation: 'animate', reason: 'unknown' },
+    });
     expect(await tableCounts()).toEqual({ renderJobs: 0, ledger: 0 });
 
-    // Engine up but without animation weights: still refused before charging.
+    // Engine up but without animation weights: still refused before charging, and the cause
+    // travels as the provider's translatable code.
     fake.engine = {
       available: true,
       reason: 'Animation weights are not downloaded',
+      reasonCode: 'weights_missing',
       device: 'cpu',
       secondsPerVideoSecond: null,
       operations: { generate: true, prepare: true, animate: false },
     };
     await expect(
       startRender({ db: handle.db, queues, providers: fake.providers }, input),
-    ).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    ).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      details: { operation: 'animate', reason: 'weights_missing' },
+    });
+    expect(await tableCounts()).toEqual({ renderJobs: 0, ledger: 0 });
 
     fake.engine = {
       available: true,
@@ -760,6 +872,58 @@ describe('synthesizeCached', () => {
         JSON.parse(new TextDecoder().decode(fake.objects.get(storageKeys.ttsCacheMeta(hash)))),
       ).success,
     ).toBe(true);
+  });
+});
+
+describe('synthesizeCached with a cloned voice', () => {
+  it('keeps the audio under the prefix of the voice, so deleting the voice deletes it', async () => {
+    const a = await seedAccount(handle.db);
+    const fake = fakeProviders();
+    const deps = { db: handle.db, providers: fake.providers };
+    const voiceId = newId('voice');
+    const consentId = newId('consent');
+    await handle.db.insert(consentRecords).values({
+      id: consentId,
+      workspaceId: a.workspace.id,
+      userId: a.user.id,
+      kind: 'voice_clone',
+      subjectName: 'Ana Pérez',
+      relationship: 'self',
+      statementVersion: 'v1',
+      statement: 'Consiento',
+      locale: 'es',
+      ip: '127.0.0.1',
+    });
+    await handle.db.insert(voices).values({
+      id: voiceId,
+      workspaceId: a.workspace.id,
+      name: 'Mi voz',
+      language: 'es',
+      consentId,
+      status: 'ready',
+      ttsProviderId: 'espeak',
+      providerVoiceId: 'es-f1',
+      profile: { baseVoiceId: 'es-f1', pitchSemitones: 2, speed: 1.1, meanF0Hz: 210 },
+    });
+
+    const request = { text: 'Hola, soy yo', voiceId, language: 'es' };
+    const first = await synthesizeCached(deps, a.workspace.id, request);
+    const prefix = storageKeys.voicePrefix(a.workspace.id, voiceId);
+    expect(first.audioKey.startsWith(`${prefix}tts/`)).toBe(true);
+    // Nothing of a cloned voice goes to the cache shared by every workspace.
+    expect([...fake.objects.keys()].every((key) => key.startsWith(prefix))).toBe(true);
+    expect([...fake.objects.keys()]).toHaveLength(2);
+    // Still a cache: the worker reuses what the API previewed.
+    const second = await synthesizeCached(deps, a.workspace.id, request);
+    expect(second).toMatchObject({ cached: true, audioKey: first.audioKey });
+    expect(fake.synthesized).toHaveLength(1);
+
+    // The same text with the stock voice it is based on lives in the shared cache.
+    const stock = await synthesizeCached(deps, a.workspace.id, {
+      ...request,
+      voiceId: 'espeak:es-f1',
+    });
+    expect(stock.audioKey.startsWith('cache/tts/')).toBe(true);
   });
 });
 

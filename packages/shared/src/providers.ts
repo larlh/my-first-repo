@@ -7,7 +7,7 @@ import type {
   ScriptTone,
   VoiceProfile,
 } from './entities';
-import type { Gender } from './entities';
+import type { EngineReasonCode, Gender } from './entities';
 import type { LanguageCode } from './languages';
 import type { VisemeCue, WordCue } from './runtime';
 import type { TimedText } from './subtitles';
@@ -198,6 +198,11 @@ export interface EngineStatus {
   /** True when the operations THIS provider offers are usable right now. */
   available: boolean;
   reason: string | null;
+  /**
+   * `reason` as a stable code UIs can translate (additive, optional; null/absent = none).
+   * The `local-neural` providers always fill it when `reason` is set.
+   */
+  reasonCode?: EngineReasonCode | null;
   device: 'cpu' | 'gpu' | null;
   /** Measured seconds of computation per second of animated video, or null if unknown. */
   secondsPerVideoSecond: number | null;
@@ -325,6 +330,12 @@ export interface PreparedPortrait {
   /** Landmarks on the PREPARED portrait (normalised 0..1). */
   landmarks: PhotoLandmarks;
   landmarksSource: 'detected' | 'user' | 'estimated';
+  /**
+   * Which model drew the matte (additive, optional). The local engine reports `matting` for
+   * its dedicated matting model and the id of the fallback segmenter when that one was not
+   * usable (coarser hair edge); null = no matte. Absent = the provider does not say.
+   */
+  matteModel?: string | null;
   provider: ProviderRef;
 }
 
@@ -346,8 +357,23 @@ export interface PortraitProvider extends BaseProvider {
      * quality checks fail) → stored in `avatars.seed` / `Avatar.seed`. Absent = `request.seed`.
      */
     seed?: number;
+    /**
+     * Automatic quality control of the portrait, when the engine runs one (additive,
+     * optional). `passed: false` = no attempt passed every check and the least bad one was
+     * returned with `issues` (`mouth_open`, `head_tilted`, `not_frontal`…): callers must not
+     * present it as a clean portrait (stored in `avatars.quality` / `Avatar.quality`).
+     */
+    quality?: { passed: boolean; issues: string[]; attempts?: number };
   }>;
   prepare(request: PortraitPreparationRequest): Promise<PreparedPortrait>;
+  /**
+   * Additive, optional: remove whatever the provider keeps about a PREPARED portrait outside
+   * the caller's storage (the local engine caches the features it derives from the face).
+   * `portraitSha256` = sha256 (hex) of the prepared portrait file. Called when a workspace
+   * avatar is deleted or its consent revoked, so nothing derived from the person stays on the
+   * machine (master prompt §5). Idempotent: an unknown portrait is not an error.
+   */
+  forget?(request: { portraitSha256: string }): Promise<void>;
 }
 
 /* ---------- voice cloning ---------- */

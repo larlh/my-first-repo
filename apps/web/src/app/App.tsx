@@ -42,6 +42,36 @@ export function AppProviders({ client, children }: { client: QueryClient; childr
   );
 }
 
+/**
+ * Development only: features that could not be mounted (see `registry.ts`). The rest of the
+ * application keeps working; this says why a page or a menu entry is missing. Developer
+ * diagnostics, so the text is not translated.
+ */
+export function FeatureProblems({ problems }: { problems: readonly string[] }) {
+  const [open, setOpen] = useState(true);
+  if (!open || problems.length === 0) return null;
+  return (
+    <div
+      role="alert"
+      className="fixed inset-x-3 bottom-3 z-[95] mx-auto max-w-3xl rounded-lg border border-danger bg-danger-soft p-4 text-sm text-danger-text shadow-lg"
+    >
+      <div className="flex items-start gap-3">
+        <p className="min-w-0 flex-1 font-semibold">
+          {problems.length} feature problem(s) — the rest of the app is still running
+        </p>
+        <button type="button" className="shrink-0 underline" onClick={() => setOpen(false)}>
+          Dismiss
+        </button>
+      </div>
+      <ul className="mt-2 max-h-40 list-disc overflow-y-auto pl-5 font-mono text-xs break-words">
+        {problems.map((problem) => (
+          <li key={problem}>{problem}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function App() {
   const [client] = useState(createQueryClient);
   const [router] = useState(() => createAppRouter(registry));
@@ -50,6 +80,7 @@ export function App() {
       <RegistryProvider registry={registry}>
         <RouterProvider router={router} />
       </RegistryProvider>
+      {import.meta.env.DEV && <FeatureProblems problems={registry.problems} />}
     </AppProviders>
   );
 }

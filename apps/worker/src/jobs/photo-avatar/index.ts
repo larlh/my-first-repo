@@ -1,7 +1,13 @@
 import fs from 'node:fs/promises';
 import { AppError, PhotoAvatarRigSchema, toStoredError } from '@parlante/shared';
-import type { EngineProgress, PhotoAvatarRig, ProviderRef } from '@parlante/shared';
-import { storageKeys } from '@parlante/shared/node';
+import type {
+  AvatarQuality,
+  EngineProgress,
+  PhotoAvatarRig,
+  PreparedPortrait,
+  ProviderRef,
+} from '@parlante/shared';
+import { sha256Hex, storageKeys } from '@parlante/shared/node';
 import { and, assets, avatars, eq } from '@parlante/db';
 import type { AvatarRow } from '@parlante/db';
 import {
@@ -32,13 +38,22 @@ import type { TempDir } from '../../lib/tmp';
  *     applied: the image of the Canvas stand-in) · thumb.jpg, all under `storageKeys.avatarFile`
  *   → rig { imageWidth, imageHeight, landmarks, landmarksSource } → status `ready`
  *
+ * Quality (honesty rule): the engine keeps its least bad portrait when none of its attempts
+ * passes the automatic quality control, and degrades to a coarser matte when the dedicated
+ * matting model is not usable. Neither is a failure — the avatar still becomes `ready` when
+ * the preparation accepts the picture — but the verdict is stored in `avatars.quality` so the
+ * UI says so instead of presenting a flagged portrait as a clean one. A portrait the
+ * preparation rejects (no usable face…) fails the avatar and refunds its credits.
+ *
  * Progress and the MEASURED time remaining are persisted on the row with
  * `reportAvatarProgress` (generating a portrait on CPU takes minutes; the user sees a real
  * bar). A final failure goes through `markAvatarFailed` (stores the error, refunds).
  *
  * Privacy: an avatar deleted while the job runs (delete, or consent revoked) must leave no
  * image of the person behind — the job re-checks the row before and after writing files and
- * removes the whole prefix when the avatar is gone.
+ * removes the whole prefix when the avatar is gone. The engine also caches the features it
+ * derives from every portrait it prepares: when the avatar is gone or fails for good, the job
+ * asks the provider to drop them (`portrait.forget`), because the API could not know them.
  * ----------------------------------------------------------------------------------------- */
 
 interface AvatarRef {
@@ -123,6 +138,34 @@ interface SourceImage {
   path: string;
   /** Provider / model / seed of a generated portrait (null for uploaded photos). */
   generated: { provider: ProviderRef; model: string | null; seed: number | null } | null;
+  /** Verdict of the generator's quality control (null: a photo, or the engine has none). */
+  quality: AvatarQuality | null;
+}
+
+/** `matting` = the engine's dedicated person-matting model (see `PreparedPortrait.matteModel`). */
+const DEDICATED_MATTE = 'matting';
+
+/**
+ * Verdict stored on the avatar: the generator's quality control plus what the preparation
+ * says about the matte. null when there is nothing to report.
+ */
+export function avatarQuality(
+  generated: AvatarQuality | null,
+  prepared: Pick<PreparedPortrait, 'maskPath' | 'matteModel'>,
+): AvatarQuality | null {
+  const matteIssue =
+    prepared.maskPath === null
+      ? 'no_matte'
+      : typeof prepared.matteModel === 'string' && prepared.matteModel !== DEDICATED_MATTE
+        ? 'matte_fallback'
+        : null;
+  if (!generated && !matteIssue) return null;
+  const issues = [...new Set([...(generated?.issues ?? []), ...(matteIssue ? [matteIssue] : [])])];
+  return {
+    passed: (generated?.passed ?? true) && issues.length === 0,
+    issues: issues.map((issue) => issue.slice(0, 60)).slice(0, 20),
+    attempts: generated?.attempts ?? null,
+  };
 }
 
 /** Origin `photo`: the uploaded picture, copied to the temp dir. */
@@ -142,7 +185,7 @@ async function uploadedPhoto(
     throw new AppError('UNPROCESSABLE', 'The source of a photo avatar must be an image');
   }
   await ctx.providers.storage.downloadTo(photo.storageKey, tmp.file('source.img'));
-  return { path: tmp.file('source.img'), generated: null };
+  return { path: tmp.file('source.img'), generated: null, quality: null };
 }
 
 /**
@@ -162,8 +205,9 @@ async function generatedPortrait(
   if (await storage.exists(sourceKey)) {
     await storage.downloadTo(sourceKey, tmp.file('source.png'));
     report(STAGES.generated.generate, 1, PREPARE_TAIL_SEC);
-    // Provider, model and seed were persisted with the file by the attempt that generated it.
-    return { path: tmp.file('source.png'), generated: null };
+    // Provider, model, seed and quality verdict were persisted with the file by the attempt
+    // that generated it.
+    return { path: tmp.file('source.png'), generated: null, quality: avatar.quality };
   }
   if (!avatar.prompt) {
     throw new AppError('UNPROCESSABLE', 'This avatar has no description to generate from');
@@ -185,6 +229,19 @@ async function generatedPortrait(
     model: result.model ?? null,
     seed: result.seed ?? avatar.seed,
   };
+  const quality: AvatarQuality | null = result.quality
+    ? {
+        passed: result.quality.passed,
+        issues: result.quality.issues,
+        attempts: result.quality.attempts ?? null,
+      }
+    : null;
+  if (quality && !quality.passed) {
+    job.log.warn(
+      { avatarId: avatar.id, issues: quality.issues, attempts: quality.attempts },
+      'the generated portrait did not pass the quality control; keeping the least bad attempt',
+    );
+  }
   if (!(await stillProcessing(ctx, refOf(avatar)))) throw goneError();
   await storage.put(sourceKey, { filePath: tmp.file('source.png') }, { contentType: 'image/png' });
   await ctx.db
@@ -193,10 +250,11 @@ async function generatedPortrait(
       provider: generated.provider,
       model: generated.model,
       seed: generated.seed,
+      quality,
       updatedAt: new Date(),
     })
     .where(and(avatarWhere(refOf(avatar)), eq(avatars.status, 'processing')));
-  return { path: tmp.file('source.png'), generated };
+  return { path: tmp.file('source.png'), generated, quality };
 }
 
 function refOf(avatar: Pick<AvatarRow, 'id' | 'workspaceId'>): AvatarRef {
@@ -223,6 +281,19 @@ export default defineJob({
     const key = (file: 'image.png' | 'mask.png' | 'cutout.png' | 'thumb.jpg') =>
       storageKeys.avatarFile(ref.workspaceId, ref.avatarId, file);
 
+    // Hashes of the portraits the engine prepared in this run (its cache is keyed by them).
+    const preparedShas = new Set<string>();
+    const forgetPrepared = async (keep?: string): Promise<void> => {
+      for (const portraitSha256 of preparedShas) {
+        if (portraitSha256 === keep) continue;
+        await portrait
+          .forget?.({ portraitSha256 })
+          .catch((cleanupError: unknown) =>
+            job.log.warn({ err: cleanupError }, 'could not drop the cached portrait features'),
+          );
+      }
+    };
+
     try {
       const landmarksSource = await withTempDir(ctx, 'photo-avatar', async (tmp) => {
         /* ---- 1. source image ---- */
@@ -241,9 +312,13 @@ export default defineJob({
           ...(avatar.requestedLandmarks ? { landmarks: avatar.requestedLandmarks } : {}),
           outputDir,
           clientRef: `${avatar.id}:prepare`,
+          // The local engine reports no ETA for `prepare` (its steps are not proportional to
+          // time): the row then shows progress without an invented figure.
           onProgress: (p) => report(stages.prepare, p.fraction, eta(p, FILES_TAIL_SEC)),
           signal: job.signal,
         });
+
+        preparedShas.add(sha256Hex(await fs.readFile(prepared.portraitPath)));
 
         /* ---- 3. files: portrait, matte, cut-out, thumbnail ---- */
         report(stages.files, 0, FILES_TAIL_SEC);
@@ -293,6 +368,7 @@ export default defineJob({
             cutoutKey: key('cutout.png'),
             thumbnailKey: key('thumb.jpg'),
             rig: rigParse.data,
+            quality: avatarQuality(source.quality, prepared),
             // Honesty rule: generated avatars keep the provider that DREW the person (set
             // when `source.png` was stored); photo avatars the one that prepared the photo.
             ...(avatar.origin === 'photo' ? { provider: prepared.provider } : {}),
@@ -305,6 +381,8 @@ export default defineJob({
           .where(and(avatarWhere(ref), eq(avatars.status, 'processing')))
           .returning({ id: avatars.id });
         if (!updated) throw goneError();
+        // The stored portrait is what renders send back to the engine: keep only its entry.
+        await forgetPrepared(sha256Hex(image));
         return rigParse.data.landmarksSource;
       });
       await job.progress({ percent: 100 });
@@ -322,8 +400,11 @@ export default defineJob({
           .catch((cleanupError: unknown) =>
             job.log.warn({ err: cleanupError }, 'could not delete the files of a deleted avatar'),
           );
+        await forgetPrepared();
       } else if (finalFailure(err, job)) {
         await markAvatarFailed(ctx, ref, toStoredError(err));
+        // No avatar will ever use what the engine cached for this portrait.
+        await forgetPrepared();
       }
       throw err;
     }

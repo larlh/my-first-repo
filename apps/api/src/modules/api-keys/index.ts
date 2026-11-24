@@ -1,7 +1,7 @@
 import { AppError, OK, api } from '@parlante/shared';
 import type { ApiKey } from '@parlante/shared';
 import { and, apiKeys, desc, eq, isNull, users } from '@parlante/db';
-import type { ApiKeyRow, Db } from '@parlante/db';
+import type { ApiKeyRow } from '@parlante/db';
 import { createApiKey } from '../../lib/auth';
 import { defineRoute } from '../../lib/define-route';
 import { iso, isoOrNull, toUserRef } from '../../lib/dto';
@@ -50,8 +50,7 @@ export default defineModule({
           and(eq(apiKeys.workspaceId, auth.workspaceId), isNull(apiKeys.revokedAt)),
         );
         assertWithinLimit(workspace, 'maxApiKeys', active + 1);
-        // `createApiKey` only inserts, which a transaction handle does exactly like `Db`.
-        return createApiKey(tx as unknown as Db, {
+        return createApiKey(tx, {
           workspaceId: auth.workspaceId,
           name: body.name,
           createdBy: auth.userId,

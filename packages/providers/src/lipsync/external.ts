@@ -236,6 +236,10 @@ export function createExternalLipSyncProvider(
           return {
             available: false,
             reason: `The external lip-sync service answered HTTP ${response.status} to its health check`,
+            reasonCode:
+              response.status === 401 || response.status === 403
+                ? 'not_configured'
+                : 'engine_error',
             device: null,
             secondsPerVideoSecond: null,
           };
@@ -255,6 +259,10 @@ export function createExternalLipSyncProvider(
         return {
           available: false,
           reason: `The external lip-sync service is not reachable (${err instanceof Error ? err.message : 'connection failed'})`,
+          reasonCode:
+            err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+              ? 'engine_timeout'
+              : 'engine_unreachable',
           device: null,
           secondsPerVideoSecond: null,
         };

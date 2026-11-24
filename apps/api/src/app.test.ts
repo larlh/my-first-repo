@@ -70,15 +70,6 @@ const testModule = defineModule({
       if (query.kind === 'bad-response') return { ok: false } as unknown as { ok: true };
       throw new Error('secret internal detail');
     });
-    defineRoute(app, api.v1.me, async ({ auth }) => ({
-      workspace: {
-        id: auth.workspace.id,
-        name: auth.workspace.name,
-        plan: auth.workspace.plan,
-        credits: auth.workspace.credits,
-      },
-      apiKey: { id: auth.apiKey.id, name: auth.apiKey.name, prefix: auth.apiKey.prefix },
-    }));
   },
 });
 
@@ -202,6 +193,16 @@ describe('infrastructure', () => {
     expect(printed).toContain('/health');
     expect(contract.has('GET /health')).toBe(true);
   });
+
+  it('the autoloaded modules implement every route of the shared contract', () => {
+    const missing = allRoutes()
+      .filter(({ route: r }) => !t.app.hasRoute({ method: r.method, url: r.path }))
+      .map(({ route: r }) => `${r.method} ${r.path}`);
+    expect(missing).toEqual([]);
+    // The probe itself is not vacuous.
+    expect(allRoutes().length).toBeGreaterThan(50);
+    expect(t.app.hasRoute({ method: 'GET', url: '/api/videos/:nope/not-in-contract' })).toBe(false);
+  });
 });
 
 describe('signed file route', () => {
@@ -279,9 +280,17 @@ describe('authentication and authorisation', () => {
     const alice = await t.signUp();
     const res = await t.call(api.system.capabilities, { as: alice });
     expect(res.status).toBe(200);
-    expect(res.body.active.llm).toMatchObject({ id: 'local', quality: 'basic' });
+    // The web renders "<quality label> · <name>": the name must be the provider's own.
+    expect(res.body.active.llm).toMatchObject({
+      id: 'local',
+      name: 'Heurística local',
+      quality: 'basic',
+      local: true,
+    });
     expect(res.body.sttRequiresTranscript).toBe(true);
     expect(res.body.active.lipsync.id).toBe('local-neural');
+    // The harness points the engine at a closed port: unavailable, and it says why.
+    expect(t.config.AVATAR_ENGINE_URL).toBe('http://127.0.0.1:9');
     expect(res.body.avatarEngine).toMatchObject({ available: false, device: null });
     expect(res.body.avatarEngine.reason).toBeTruthy();
   });

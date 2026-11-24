@@ -1,6 +1,6 @@
 import { AppError, toStoredError } from '@parlante/shared';
 import type { Providers } from '@parlante/shared';
-import { storageKeys, workspaceOfStorageKey } from '@parlante/shared/node';
+import { sha256Hex, storageKeys, workspaceOfStorageKey } from '@parlante/shared/node';
 import { and, assets, avatars, eq, voices } from '@parlante/db';
 import type { AssetRow, Db, VoiceRow } from '@parlante/db';
 import type { QueueClient } from '@parlante/jobs';
@@ -14,8 +14,9 @@ import type { QueueClient } from '@parlante/jobs';
  *   - `DELETE /api/voice-clones/:id`      (voice-clones module)
  *
  * What goes away: the avatar / voice row, its whole storage prefix (portrait, matte, cut-out,
- * cached neural clips / sample.wav), the voice at the external provider, and the SOURCE ASSET
- * (photo / voice sample) with its files.
+ * cached neural clips / sample.wav), the voice at the external provider, the SOURCE ASSET
+ * (photo / voice sample) with its files, and what the avatar engine cached about the portrait
+ * (features derived from the face: `PortraitProvider.forget`).
  *
  * Both functions are idempotent and retriable: files are deleted BEFORE the row, so a failure
  * half-way leaves a row that points the next attempt at what is still to be removed — never
@@ -24,7 +25,7 @@ import type { QueueClient } from '@parlante/jobs';
 
 export interface PersonDataDeps {
   db: Db;
-  providers: Pick<Providers, 'storage' | 'voiceClone'>;
+  providers: Pick<Providers, 'storage' | 'voiceClone'> & Partial<Pick<Providers, 'portrait'>>;
   queues: QueueClient;
 }
 
@@ -75,6 +76,25 @@ async function deleteStrayAssetFiles(
 }
 
 /**
+ * The avatar engine keeps a cache of the features it derives from a prepared portrait, keyed
+ * by the hash of the portrait file. Ask the provider to drop it BEFORE the file is deleted
+ * (afterwards nobody can tell which entry it was). A failure propagates: the deletion is
+ * retried rather than leaving data derived from a person behind.
+ */
+async function forgetPortrait(
+  deps: PersonDataDeps,
+  workspaceId: string,
+  imageKey: string | null,
+): Promise<void> {
+  const portrait = deps.providers.portrait;
+  if (!portrait?.forget || !imageKey) return;
+  if (workspaceOfStorageKey(imageKey) !== workspaceId) return;
+  if (!(await deps.providers.storage.exists(imageKey))) return;
+  const portraitSha256 = sha256Hex(await deps.providers.storage.get(imageKey));
+  await portrait.forget({ portraitSha256 });
+}
+
+/**
  * Delete a workspace avatar with its images, cached clips and (photo avatars) the source photo.
  * Returns false when there was no such avatar in the workspace (its prefix is cleaned anyway).
  */
@@ -86,9 +106,15 @@ export async function deleteAvatarCascade(
   const { db, providers, queues } = deps;
   const prefix = storageKeys.avatarPrefix(workspaceId, avatarId);
   const [avatar] = await db
-    .select({ id: avatars.id, origin: avatars.origin, sourceAssetId: avatars.sourceAssetId })
+    .select({
+      id: avatars.id,
+      origin: avatars.origin,
+      sourceAssetId: avatars.sourceAssetId,
+      imageKey: avatars.imageKey,
+    })
     .from(avatars)
     .where(and(eq(avatars.id, avatarId), eq(avatars.workspaceId, workspaceId)));
+  if (avatar) await forgetPortrait(deps, workspaceId, avatar.imageKey);
   // The prefix carries the workspace id, so sweeping it is safe even without a row; the job
   // id does not, so the job is only withdrawn for an avatar that belongs to this workspace.
   await providers.storage.deletePrefix(prefix);

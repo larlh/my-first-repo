@@ -134,6 +134,16 @@ export function SourcePicker({ value, onChange, maxUploadBytes }: SourcePickerPr
 
   const uploadError = uploader.error ? describe(uploader.error) : null;
 
+  // Translating one of "my videos" copies its MP4 into a new source file every time, so the
+  // same video showed up once per earlier translation: identical files are offered once.
+  const seen = new Set<string>();
+  const earlier = uploaded.items.filter((asset) => {
+    const key = `${asset.name}|${asset.sizeBytes}|${asset.durationMs ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {value && (
@@ -203,12 +213,12 @@ export function SourcePicker({ value, onChange, maxUploadBytes }: SourcePickerPr
               {t('source.cancelUpload')}
             </Button>
           )}
-          {uploaded.items.length > 0 && (
+          {earlier.length > 0 && (
             <ChoiceList
               legend={t('source.earlier')}
               value={value}
               onChange={onChange}
-              choices={uploaded.items.map((asset) => ({
+              choices={earlier.map((asset) => ({
                 key: asset.id,
                 source: {
                   kind: 'asset',

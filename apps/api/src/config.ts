@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { baseEnvSchema, envBoolean, parseEnv } from '@parlante/shared/node';
+import { baseEnvSchema, envBoolean, parseEnv, refuseDevOnlySwitches } from '@parlante/shared/node';
 import { providerEnvSchema } from '@parlante/providers';
 
 /**
@@ -24,7 +24,10 @@ export const apiEnvSchema = baseEnvSchema.extend(providerEnvSchema.shape).extend
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(4096).default(1024),
   /** Directory for upload temp files (default: OS temp dir). */
   UPLOAD_TMP_DIR: z.string().optional(),
-  /** Allow webhook URLs / script URLs that point to private addresses (local development). */
+  /**
+   * Allow webhook URLs / script URLs that point to private addresses. Development only: it
+   * lifts the SSRF guard, is off by default and refused with NODE_ENV=production.
+   */
   ALLOW_PRIVATE_URLS: envBoolean(false),
   OPENAPI_ENABLED: envBoolean(true),
 });
@@ -32,7 +35,9 @@ export const apiEnvSchema = baseEnvSchema.extend(providerEnvSchema.shape).extend
 export type ApiConfig = z.infer<typeof apiEnvSchema>;
 
 export function loadConfig(source: Record<string, string | undefined> = process.env): ApiConfig {
-  return parseEnv(apiEnvSchema, source);
+  const config = parseEnv(apiEnvSchema, source);
+  refuseDevOnlySwitches(config, { ALLOW_PRIVATE_URLS: config.ALLOW_PRIVATE_URLS });
+  return config;
 }
 
 export function allowedOrigins(config: Pick<ApiConfig, 'WEB_ORIGIN' | 'PUBLIC_WEB_URL'>): string[] {

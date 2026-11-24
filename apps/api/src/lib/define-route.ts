@@ -93,9 +93,12 @@ export function defineRoute<const R extends RouteDef>(
         : {}),
     },
     preHandler: async (request) => {
-      if (route.auth === 'session') {
+      if (route.auth !== 'apiKey') {
         // CSRF defence in depth (cookies are SameSite=Lax): browsers send Origin on
-        // state-changing requests; reject origins we do not know.
+        // state-changing requests; reject origins we do not know. It also covers the PUBLIC
+        // routes that set the session cookie (login, register), so another site can never
+        // sign a visitor into an account of its choosing ("login CSRF"). API-key routes are
+        // exempt: they carry no ambient credential.
         const origin = request.headers.origin;
         if (
           UNSAFE_METHODS.has(request.method) &&
@@ -104,6 +107,8 @@ export function defineRoute<const R extends RouteDef>(
         ) {
           throw AppError.forbidden('Cross-origin request rejected');
         }
+      }
+      if (route.auth === 'session') {
         const auth = await requireSession(request);
         requireRole(auth, route.minRole ?? 'viewer');
       } else if (route.auth === 'apiKey') {
@@ -121,7 +126,10 @@ export function defineRoute<const R extends RouteDef>(
         reply,
         app,
       });
-      if (result === reply || reply.sent) return reply;
+      // Binary routes sent the reply themselves. `reply` is a thenable, so awaiting it yields
+      // `undefined` once the response is over — also when the client aborted a download, where
+      // `reply.sent` stays false but the headers are long gone: never send a second time.
+      if (result === reply || reply.sent || reply.raw.headersSent) return reply;
       return reply.status(successStatus).send(result);
     },
   };

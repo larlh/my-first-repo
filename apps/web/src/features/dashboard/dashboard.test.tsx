@@ -61,7 +61,7 @@ describe('home', () => {
     expect(await screen.findByText('En el aire · 1 render en curso')).toBeInTheDocument();
 
     const create = screen.getByRole('region', { name: 'Empezar un vídeo' });
-    expect(within(create).getByRole('link', { name: 'En blanco' })).toHaveAttribute(
+    expect(within(create).getByRole('link', { name: 'Desde cero' })).toHaveAttribute(
       'href',
       '/videos/new',
     );

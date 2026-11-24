@@ -685,9 +685,18 @@ describe('render job: uploaded media', () => {
   it(
     'fails for good, with a refund, when a file of the snapshot is not in this workspace',
     async () => {
+      const account = await seedAccount(t.ctx.db, { plan: 'free', credits: 50 });
+      await t.ctx.db.insert(webhookEndpoints).values({
+        id: newId('webhookEndpoint'),
+        workspaceId: account.workspace.id,
+        url: 'https://hooks.example.test/x',
+        events: ['video.completed', 'video.failed'],
+        secretEncrypted: 'v1.x.y.z',
+        secretPreview: 'abcd',
+      });
       const stranger = await seedAccount(t.ctx.db, { credits: 5 });
       const foreign = await addAsset(
-        stranger.workspace.id,
+        account.workspace.id,
         'image',
         'png',
         'image/png',
@@ -707,7 +716,14 @@ describe('render job: uploaded media', () => {
           },
         ],
       });
-      const { ref, account } = await start(composition);
+      // `startRender` checks every file of the snapshot, so the render can only be queued
+      // while the picture is the workspace's own. By the time the job runs it belongs to
+      // another workspace: the job itself must still refuse to read it.
+      const { ref } = await start(composition, { account });
+      await t.ctx.db
+        .update(assets)
+        .set({ workspaceId: stranger.workspace.id })
+        .where(eq(assets.id, foreign));
       await expect(t.run(renderJob, ref)).rejects.toThrow(
         /^UNPROCESSABLE: A file used by this video/,
       );
@@ -1108,6 +1124,29 @@ describe('render job: photorealistic avatars', () => {
       expect(await getCreditBalance(t.ctx.db, failing.account.workspace.id)).toBe(50);
       expect(await deliveries()).toEqual(['video.failed']);
 
+      // The engine stops while the clip is animated: the translatable cause the provider
+      // gives (`details.reason`) is stored with the error, and the credits go back.
+      lipsync.failWith = new AppError(
+        'SERVICE_UNAVAILABLE',
+        'The local avatar engine is not reachable at http://127.0.0.1:8090 (ECONNREFUSED).',
+        { reason: 'engine_unreachable' },
+      );
+      const stopped = await start(
+        shortComposition({ avatarId: 'real_lucia', text: 'El motor se detiene.' }),
+        { account: failing.account },
+      );
+      await expect(t.run(renderJob, stopped.ref)).rejects.toMatchObject({
+        code: 'SERVICE_UNAVAILABLE',
+      });
+      expect(await readJob(stopped.ref)).toMatchObject({
+        status: 'failed',
+        stage: 'avatars',
+        error: { code: 'SERVICE_UNAVAILABLE', reason: 'engine_unreachable' },
+      });
+      expect(await charged(stopped.ref)).toBe(0);
+      expect(await getCreditBalance(t.ctx.db, stopped.account.workspace.id)).toBe(50);
+      expect(await deliveries()).toEqual(['video.failed', 'video.failed']);
+
       lipsync.failWith = null;
       lipsync.delayMs = 60_000;
       const slow = await start(shortComposition({ avatarId: 'real_lucia', text: 'Otra frase.' }), {
@@ -1116,14 +1155,15 @@ describe('render job: photorealistic avatars', () => {
       const running = t.run(renderJob, slow.ref);
       await untilStage(slow.ref, 'avatars');
       // Wait until the engine is really working on the clip, then cancel.
-      await expect.poll(() => lipsync.calls.length, { timeout: 20_000 }).toBe(2);
+      await expect.poll(() => lipsync.calls.length, { timeout: 20_000 }).toBe(3);
       await cancelLikeTheApi(slow.ref);
       const { result } = await running;
       expect(result).toEqual({ canceled: true, videoId: slow.ref.videoId });
       expect(lipsync.aborted).toBe(1); // the provider was told to stop
       expect(await readJob(slow.ref)).toMatchObject({ status: 'canceled' });
       expect(await getCreditBalance(t.ctx.db, slow.account.workspace.id)).toBe(50);
-      expect(await deliveries()).toEqual(['video.failed']);
+      // One webhook per FAILED render above; the cancellation sends none.
+      expect(await deliveries()).toEqual(['video.failed', 'video.failed']);
       expect(await tempLeftovers()).toEqual([]);
     },
     LONG,

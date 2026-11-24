@@ -12,7 +12,8 @@
 [9 Motor neuronal](#9-motor-neuronal-local) · [10 Storage](#10-claves-de-storage-y-cachés) ·
 [11 Servicios compartidos](#11-servicios-compartidos-packagesjobs) ·
 [12 Patrón de módulo de API](#12-patrón-de-módulo-de-api) ·
-[13 Patrón de job](#13-patrón-de-job-del-worker) · [14 Extender](#14-cómo-extender-un-contrato)
+[13 Patrón de job](#13-patrón-de-job-del-worker) · [14 Extender](#14-cómo-extender-un-contrato) ·
+[15 Configuración](#15-configuración-variables-de-entorno)
 
 ## 0. Reglas generales
 
@@ -29,8 +30,9 @@
   `INVALID_STATE` `REVISION_CONFLICT` · 413 `PAYLOAD_TOO_LARGE` · 415 `UNSUPPORTED_MEDIA_TYPE` ·
   422 `CONTENT_BLOCKED` `TRANSCRIPT_REQUIRED` `UNSAFE_URL` `UNPROCESSABLE` · 429 `RATE_LIMITED` ·
   500 `INTERNAL` · 501 `NOT_IMPLEMENTED` · 502 `PROVIDER_ERROR` · 503 `PROVIDER_NOT_CONFIGURED`
-  `SERVICE_UNAVAILABLE`. En filas fallidas se guarda `StoredError { code, message }`
-  (`toStoredError(err)`).
+  `SERVICE_UNAVAILABLE`. En filas fallidas se guarda `StoredError { code, message, reason? }`
+  (`toStoredError(err)`): `reason` es la clave estable de `AppError.details.reason` cuando la
+  hay (`engine_unreachable`, `weights_missing`, `no_face`…), para que la UI la traduzca.
 - **Fechas** ISO-8601 en los DTO; **tiempos** en milisegundos enteros; **30 fps** fijos.
 - **Archivos**: en BD solo claves de storage; en los DTO solo URLs ya firmadas
   (`app.fileUrl(key)` / `ctx.fileUrl(key)`). El cliente nunca construye una URL de archivo ni
@@ -174,9 +176,14 @@ omitirlos y el consumidor siempre los recibe.
 | Lote                 | `BatchJobSchema`, `BatchJobDetailSchema`, `BatchItemSchema`                                                      | `creditsCharged` = suma de sus renders.                                                                                                                                                                                                                                                                           |
 | Consentimiento       | `ConsentRecordSchema` (+ `CONSENT_STATEMENTS` versionados)                                                       | Se consume una sola vez.                                                                                                                                                                                                                                                                                          |
 | Créditos             | `CreditLedgerEntrySchema`                                                                                        | `delta`, `balanceAfter`, `reason`, `refType`/`refId`.                                                                                                                                                                                                                                                             |
-| Compartir            | `ShareLinkSchema`, `PublicShareSchema`                                                                           | Página pública: `downloadUrl` (null si se desactiva), `aiGenerated`.                                                                                                                                                                                                                                              |
+| Compartir            | `ShareLinkSchema`, `PublicShareSchema`                                                                           | Página pública: `downloadUrl` (null si se desactiva), `aiGenerated`, `burnedInSubtitles`.                                                                                                                                                                                                                         |
 | Guionista            | `GeneratedScriptSchema`                                                                                          | `basicMode: true` con la heurística local.                                                                                                                                                                                                                                                                        |
 | Interactivo          | `InteractiveSessionSchema`, `InteractiveMessageSchema`, `InteractiveReplySchema`                                 | La respuesta trae `speech` con su runtime.                                                                                                                                                                                                                                                                        |
+
+Campos aditivos de la fase 3 (motor): `Capabilities.avatarEngine.reasonCode` (motivo como
+código traducible, §8) y `Avatar.quality` (`{ passed, issues[], attempts } | null`, veredicto
+del control de calidad automático: un avatar puede estar `ready` con `passed: false` y la UI
+debe decirlo junto al avatar).
 
 ## 5. API: tabla de rutas
 
@@ -550,7 +557,17 @@ Reglas para quien implementa:
   bloquea además descripciones de personas reales identificables.
 - `EngineStatus` (lip-sync y retratos): `available`, `reason`, `device`,
   `secondsPerVideoSecond` + opcionales `operations`, `models`, `nonCommercial`,
-  `secondsPerPortrait`. `describeCapabilities` los combina (`mergeEngineStatus`).
+  `secondsPerPortrait`, `reasonCode`. `describeCapabilities` los combina (`mergeEngineStatus`).
+- **Motivo traducible**: `reason` es una frase en inglés para logs; `reasonCode`
+  (`ENGINE_REASON_CODES`: `engine_unreachable`, `engine_timeout`, `engine_error`,
+  `engine_invalid`, `weights_missing`, `not_configured`, `unknown`) es lo que la UI traduce.
+  El mismo código viaja en `details.reason` de los 503 de `POST /api/photo-avatars[/generate]`
+  y de `startRender`, y en `StoredError.reason` de un avatar o render que falló con el motor.
+- **Calidad del retrato**: `portrait.generate` devuelve `quality { passed, issues, attempts }`
+  (control de calidad del motor) y `prepare` devuelve `matteModel`; el job `photo-avatar` los
+  guarda en `avatars.quality` (`matte_fallback` / `no_matte` si no se usó el modelo de recorte
+  dedicado). Calidad no superada + preparación correcta ⇒ avatar `ready` marcado, créditos
+  cobrados; preparación rechazada ⇒ `failed` y reembolso.
 - **Rutas de archivo en `LipSyncRequest` / `Portrait*Request`**: cualquier ruta legible por el
   proceso Node. El proveedor `local-neural` es quien copia entradas al directorio del motor,
   recoge los resultados en `request.outputDir` y limpia (`createEngineJobDir`). Al abortar
@@ -579,11 +596,18 @@ son los proveedores `local-neural`. Modelos y licencias: [`MODELS.md`](MODELS.md
   aspecto que `portraitPath`; el mate tiene el mismo tamaño que el retrato.
 - **Reintentos**: `clientRef` permite reengancharse a un job vivo; el proveedor llama a
   `DELETE` cuando se aborta.
-- Resultados (`EngineJobResult`, unión por `kind`): `generate { imagePath, model }`,
-  `prepare { portraitPath, maskPath, width, height, landmarks, landmarksSource }`,
+- Resultados (`EngineJobResult`, unión por `kind`): `generate { imagePath, model, seedUsed?, attempts?, qcPassed?, qcIssues? }`,
+  `prepare { portraitPath, maskPath, width, height, landmarks, landmarksSource, matteModel? }`
+  (`matteModel`: `matting` = modelo de recorte dedicado ORMBG; otro id = segmentador de
+  reserva; un ORMBG ausente no bloquea `prepare`, lo degrada),
   `animate { videoPath, alpha: none|mask-video|mask-image, maskPath, width, height, fps, frameCount, model }`.
 - Errores: `{ error: { code, message } }` con los códigos compartidos (`UNPROCESSABLE` = sin
   cara utilizable; `SERVICE_UNAVAILABLE` = faltan pesos).
+- **Caché de rasgos del motor**: `AVATAR_ENGINE_WORK_DIR/.cache/avatars/<sha256 del retrato>.npz`
+  (`engineAvatarCacheFile`) guarda lo que el motor deriva de cada retrato preparado. Es dato
+  derivado de una cara: `PortraitProvider.forget({ portraitSha256 })` lo borra, y lo llaman
+  `deleteAvatarCascade` (borrar avatar / revocar consentimiento) y el job `photo-avatar` cuando
+  el avatar se borra a mitad o falla definitivamente.
 - **Landmarks**: en `prepare` (petición) van sobre la imagen de entrada; en el resultado y en
   `Avatar.rig`, sobre el retrato preparado. Ver `PhotoLandmarksSchema`.
 
@@ -599,8 +623,9 @@ ws/<ws>/templates/<templateId>/thumb.jpg                     póster de plantill
 ws/<ws>/avatars/<avatarId>/image.png | mask.png | cutout.png | thumb.jpg | source.png
 ws/<ws>/avatars/<avatarId>/clips/<sha>/clip.mp4 | mask.mp4 | mask.png | clip.json
 ws/<ws>/voices/<voiceId>/sample.wav
+ws/<ws>/voices/<voiceId>/tts/<sha>.wav | <sha>.json           habla sintetizada con una voz clonada
 ws/<ws>/translations/<jobId>/<idioma>/video.mp4 | subtitles.srt | subtitles.vtt
-cache/tts/<sha>.wav | <sha>.json                             TtsCacheMetaSchema
+cache/tts/<sha>.wav | <sha>.json                             TtsCacheMetaSchema (solo voces stock)
 cache/avatar-clips/<sha>/…                                   solo avatares stock real_
 ```
 
@@ -971,3 +996,30 @@ maestro). Si no puede serlo, no se hace: se reporta.
 
 Antes de dar por bueno un cambio de contrato: `pnpm -r typecheck`, `pnpm lint`, `pnpm -r test`,
 y un test que ejercite el campo o la función nuevos.
+
+## 15. Configuración (variables de entorno)
+
+La lista completa, con valores por defecto y efecto, es [`.env.example`](../.env.example); aquí
+solo las reglas.
+
+| Quién                      | Esquema / lector                                                   | Variables                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API, worker, scripts de BD | `baseEnvSchema` (`@parlante/shared/node`)                          | `NODE_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `REDIS_URL`, `QUEUE_PREFIX`, `APP_SECRET`, `PUBLIC_API_URL`, `PUBLIC_WEB_URL`                                                        |
+| API y worker               | `providerEnvSchema` (`packages/providers/src/env.ts`)              | `STORAGE_*`, `S3_*`, `*_PROVIDER`, claves y modelos de proveedores, `MODERATION_*`, `AVATAR_ENGINE_URL/TOKEN/WORK_DIR/POLL_MS/STALL_SEC`, `AVATAR_PORTRAIT_SIZE`, `LIPSYNC_*` |
+| API                        | `apiEnvSchema` (`apps/api/src/config.ts`)                          | `API_HOST`, `API_PORT`, `WEB_ORIGIN`, `SESSION_*`, `COOKIE_SECURE`, `TRUST_PROXY`, `RATE_LIMIT_*`, `MAX_UPLOAD_MB`, `UPLOAD_TMP_DIR`, `ALLOW_PRIVATE_URLS`, `OPENAPI_ENABLED` |
+| Worker                     | `workerEnvSchema` (`apps/worker/src/config.ts`)                    | `WORKER_TMP_DIR`, `WORKER_QUEUES`, `WORKER_CONCURRENCY_<CLAVE>`, `WORKER_KEEP_TMP`, `ALLOW_PRIVATE_URLS`; `FFMPEG_PATH` / `FFPROBE_PATH` (`process.ts`)                       |
+| Web (servidor de Vite)     | `apps/web/vite.config.ts`                                          | `WEB_PORT`, `VITE_API_PROXY_TARGET`; en el bundle, `VITE_API_URL`                                                                                                             |
+| Motor (Python)             | `services/avatar-engine/parlante_engine/core/config.py` y `run.sh` | `AVATAR_ENGINE_*`, `FFMPEG_PATH`, `HF_HOME` (tabla en el README del motor)                                                                                                    |
+| Tests                      | `@parlante/db/testing`                                             | `DATABASE_TEST_URL`                                                                                                                                                           |
+
+- **`.env` en la raíz**: lo carga `loadDotEnv()` (lo ya definido en el entorno gana). El formato
+  lo fija `parseDotEnv`: `CLAVE=valor`; ` #` inicia un comentario salvo dentro de comillas;
+  `CLAVE=` vacío significa «sin definir» y se aplica el valor por defecto del esquema.
+  `.env.example` copiado tal cual debe arrancar API y worker: lo fijan
+  `apps/api/src/config.test.ts` y `apps/worker/src/config.test.ts`, que además fallan si una
+  variable de su esquema no está documentada en ese archivo.
+- **Producción** (`NODE_ENV=production`): `parseEnv` exige un `APP_SECRET` propio y con
+  variedad (`weakSecretReason`); `refuseDevOnlySwitches` impide arrancar con
+  `ALLOW_PRIVATE_URLS`.
+- **Una variable nueva**: se añade a su esquema zod (con valor por defecto o opcional) y a
+  `.env.example` en el mismo cambio.

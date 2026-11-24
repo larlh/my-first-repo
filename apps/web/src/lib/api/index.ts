@@ -4,3 +4,4 @@ export * from './errors';
 export * from './files';
 export * from './hooks';
 export { apiClient, apiRequester } from './instance';
+export { localizeServerMessage } from './serverMessages';

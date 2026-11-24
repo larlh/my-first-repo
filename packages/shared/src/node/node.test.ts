@@ -14,6 +14,7 @@ import {
   isBlockedAddress,
   isSafeStorageKey,
   looksLikeApiKey,
+  parseDotEnv,
   parseEnv,
   baseEnvSchema,
   randomToken,
@@ -27,6 +28,7 @@ import {
   verifyWebhookSignature,
   workspaceOfStorageKey,
   DEV_APP_SECRET,
+  weakSecretReason,
   EnvValidationError,
 } from './index';
 
@@ -174,6 +176,55 @@ describe('env', () => {
         .NODE_ENV,
     ).toBe('production');
   });
+
+  it('refuses secrets with almost no variety in production, and only there', () => {
+    const weak = ['a'.repeat(40), 'changemechangemechangemechangeme', '0123456789'.repeat(4)];
+    for (const secret of weak) {
+      expect(weakSecretReason(secret)).not.toBeNull();
+      expect(() => parseEnv(baseEnvSchema, { NODE_ENV: 'production', APP_SECRET: secret })).toThrow(
+        /APP_SECRET must be set to a private, random value/,
+      );
+      // Development and tests are not held to it.
+      expect(
+        parseEnv(baseEnvSchema, { NODE_ENV: 'development', APP_SECRET: secret }).APP_SECRET,
+      ).toBe(secret);
+    }
+    expect(weakSecretReason(DEV_APP_SECRET)).toMatch(/development default/);
+    expect(weakSecretReason('rT9_kq2ZxV7mB4nLw8HcY1dPf6sJa3Ge0uQiOoXzNtE')).toBeNull();
+  });
+});
+
+describe('.env files', () => {
+  it('drops inline comments, keeps quoted values and treats an empty value as not set', () => {
+    const values = parseDotEnv(
+      [
+        '# a comment line',
+        '',
+        'NODE_ENV=development                  # development | test | production',
+        'PUBLIC_API_URL=http://localhost:4000  # public base URL of the API',
+        'APP_SECRET=',
+        'UPLOAD_TMP_DIR=                       # default: OS temp dir',
+        'S3_SECRET_ACCESS_KEY="abc #1 def"     # quoted: the hash belongs to the value',
+        "LABEL='single # quoted'",
+        'URL_WITH_FRAGMENT=http://example.test/a#b',
+        'export QUEUE_PREFIX=mine',
+        'not a variable line',
+      ].join('\r\n'),
+    );
+    expect(values).toEqual({
+      NODE_ENV: 'development',
+      PUBLIC_API_URL: 'http://localhost:4000',
+      S3_SECRET_ACCESS_KEY: 'abc #1 def',
+      LABEL: 'single # quoted',
+      URL_WITH_FRAGMENT: 'http://example.test/a#b',
+      QUEUE_PREFIX: 'mine',
+    });
+    // What used to break a copied `.env.example`: the comment was part of the value and the
+    // empty secret failed its minimum length instead of falling back to the default.
+    const env = parseEnv(baseEnvSchema, values);
+    expect(env.NODE_ENV).toBe('development');
+    expect(env.APP_SECRET).toBe(DEV_APP_SECRET);
+  });
 });
 
 describe('SSRF guard', () => {
@@ -198,6 +249,30 @@ describe('SSRF guard', () => {
 
   it.each(['8.8.8.8', '93.184.216.34', '2606:4700:4700::1111'])('allows %s', (address) => {
     expect(isBlockedAddress(address)).toBe(false);
+  });
+
+  // IPv6 forms that carry an IPv4 address inside (or are never a public web server): a
+  // loopback or private IPv4 must not come back in through them.
+  it.each([
+    '::127.0.0.1', // IPv4-compatible
+    '::7f00:1',
+    '::a00:1',
+    '2002:7f00:1::', // 6to4 of 127.0.0.1
+    '2002:c0a8:101::1', // 6to4 of 192.168.1.1
+    '2001:0:7f00:1::', // Teredo
+    '64:ff9b::7f00:1', // NAT64
+    '64:ff9b:1::7f00:1', // local-use NAT64
+    'fec0::1', // site-local
+    '100::1', // discard-only
+    '::ffff:10.0.0.1',
+    'fd00:ec2::254', // cloud metadata over IPv6
+  ])('blocks the embedded / special IPv6 form %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+  });
+
+  it('still allows public IPv4-mapped and global IPv6 addresses', () => {
+    expect(isBlockedAddress('::ffff:93.184.216.34')).toBe(false);
+    expect(isBlockedAddress('2a00:1450:4003:80f::200e')).toBe(false);
   });
 
   it.each([

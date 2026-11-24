@@ -1,9 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { createRef, useLayoutEffect, useRef } from 'react';
+import { describe, expect, it, vi } from 'vitest';
 import { JobStatus, JobStatusBadge } from './JobStatus';
 import { ProviderBadge } from './ProviderBadge';
 import { VideoPlayer } from './VideoPlayer';
+import type { VideoPlayerHandle } from './VideoPlayer';
 
 describe('JobStatus', () => {
   it('shows stage, percentage and the server ETA while running', () => {
@@ -150,5 +152,66 @@ describe('VideoPlayer', () => {
       'download',
       'bienvenida.mp4',
     );
+  });
+
+  it('keeps the duration when the metadata arrives before its effects run', () => {
+    // A cached MP4 can fire `loadedmetadata` between the commit and the passive effects (the
+    // page of a video opened right after its render did): the seek bar stayed disabled and the
+    // clock read 0:00 / 0:00. A parent layout effect reproduces that ordering.
+    function EagerMetadata() {
+      const host = useRef<HTMLDivElement>(null);
+      useLayoutEffect(() => {
+        const video = host.current?.querySelector('video') as HTMLVideoElement;
+        Object.defineProperty(video, 'duration', { configurable: true, value: 12 });
+        Object.defineProperty(video, 'readyState', { configurable: true, value: 4 });
+        fireEvent.loadedMetadata(video);
+      }, []);
+      return (
+        <div ref={host}>
+          <VideoPlayer src="/video.mp4" title="Bienvenida" />
+        </div>
+      );
+    }
+    render(<EagerMetadata />);
+    const slider = screen.getByRole('slider', { name: 'Posición' });
+    expect(slider).toHaveAttribute('aria-valuemax', '12000');
+    expect(slider).not.toHaveAttribute('data-disabled');
+    expect(screen.getByText('/ 0:12')).toBeInTheDocument();
+  });
+
+  it('seeks through its imperative handle, also when asked before the metadata arrives', () => {
+    const controls = createRef<VideoPlayerHandle>();
+    const { container } = render(
+      <VideoPlayer src="/video.mp4" title="Bienvenida" controls={controls} />,
+    );
+    const video = container.querySelector('video') as HTMLVideoElement;
+    const play = vi.spyOn(video, 'play').mockResolvedValue();
+    let position = 0;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => position,
+      set: (value: number) => {
+        position = value;
+      },
+    });
+
+    // Nothing is known about the file yet: the request waits for `loadedmetadata`.
+    act(() => controls.current?.seek(4000, { play: true }));
+    expect(position).toBe(0);
+    expect(play).toHaveBeenCalledTimes(1);
+    Object.defineProperty(video, 'duration', { configurable: true, value: 12 });
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 });
+    fireEvent.loadedMetadata(video);
+    expect(position).toBe(4);
+    expect(screen.getByRole('slider', { name: 'Posición' })).toHaveAttribute(
+      'aria-valuenow',
+      '4000',
+    );
+
+    // With the duration known it jumps at once and clamps to the end.
+    act(() => controls.current?.seek(7500));
+    expect(position).toBe(7.5);
+    act(() => controls.current?.seek(99_000));
+    expect(position).toBe(12);
   });
 });

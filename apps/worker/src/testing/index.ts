@@ -61,6 +61,10 @@ export async function createTestWorker(env: Record<string, string> = {}): Promis
     PUBLIC_API_URL: 'http://api.test',
     PUBLIC_WEB_URL: 'http://web.test',
     ALLOW_PRIVATE_URLS: 'true',
+    // Hermetic by default (same rule as the API harness): nothing listens on port 9, so a
+    // neural engine that happens to run on this machine (:8090) never changes a test's outcome.
+    // Whoever wants the real engine passes its URL (scripts/demo.ts does).
+    AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
     ...env,
   });
   const queues = new InMemoryQueueClient();

@@ -12,6 +12,7 @@ import { sha256Hex } from './crypto';
  *   ws/<workspaceId>/avatars/<avatarId>/image.png | mask.png | cutout.png | thumb.jpg | source.png
  *   ws/<workspaceId>/avatars/<avatarId>/clips/<sha256>/clip.mp4 | mask.mp4 | mask.png | clip.json
  *   ws/<workspaceId>/voices/<voiceId>/sample.wav
+ *   ws/<workspaceId>/voices/<voiceId>/tts/<sha256>.wav | <sha256>.json   (speech of a cloned voice)
  *   ws/<workspaceId>/translations/<jobId>/<language>/video.mp4 | subtitles.srt | subtitles.vtt
  *   cache/tts/<sha256>.wav | <sha256>.json                        (TtsCacheMetaSchema)
  *   cache/avatar-clips/<sha256>/clip.mp4 | mask.mp4 | mask.png | clip.json   (stock `real_…` only)
@@ -85,6 +86,15 @@ export const storageKeys = {
   ) => `ws/${seg(workspaceId)}/translations/${seg(jobId)}/${seg(language)}/${file}`,
   ttsCacheAudio: (hash: string) => `cache/tts/${seg(hash)}.wav`,
   ttsCacheMeta: (hash: string) => `cache/tts/${seg(hash)}.json`,
+  /**
+   * Speech synthesised with a CLONED voice is cached under the voice's own prefix (like the
+   * clips of a workspace avatar): deleting the voice or revoking its consent deletes every
+   * recording made with it. Stock voices use the shared `cache/tts/`.
+   */
+  voiceTtsCacheAudio: (workspaceId: string, voiceId: string, hash: string) =>
+    `ws/${seg(workspaceId)}/voices/${seg(voiceId)}/tts/${seg(hash)}.wav`,
+  voiceTtsCacheMeta: (workspaceId: string, voiceId: string, hash: string) =>
+    `ws/${seg(workspaceId)}/voices/${seg(voiceId)}/tts/${seg(hash)}.json`,
 } as const;
 
 function seg(value: string): string {

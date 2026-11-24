@@ -60,6 +60,11 @@ import { sectionPath } from '../sections';
 
 const DESCRIPTION_MAX = 200;
 const POLL_MS = 2000;
+/**
+ * An open delivery log also has to notice deliveries it did not start: a render that finishes
+ * in the background creates one at any moment. Slower than the active poll, but never frozen.
+ */
+const IDLE_POLL_MS = 5000;
 
 /* ---------- create / edit ---------- */
 
@@ -260,7 +265,8 @@ function DeliveryRow({ delivery, webhookId }: { delivery: WebhookDelivery; webho
   const retry = useApiMutation(api.webhooks.retryDelivery, {
     invalidates: [api.webhooks.listDeliveries],
     onSuccess: () => toast.success(t('webhooks.deliveries.requeued')),
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
   return (
     <li
@@ -319,7 +325,7 @@ function Deliveries({ endpoint }: { endpoint: WebhookEndpoint }) {
   const deliveries = useApiInfiniteQuery(
     api.webhooks.listDeliveries,
     { params: { webhookId: endpoint.id }, query: { limit: 10 } },
-    { refetchInterval: live ? POLL_MS : false },
+    { refetchInterval: live ? POLL_MS : IDLE_POLL_MS },
   );
   // Poll only while something is still being attempted (state derived from the data itself).
   const active = hasActiveDeliveries(deliveries.items);
@@ -381,7 +387,7 @@ function EndpointCard({
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const report = (error: ApiError) =>
-    toast.error(errorText(error).title, { description: error.message });
+    toast.error(errorText(error).title, { description: errorText(error).message });
 
   const toggle = useApiMutation(api.webhooks.update, {
     invalidates: [api.webhooks.list],
@@ -395,7 +401,7 @@ function EndpointCard({
     },
     onError: (error) =>
       error.is('SERVICE_UNAVAILABLE')
-        ? toast.error(t('webhooks.test.unavailable'), { description: error.message })
+        ? toast.error(t('webhooks.test.unavailable'), { description: errorText(error).message })
         : report(error),
   });
   const rotate = useApiMutation(api.webhooks.rotateSecret, {

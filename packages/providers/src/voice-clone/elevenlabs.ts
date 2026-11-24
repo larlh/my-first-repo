@@ -40,7 +40,7 @@ const MIN_SAMPLE_SEC = 1;
 
 const AddVoiceSchema = z.object({ voice_id: z.string().min(1) });
 
-function sampleAsWav(request: VoiceCloneRequest): Uint8Array {
+function sampleAsWav(request: VoiceCloneRequest): Uint8Array<ArrayBuffer> {
   const pcm = isWav(request.sample)
     ? decodeWav(request.sample)
     : { samples: pcm16FromBytes(request.sample), sampleRate: request.sampleRate };

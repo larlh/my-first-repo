@@ -137,6 +137,7 @@ function instantStockDto(meta: StockAvatarMeta, locale: string): Avatar {
     prompt: null,
     seed: null,
     model: null,
+    quality: null,
     provider: INSTANT_AVATAR_PROVIDER,
     workspaceId: null,
     consentId: null,
@@ -176,6 +177,7 @@ function photorealStockDto(
     prompt: meta.prompt,
     seed: meta.seed,
     model: meta.model,
+    quality: null,
     // A synthetic person generated (and animated at export time) by the local engine.
     provider: deps.providers.portrait.info,
     workspaceId: null,
@@ -214,6 +216,8 @@ export async function toWorkspaceAvatarDto(
     prompt: row.prompt,
     seed: row.seed,
     model: row.model,
+    // Verdict of the engine's automatic checks: shown once there is a portrait to judge.
+    quality: ready ? (row.quality ?? null) : null,
     // Null on the row until the job finishes: the engine that will do (or did) the work.
     provider: row.provider ?? deps.providers.portrait.info,
     workspaceId: row.workspaceId,

@@ -556,6 +556,32 @@ describe('webhooks', () => {
   });
 });
 
+describe('webhook delivery log', () => {
+  it('notices a delivery created in the background while the log stays open', async () => {
+    // A render finishing elsewhere creates its `video.completed` delivery at any moment: an
+    // open log that only polled while something was pending never showed it.
+    const user = userEvent.setup();
+    const deliveries = [makeDelivery(1, { eventType: 'ping' })];
+    const api = createFakeApi(makeSession('admin'));
+    api.on('GET', '/api/webhooks', () => ({ items: [makeEndpoint(1)] }));
+    api.on('GET', /^\/api\/webhooks\/whe_\w+\/deliveries$/, () => ({
+      items: deliveries,
+      nextCursor: null,
+    }));
+    mount('/settings/webhooks', api);
+
+    await user.click(await screen.findByRole('button', { name: 'Historial de entregas' }));
+    expect(await screen.findByText('ping')).toBeInTheDocument();
+    const list = screen.getByText('ping').closest('ul') as HTMLElement;
+    expect(within(list).queryByText('video.completed')).not.toBeInTheDocument();
+
+    deliveries.unshift(makeDelivery(2, { eventType: 'video.completed' }));
+    expect(
+      await within(list).findByText('video.completed', undefined, { timeout: 9000 }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('consents', () => {
   it('lists the records and explains what a revocation deletes before doing it', async () => {
     const user = userEvent.setup();

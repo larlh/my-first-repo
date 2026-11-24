@@ -30,6 +30,7 @@ import {
   toast,
   useConfirm,
   useErrorText,
+  useServerMessage,
 } from '@/ui';
 import { AvatarStage, Callout, useStartVideo } from '@/features/avatars/kit';
 import type { SpeechPreview } from '@/features/avatars/kit';
@@ -129,6 +130,7 @@ export function VoiceConsole({
   className,
 }: VoiceConsoleProps) {
   const { t, i18n } = useTranslation('voices');
+  const serverMessage = useServerMessage();
   const format = useFormat();
   const session = useSession();
   const describe = useErrorText();
@@ -261,7 +263,10 @@ export function VoiceConsole({
             icon={<TriangleAlert />}
             title={t('console.failedTitle')}
           >
-            {voice.error?.message ?? t('console.failedText')}
+            {serverMessage(voice.error?.message, {
+              code: voice.error?.code,
+              reason: voice.error?.reason,
+            }) || t('console.failedText')}
           </Callout>
         )}
         {failed && speech.error && (

@@ -78,9 +78,14 @@ describe('avatar library', () => {
     await user.click(screen.getByRole('tab', { name: /Todos/ }));
     await user.type(screen.getByRole('searchbox', { name: 'Buscar avatares' }), 'mateo');
     await waitFor(() => expect(router.state.location.search).toBe('?q=mateo'));
-    const cards = screen.getAllByRole('button', { name: /Abrir la ficha de/ });
-    expect(cards).toHaveLength(1);
-    expect(cards[0]).toHaveAccessibleName('Abrir la ficha de Mateo');
+    // The router state changes before React paints the filtered list: wait for the list too
+    // (asserting it in the same tick failed when the suite ran next to the API and worker ones).
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /Abrir la ficha de/ })).toHaveLength(1),
+    );
+    expect(screen.getByRole('button', { name: /Abrir la ficha de/ })).toHaveAccessibleName(
+      'Abrir la ficha de Mateo',
+    );
 
     await user.clear(screen.getByRole('searchbox', { name: 'Buscar avatares' }));
     await user.type(screen.getByRole('searchbox', { name: 'Buscar avatares' }), 'zzzz');

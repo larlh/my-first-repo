@@ -56,6 +56,16 @@ export const es = {
     NETWORK_ERROR: 'No hay conexión con el servidor',
     ABORTED: 'Operación cancelada',
     INVALID_RESPONSE: 'El servidor ha respondido algo inesperado',
+    technical: 'Detalle técnico (en inglés): {{message}}',
+    reasons: {
+      engine_unreachable: 'El motor neuronal local no está arrancado o se ha detenido.',
+      engine_timeout: 'El motor neuronal local no ha contestado a tiempo.',
+      engine_error: 'El motor neuronal local ha respondido con un error interno.',
+      engine_invalid: 'El motor neuronal local ha respondido algo que este servidor no entiende.',
+      weights_missing: 'Al motor neuronal local le faltan pesos de modelos por descargar.',
+      not_configured: 'Este servidor no tiene configurado ningún motor de avatares.',
+      unknown: 'El motor neuronal local no está disponible.',
+    },
   },
   job: {
     phase: {
@@ -99,6 +109,17 @@ export const es = {
     premium: 'Alta calidad',
     basicHint: 'Generado en local con {{name}}, sin servicios externos. Calidad básica.',
     premiumHint: 'Generado con {{name}}, un proveedor externo de alta calidad.',
+    names: {
+      localHeuristic: 'Heurística local',
+      localBlocklist: 'Lista de bloqueo (local)',
+      localDisk: 'Disco local',
+      localNeuralEngine: 'Motor neuronal local',
+      localVoiceProfile: 'Perfil de voz (local)',
+      localGlossary: 'Traducción básica por glosario (local)',
+      userTranscript: 'Transcripción aportada por el usuario',
+      externalLipsync: 'Lip-sync externo',
+      avatar2d: 'Avatar 2D',
+    },
   },
   session: {
     loading: 'Abriendo tu sesión…',
@@ -138,6 +159,39 @@ export const es = {
     low: 'Te quedan pocos créditos.',
     manage_one: '{{count}} crédito. Ver plan y uso',
     manage_other: '{{count}} créditos. Ver plan y uso',
+  },
+  render: {
+    title: 'Renderizar vídeo',
+    titleAgain: 'Volver a renderizar',
+    start: 'Renderizar',
+    resolution: 'Resolución',
+    resolutionLocked: 'El plan {{plan}} exporta a 720p. Con un plan superior podrás elegir 1080p.',
+    duration: 'Duración estimada',
+    cost: 'Coste',
+    balance: 'Saldo del workspace',
+    costNote_one:
+      '{{count}} crédito por cada 30 s empezados a 720p; ×{{hd}} a 1080p y ×{{photoreal}} con avatares fotorrealistas. Se reserva al empezar y se ajusta a la duración real al terminar.',
+    costNote_other:
+      '{{count}} créditos por cada 30 s empezados a 720p; ×{{hd}} a 1080p y ×{{photoreal}} con avatares fotorrealistas. Se reservan al empezar y se ajustan a la duración real al terminar.',
+    reserveNote_one:
+      'Al empezar se reserva {{count}} crédito (la duración se estima antes de sintetizar la voz); al terminar se cobra el coste real.',
+    reserveNote_other:
+      'Al empezar se reservan {{count}} créditos (la duración se estima antes de sintetizar la voz); al terminar se cobra el coste real.',
+    watermark: 'Tu plan añade una pequeña marca de agua de Parlante.',
+    notEnough: 'No hay créditos suficientes para este render.',
+    seePlans: 'Ver planes y créditos',
+    photoreal: {
+      title: 'El render fotorrealista es lento',
+      measuredVideo:
+        'Este vídeo usa avatares fotorrealistas. Con la velocidad medida en esta máquina ({{device}}), animarlos llevará unos {{time}}.',
+      measured:
+        'Medido en esta máquina ({{device}}): animar el avatar tarda unos {{time}} por cada 10 s de vídeo.',
+      unmeasured:
+        'Los avatares fotorrealistas los anima el motor neuronal local. En CPU puede tardar varios minutos por cada 10 s de vídeo (aún sin medir en esta máquina); verás el tiempo restante mientras avanza.',
+      unavailable: 'Ahora no se puede renderizar con avatares fotorrealistas.',
+      nonCommercial:
+        'Aviso de licencia: uno de los modelos instalados solo permite uso no comercial.',
+    },
   },
   prefs: {
     language: 'Idioma',

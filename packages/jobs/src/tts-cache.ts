@@ -38,7 +38,8 @@ export interface SynthesisDeps {
  * user saw. This function owns the cache protocol — do not read or write `cache/tts/*` by hand:
  *
  *   key   = ttsCacheKey({ provider, providerVoiceId, text.trim(), language, speed, pitch, profile })
- *   files = cache/tts/<key>.wav  +  cache/tts/<key>.json  (TtsCacheMetaSchema)
+ *   files = cache/tts/<key>.wav  +  cache/tts/<key>.json  (TtsCacheMetaSchema)   stock voices
+ *           ws/<ws>/voices/<voiceId>/tts/<key>.wav + .json                        cloned voices
  *
  * The JSON is written last and is the commit marker; an entry whose JSON is missing or does not
  * parse is a miss and gets rewritten. Moderation is the CALLER's job (the API route moderates
@@ -63,8 +64,15 @@ export async function synthesizeCached(
     pitch,
     profile: voice.profile,
   });
-  const audioKey = storageKeys.ttsCacheAudio(hash);
-  const metaKey = storageKeys.ttsCacheMeta(hash);
+  // A cloned voice is personal data: what it says is cached under the voice's own prefix, so
+  // deleting the voice (or revoking its consent) removes every recording made with it.
+  const cloned = voice.kind === 'cloned';
+  const audioKey = cloned
+    ? storageKeys.voiceTtsCacheAudio(workspaceId, voice.voiceId, hash)
+    : storageKeys.ttsCacheAudio(hash);
+  const metaKey = cloned
+    ? storageKeys.voiceTtsCacheMeta(workspaceId, voice.voiceId, hash)
+    : storageKeys.ttsCacheMeta(hash);
 
   const hit = await readMeta(storage, metaKey);
   if (hit && (await storage.exists(audioKey))) {

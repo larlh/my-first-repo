@@ -22,7 +22,8 @@ function IdentityForm() {
       await session.refresh();
       toast.success(t('profile.saved'));
     },
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
 
   const trimmed = name.trim();
@@ -110,7 +111,7 @@ function PasswordForm() {
     onError: (error) => {
       if (error.is('INVALID_CREDENTIALS')) {
         setErrors({ current: t('profile.password.wrongCurrent') });
-      } else toast.error(errorText(error).title, { description: error.message });
+      } else toast.error(errorText(error).title, { description: errorText(error).message });
     },
   });
 

@@ -25,10 +25,12 @@ describe('local LLM: selection and honesty', () => {
     const provider = createLlmProvider(providerEnvSchema.parse({}));
     expect(provider.info).toEqual({
       id: 'local',
-      name: 'Modo básico (local)',
+      name: 'Heurística local',
       quality: 'basic',
       local: true,
     });
+    // The name is the provider's, not the quality label the UI already shows next to it.
+    expect(provider.info.name.toLowerCase()).not.toContain('modo básico');
     const result = await provider.generateScript({
       topic: 'La seguridad en el trabajo',
       tone: 'professional',
@@ -342,6 +344,28 @@ Enviamos a toda España en 48 horas. Los envíos a Canarias tardan cinco días. 
     expect(passages[2]!.answer).toBe(
       'Puedes cancelar en cualquier momento desde Ajustes > Facturación. No hay permanencia.',
     );
+  });
+
+  it('reads a FAQ typed as one «question? answer» per line (the example the UI suggests)', async () => {
+    const knowledge =
+      '¿Cuál es el horario? De lunes a viernes de 9 a 20 h.\n¿Dónde estáis? En la calle Mayor, 12.\n- ¿Hay aparcamiento? R: Sí, gratuito para clientes.\nAbrimos en 2010. ¿Sorprendido? Pues sí.';
+    expect(parseKnowledge(knowledge).map((p) => [p.title, p.answer])).toEqual([
+      ['¿Cuál es el horario?', 'De lunes a viernes de 9 a 20 h.'],
+      ['¿Dónde estáis?', 'En la calle Mayor, 12.'],
+      // A statement that merely CONTAINS a question stays with the passage it follows.
+      ['¿Hay aparcamiento?', 'Sí, gratuito para clientes. Abrimos en 2010. ¿Sorprendido? Pues sí.'],
+    ]);
+    const ask = async (text: string) =>
+      (
+        await llm.chat({
+          persona: { name: 'Lucía', instructions: '', knowledge },
+          language: 'es',
+          messages: [{ role: 'user', text }],
+        })
+      ).text;
+    // Each question gets ITS answer: not the question back, and not the neighbouring pair.
+    expect(await ask('¿Dónde estáis?')).toBe('En la calle Mayor, 12.');
+    expect(await ask('¿Cuál es el horario?')).toBe('De lunes a viernes de 9 a 20 h.');
   });
 
   it('answers with the stored text, picks the relevant sentences and follows up', async () => {

@@ -120,6 +120,28 @@ describe('public share page', () => {
     expect(screen.queryByRole('link', { name: 'Descargar' })).not.toBeInTheDocument();
   });
 
+  it('starts the caption overlay off when the subtitles are burnt into the video', async () => {
+    const api = createFakeApi(null).on('GET', `/api/public/shares/${TOKEN}`, () =>
+      makePublicShare({ burnedInSubtitles: true }),
+    );
+    renderFeatures([share], `/s/${TOKEN}`, api);
+    expect(await screen.findByRole('button', { name: 'Mostrar subtítulos' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('starts the caption overlay on when it is the only way to read the subtitles', async () => {
+    const api = createFakeApi(null).on('GET', `/api/public/shares/${TOKEN}`, () =>
+      makePublicShare({ burnedInSubtitles: false }),
+    );
+    renderFeatures([share], `/s/${TOKEN}`, api);
+    expect(await screen.findByRole('button', { name: 'Ocultar subtítulos' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
   it('explains a link that was turned off or expired', async () => {
     const api = createFakeApi(null).on('GET', `/api/public/shares/${TOKEN}`, () =>
       apiError(404, 'NOT_FOUND', 'Share link not found'),

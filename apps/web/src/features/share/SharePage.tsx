@@ -193,6 +193,8 @@ export default function SharePage() {
           poster={share.thumbnailUrl}
           aspect={share.aspect}
           subtitles={subtitles}
+          // Subtitles burnt into the picture: the overlay starts off (it can be turned on).
+          defaultSubtitleLang={share.burnedInSubtitles ? null : undefined}
           downloadUrl={share.downloadUrl}
           className="rounded-none shadow-lg sm:rounded-lg"
         />

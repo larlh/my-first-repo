@@ -2,6 +2,7 @@ import type { LanguageCode, Voice } from '@parlante/shared';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useProviderName } from '@/components/ProviderBadge';
 import { Button, Select } from '@/ui';
 import type { SelectGroup, SelectOption } from '@/ui';
 import { usableVoices, useVoices } from './catalog';
@@ -45,6 +46,7 @@ export function VoiceSelect({
   const voices = useVoices(language);
   const ready = useMemo(() => usableVoices(voices.data?.items ?? []), [voices.data]);
 
+  const providerName = useProviderName();
   const options = useMemo(() => {
     const toOption = (voice: Voice): SelectOption => ({
       value: voice.id,
@@ -52,7 +54,7 @@ export function VoiceSelect({
       textValue: voice.name,
       description: [
         t(`kit.voice.gender.${voice.gender}`),
-        voice.provider.name,
+        providerName(voice.provider),
         voice.provider.quality === 'basic' ? t('kit.voice.basic') : null,
         voice.multilingual ? t('kit.voice.multilingual') : null,
       ]
@@ -75,7 +77,7 @@ export function VoiceSelect({
       groups.push({ label: t('kit.voice.groups.stock'), options: stock.map(toOption) });
     }
     return groups;
-  }, [ready, autoLabel, t]);
+  }, [ready, autoLabel, t, providerName]);
 
   const error = voices.isError ? (
     <>

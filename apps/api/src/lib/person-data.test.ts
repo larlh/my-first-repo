@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { newId } from '@parlante/shared';
 import type { ProviderRef } from '@parlante/shared';
-import { storageKeys } from '@parlante/shared/node';
+import { sha256Hex, storageKeys } from '@parlante/shared/node';
 import { assets, avatars, consentRecords, voices } from '@parlante/db';
 import { createTestApp } from '../testing/index';
 import type { TestActor, TestApp } from '../testing/index';
@@ -114,6 +114,79 @@ describe('deleteAvatarCascade', () => {
     expect(await deleteAvatarCascade(deps(), alice.workspace.id, avatarId)).toBe(true);
     expect(await exists(library.storageKey)).toBe(true);
     expect(await t.db.select().from(assets)).toHaveLength(1);
+  });
+
+  it('asks the engine to forget what it derived from the portrait, before the file is gone', async () => {
+    const alice = await t.signUp();
+    const bob = await t.signUp();
+    const avatarId = newId('avatar');
+    const image = storageKeys.avatarFile(alice.workspace.id, avatarId, 'image.png');
+    const bytes = Buffer.from('PREPARED PORTRAIT OF A PERSON');
+    await t.app.providers.storage.put(image, bytes, { contentType: 'image/png' });
+    await t.db.insert(avatars).values({
+      id: avatarId,
+      workspaceId: alice.workspace.id,
+      name: 'A',
+      origin: 'photo',
+      status: 'ready',
+      imageKey: image,
+      consentId: await seedConsent(alice, 'photo_avatar'),
+    });
+    // The engine caches features keyed by the hash of the portrait FILE: the provider is
+    // told that hash while the file can still be read.
+    const forgotten: { sha: string; fileStillThere: boolean }[] = [];
+    const forget = vi
+      .spyOn(t.app.providers.portrait, 'forget')
+      .mockImplementation(async ({ portraitSha256 }) => {
+        forgotten.push({ sha: portraitSha256, fileStillThere: await exists(image) });
+      });
+    try {
+      // Through another workspace: nothing is forgotten.
+      expect(await deleteAvatarCascade(deps(), bob.workspace.id, avatarId)).toBe(false);
+      expect(forgotten).toEqual([]);
+
+      expect(await deleteAvatarCascade(deps(), alice.workspace.id, avatarId)).toBe(true);
+      expect(forgotten).toEqual([{ sha: sha256Hex(bytes), fileStillThere: true }]);
+      expect(await exists(image)).toBe(false);
+
+      // An avatar that never got a portrait (still processing, failed) has nothing cached
+      // that the API could name; the job drops it (photo-avatar job tests).
+      const pending = newId('avatar');
+      await t.db.insert(avatars).values({
+        id: pending,
+        workspaceId: alice.workspace.id,
+        name: 'B',
+        origin: 'generated',
+        prompt: 'a person',
+      });
+      expect(await deleteAvatarCascade(deps(), alice.workspace.id, pending)).toBe(true);
+      expect(forgotten).toHaveLength(1);
+
+      // The engine cache cannot be reached: the deletion fails as a whole and can be retried,
+      // instead of reporting success with data derived from the person left behind.
+      const retried = newId('avatar');
+      const retriedImage = storageKeys.avatarFile(alice.workspace.id, retried, 'image.png');
+      await t.app.providers.storage.put(retriedImage, bytes, { contentType: 'image/png' });
+      await t.db.insert(avatars).values({
+        id: retried,
+        workspaceId: alice.workspace.id,
+        name: 'C',
+        origin: 'generated',
+        prompt: 'a person',
+        status: 'ready',
+        imageKey: retriedImage,
+      });
+      forget.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+      await expect(deleteAvatarCascade(deps(), alice.workspace.id, retried)).rejects.toThrow(
+        /EACCES/,
+      );
+      expect(await exists(retriedImage)).toBe(true);
+      expect(await t.db.select().from(avatars)).toHaveLength(1);
+      expect(await deleteAvatarCascade(deps(), alice.workspace.id, retried)).toBe(true);
+      expect(await t.db.select().from(avatars)).toHaveLength(0);
+    } finally {
+      forget.mockRestore();
+    }
   });
 });
 

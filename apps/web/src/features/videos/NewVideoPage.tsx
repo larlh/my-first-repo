@@ -8,6 +8,7 @@ import { ProviderBadge } from '@/components/ProviderBadge';
 import { api, isApiError, useApiMutation, useApiQuery } from '@/lib/api';
 import { Button, Input, PageHeader, cn, toast, useErrorText } from '@/ui';
 import { ROUTES, useAvailableRoutes } from './lib/routes';
+import { starterComposition } from './lib/starter';
 
 const ASPECTS: { value: AspectRatio; key: string; shape: string }[] = [
   { value: '16:9', key: 'landscape', shape: 'w-12 h-[1.6875rem]' },
@@ -57,7 +58,7 @@ function Take({
 
 /** Start a video: blank canvas in the chosen shape, a template, or the AI script writer. */
 export default function NewVideoPage() {
-  const { t } = useTranslation('videos');
+  const { t, i18n } = useTranslation('videos');
   const navigate = useNavigate();
   const describe = useErrorText();
   const available = useAvailableRoutes();
@@ -90,7 +91,17 @@ export default function NewVideoPage() {
     event.preventDefault();
     setTitleError(null);
     const trimmed = title.trim();
-    create.mutate({ body: { aspect, ...(trimmed !== '' ? { title: trimmed } : {}) } });
+    create.mutate({
+      body: {
+        aspect,
+        composition: starterComposition({
+          aspect,
+          locale: i18n.language,
+          script: t('create.blank.sampleScript'),
+        }),
+        ...(trimmed !== '' ? { title: trimmed } : {}),
+      },
+    });
   };
 
   return (

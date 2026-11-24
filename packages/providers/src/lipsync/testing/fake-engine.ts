@@ -46,6 +46,12 @@ export interface FakeEngine {
   health: EngineHealth;
   /** Make the next job of this kind fail when it finishes. */
   failNext(kind: Kind, error: { code: string; message: string; reason?: string }): void;
+  /**
+   * Merge these fields into the result of the next job of this kind (e.g. a portrait whose
+   * quality control failed: `{ qcPassed: false, qcIssues: ['head_tilted'] }`, or a prepared
+   * portrait without the dedicated matte: `{ matteModel: 'mediapipe-selfie-multiclass' }`).
+   */
+  patchNextResult(kind: Kind, patch: Record<string, unknown>): void;
   /** Answer the next POST with this HTTP error instead of creating a job. */
   rejectNext(status: number, error: { code: string; message: string; reason?: string }): void;
   /** Jobs never progress past `running` (stall / cancel tests). */
@@ -75,6 +81,14 @@ const DEFAULT_HEALTH: EngineHealth = EngineHealthSchema.parse({
       license: 'CreativeML OpenRAIL-M',
       commercialUse: true,
     },
+    // Person matting used by `prepare` (part of the engine's default download).
+    {
+      id: 'ormbg-onnx',
+      role: 'matting',
+      downloaded: true,
+      license: 'Apache-2.0',
+      commercialUse: true,
+    },
   ],
   secondsPerVideoSecond: 46.5,
   secondsPerPortrait: 66,
@@ -93,6 +107,7 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
   const steps = options.steps ?? 3;
   const jobs = new Map<string, FakeJob>();
   const pendingFailures = new Map<Kind, { code: string; message: string; reason?: string }>();
+  const pendingPatches = new Map<Kind, Record<string, unknown>>();
   let pendingRejection: { status: number; error: Record<string, unknown> } | null = null;
   let counter = 0;
 
@@ -141,6 +156,7 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
         height: 768,
         landmarks: LANDMARKS,
         landmarksSource: entry.body.landmarks ? 'user' : 'detected',
+        matteModel: 'matting',
       };
     } else {
       const imagePath = path.join(outputDir, 'portrait.png');
@@ -157,6 +173,11 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
         qcIssues: [],
       };
     }
+    const patch = pendingPatches.get(entry.kind);
+    if (patch) {
+      pendingPatches.delete(entry.kind);
+      result = { ...result, ...patch } as EngineJobResult;
+    }
     entry.job = { ...entry.job, status: 'succeeded', progress: 1, etaSec: 0, result };
   };
 
@@ -169,6 +190,7 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
     health: DEFAULT_HEALTH,
     freeze: false,
     failNext: (kind, error) => void pendingFailures.set(kind, error),
+    patchNextResult: (kind, patch) => void pendingPatches.set(kind, patch),
     rejectNext: (status, error) => {
       pendingRejection = { status, error };
     },

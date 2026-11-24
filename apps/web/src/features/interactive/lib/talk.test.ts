@@ -37,7 +37,7 @@ const reply = InteractiveReplySchema.parse({
     provider: { id: 'espeak', name: 'eSpeak NG (local)', quality: 'basic', local: true },
   },
   providers: {
-    llm: { id: 'heuristic', name: 'Modo básico (local)', quality: 'basic', local: true },
+    llm: { id: 'heuristic', name: 'Heurística local', quality: 'basic', local: true },
     tts: { id: 'espeak', name: 'eSpeak NG (local)', quality: 'basic', local: true },
   },
 });

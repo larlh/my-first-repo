@@ -13,12 +13,21 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { JobStatusBadge } from '@/components/JobStatus';
-import { ProviderBadge } from '@/components/ProviderBadge';
+import { ProviderBadge, useProviderName } from '@/components/ProviderBadge';
 import { api, useApiMutation, useInvalidateApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useJobPolling } from '@/lib/jobs';
 import { useSession } from '@/lib/session';
-import { Button, ErrorState, ProgressBar, Skeleton, VoiceBars, toast, useErrorText } from '@/ui';
+import {
+  Button,
+  ErrorState,
+  ProgressBar,
+  Skeleton,
+  VoiceBars,
+  toast,
+  useErrorText,
+  useServerMessage,
+} from '@/ui';
 import { Callout, LIB_ROUTES, useSpeechPreview, useStartVideo } from '@/features/avatars/kit';
 
 export interface VoiceJobProps {
@@ -41,6 +50,8 @@ function semitones(value: number, format: (value: number) => string): string {
  */
 export function VoiceJob({ voiceId, onAnother }: VoiceJobProps) {
   const { t, i18n } = useTranslation('voice-clone');
+  const serverMessage = useServerMessage();
+  const providerName = useProviderName();
   const format = useFormat();
   const session = useSession();
   const describe = useErrorText();
@@ -116,7 +127,7 @@ export function VoiceJob({ voiceId, onAnother }: VoiceJobProps) {
           <p className="text-sm text-pretty text-fg-muted">
             {basic
               ? t('job.explain.basic')
-              : t('job.explain.premium', { name: voice.provider.name })}{' '}
+              : t('job.explain.premium', { name: providerName(voice.provider) })}{' '}
             {t('job.noEta')}
           </p>
           <Callout tone="neutral">{t('job.leave')}</Callout>
@@ -229,7 +240,12 @@ export function VoiceJob({ voiceId, onAnother }: VoiceJobProps) {
       {voice.status === 'failed' && (
         <>
           <Callout tone="danger" role="alert" icon={<TriangleAlert />} title={t('job.failedTitle')}>
-            <p>{voice.error?.message ?? t('job.failedUnknown')}</p>
+            <p>
+              {serverMessage(voice.error?.message, {
+                code: voice.error?.code,
+                reason: voice.error?.reason,
+              }) || t('job.failedUnknown')}
+            </p>
             <p className="mt-1.5">{t('job.refunded')}</p>
           </Callout>
           <div className="flex flex-wrap gap-2">

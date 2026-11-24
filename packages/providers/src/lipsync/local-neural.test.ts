@@ -79,6 +79,7 @@ describe('local-neural lip-sync: status', () => {
     expect(status.models?.map((model) => `${model.id}: ${model.license}`)).toEqual([
       'liveportrait: MIT',
       'realistic-vision: CreativeML OpenRAIL-M',
+      'ormbg-onnx: Apache-2.0',
     ]);
   });
 

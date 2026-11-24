@@ -88,7 +88,7 @@ export function createOpenAiSttProvider(
   const hasSegments = model.toLowerCase().startsWith('whisper');
 
   async function transcribeChunk(
-    wav: Uint8Array,
+    wav: Uint8Array<ArrayBuffer>,
     durationMs: number,
     language: LanguageCode | undefined,
     prompt: string,

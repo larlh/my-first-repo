@@ -1,6 +1,7 @@
 import { CircleAlert, RotateCw, Square, Trash2, Volume2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useProviderName } from '@/components/ProviderBadge';
 import { Button, IconButton, Spinner, VoiceBars, cn } from '@/ui';
 import type { TalkMessage } from '../lib/talk';
 
@@ -33,6 +34,7 @@ export function Transcript({
   onRemove,
   className,
 }: TranscriptProps) {
+  const providerName = useProviderName();
   const { t } = useTranslation('interactive');
   const { t: tShell, i18n } = useTranslation('shell');
   const end = useRef<HTMLLIElement>(null);
@@ -138,7 +140,7 @@ export function Transcript({
                   <span>
                     {basic
                       ? t('message.byBasic')
-                      : t('message.by', { name: message.providers.llm.name })}
+                      : t('message.by', { name: providerName(message.providers.llm) })}
                   </span>
                 )}
                 {message.speech === null && <span>· {t('message.noAudio')}</span>}

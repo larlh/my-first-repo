@@ -178,6 +178,7 @@ export default defineModule({
           workspaceName: found.workspaceName,
           providers: video.providers,
           aiGenerated: usesPhotorealAvatars(rendered?.composition ?? video.composition),
+          burnedInSubtitles: (rendered?.composition ?? video.composition).subtitles.enabled,
           createdAt: iso(video.createdAt),
         };
       },

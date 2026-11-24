@@ -213,11 +213,13 @@ function MemberRow({
       // Changing your own role changes what this session may do.
       if (isSelf) await session.refresh();
     },
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
   const remove = useApiMutation(api.members.remove, {
     invalidates: [api.members.list, api.billing.overview],
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
 
   const onRemove = async () => {
@@ -338,7 +340,8 @@ function InviteRow({ invite, now }: { invite: Invite; now: Date }) {
   const revoke = useApiMutation(api.members.revokeInvite, {
     invalidates: [api.members.listInvites],
     onSuccess: () => toast.success(t('members.invites.revoked', { email: invite.email })),
-    onError: (error) => toast.error(errorText(error).title, { description: error.message }),
+    onError: (error) =>
+      toast.error(errorText(error).title, { description: errorText(error).message }),
   });
   const onRevoke = async () => {
     const ok = await confirm({
@@ -443,8 +446,10 @@ export default function MembersSection() {
             <p className="mt-2.5 text-sm text-fg-muted">
               {canManage && openInvites.length > 0
                 ? t('members.seats.breakdown', {
-                    members: list.length,
-                    invites: seats.used - list.length,
+                    members: t('members.seats.membersCount', { count: list.length }),
+                    invites: t('members.seats.invitesCount', {
+                      count: seats.used - list.length,
+                    }),
                   })
                 : t('members.seats.hint')}{' '}
               {seats.full && (

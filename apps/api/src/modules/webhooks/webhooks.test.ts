@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PLANS, WebhookEventSchema, api } from '@parlante/shared';
 import { decryptSecret, signWebhookPayload, verifyWebhookSignature } from '@parlante/shared/node';
 import { eq, webhookDeliveries, webhookEndpoints } from '@parlante/db';
+import { loadConfig } from '../../config';
 import { createTestApp } from '../../testing/index';
 import type { TestActor, TestApp } from '../../testing/index';
 import webhooksModule from './index';
@@ -153,6 +154,15 @@ describe('webhook endpoints', () => {
     expect(moved.status).toBe(422);
     const [row] = await t.db.select().from(webhookEndpoints);
     expect(row?.url).toBe(url);
+  });
+
+  it('never starts in production with the private-destination switch on', () => {
+    const secret = { APP_SECRET: 'a-private-secret-of-at-least-32-characters' };
+    expect(loadConfig({}).ALLOW_PRIVATE_URLS).toBe(false);
+    expect(loadConfig({ NODE_ENV: 'production', ...secret }).ALLOW_PRIVATE_URLS).toBe(false);
+    expect(() =>
+      loadConfig({ NODE_ENV: 'production', ALLOW_PRIVATE_URLS: 'true', ...secret }),
+    ).toThrow(/ALLOW_PRIVATE_URLS is a development-only switch/);
   });
 
   it('accepts private destinations only when the deployment allows them explicitly', async () => {

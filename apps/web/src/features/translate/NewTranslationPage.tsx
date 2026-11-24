@@ -1,11 +1,12 @@
+import { baseLanguage } from '@parlante/shared';
 import type { LanguageCode } from '@parlante/shared';
 import { Languages, TriangleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ProviderBadge } from '@/components/ProviderBadge';
-import { api, isApiError, useApiMutation, useApiQuery } from '@/lib/api';
+import { api, isApiError, toAppUrl, useApiMutation, useApiQuery } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useSession } from '@/lib/session';
 import { Button, Input, PageHeader, Select, Slider, Switch, toast, useErrorText } from '@/ui';
@@ -67,6 +68,77 @@ export default function NewTranslationPage() {
     credits: session.credits,
   });
   const has = (problem: FormProblem) => problems.includes(problem);
+
+  /* A video of the workspace as the source — chosen in step 1 or handed over by its page
+   * (`/translate/new?video=<id>`, the "translate" action of a finished video). Parlante wrote
+   * that video, so it already has what the local mode would otherwise make the person type
+   * again: its subtitles become the transcript and its narration language the source language.
+   * Both are only proposed: nothing the person already wrote or chose is replaced. */
+  const [params] = useSearchParams();
+  const linkedVideoId = params.get('video');
+  const sourceVideoId = form.source?.kind === 'video' ? form.source.videoId : null;
+  const wantedVideoId = sourceVideoId ?? (form.source === null ? linkedVideoId : null);
+  const sourceVideo = useApiQuery(
+    api.videos.get,
+    { params: { videoId: wantedVideoId ?? '' } },
+    { enabled: wantedVideoId !== null, staleTime: 60_000 },
+  );
+  const proposedFor = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const [transcriptFrom, setTranscriptFrom] = useState<string | null>(null);
+  useEffect(() => {
+    const video = sourceVideo.data;
+    if (!video || video.id !== wantedVideoId || proposedFor.current === video.id) return;
+    if (video.status !== 'completed' || !video.videoUrl) return;
+    proposedFor.current = video.id;
+    const narration = video.composition.scenes.find((scene) => scene.script.kind === 'tts');
+    const spoken =
+      narration?.script.kind === 'tts' ? (baseLanguage(narration.script.language) ?? null) : null;
+    setForm((current) => ({
+      ...current,
+      source: current.source ?? {
+        kind: 'video',
+        videoId: video.id,
+        name: video.title,
+        durationMs: video.durationMs,
+        thumbnailUrl: video.thumbnailUrl,
+      },
+      name: current.name !== '' ? current.name : video.title.slice(0, 120),
+      ...(spoken && languages.some((option) => option.value === spoken)
+        ? {
+            sourceLanguage: spoken as LanguageCode,
+            targets: current.targets.filter((target) => target !== spoken),
+          }
+        : {}),
+    }));
+    if (!video.srtUrl) return;
+    // Not cancelled from the cleanup of this effect: a background refetch of the video (new
+    // signed URLs, same video) re-runs it, and that must not throw the subtitles away.
+    void fetch(toAppUrl(video.srtUrl))
+      .then((response) => (response.ok ? response.text() : ''))
+      .then((text) => {
+        if (!mounted.current || text.trim() === '') return;
+        setForm((current) =>
+          current.transcript.trim() === '' && current.source?.kind === 'video'
+            ? {
+                ...current,
+                transcriptFormat: /^\uFEFF?WEBVTT/.test(text) ? 'vtt' : 'srt',
+                transcript: text.trim(),
+              }
+            : current,
+        );
+        setTranscriptFrom(video.title);
+      })
+      .catch(() => undefined);
+    // `languages` is a stable list of the supported languages; the effect follows the video.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceVideo.data, wantedVideoId]);
   const cost = translationCost(form);
   const duration = form.source?.durationMs ?? null;
 
@@ -177,6 +249,11 @@ export default function NewTranslationPage() {
             }
             durationMs={duration}
             required={transcriptRequired}
+            note={
+              transcriptFrom !== null && form.source?.kind === 'video'
+                ? t('new.transcript.fromVideo', { title: transcriptFrom })
+                : undefined
+            }
             error={
               submitted && has('transcriptRequired')
                 ? t('new.problems.transcriptRequired')

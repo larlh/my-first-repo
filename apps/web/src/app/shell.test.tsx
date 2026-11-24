@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, apiRequester } from '@/lib/api/instance';
 import { i18n, registerTranslations } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
-import { AppProviders } from './App';
+import { AppProviders, FeatureProblems } from './App';
 import { RegistryProvider } from './RegistryContext';
-import { collectFeatures, defineFeature } from './features';
+import { collectFeatures, defineFeature, loadManifests } from './features';
 import { loginPathFor, safeNextPath } from './paths';
 import { buildRoutes } from './router';
 
@@ -196,6 +196,33 @@ describe('collectFeatures', () => {
       { dev: true },
     );
     expect(dev.features).toHaveLength(1);
+  });
+
+  it('leaves out a feature whose manifest cannot be imported instead of failing as a whole', async () => {
+    const page = () => null;
+    const good = defineFeature({
+      id: 'good',
+      routes: [{ path: '/good', layout: 'app', component: page }],
+    });
+    const { modules, problems } = await loadManifests({
+      '../features/good/index.tsx': () => Promise.resolve({ default: good }),
+      '../features/broken/index.tsx': () =>
+        Promise.reject(new SyntaxError("Unexpected token '}' in broken/index.tsx")),
+      '../features/throws/index.tsx': () => {
+        throw new Error('module level failure');
+      },
+    });
+
+    expect(Object.keys(modules)).toEqual(['../features/good/index.tsx']);
+    expect(problems).toHaveLength(2);
+    expect(problems[0]).toMatch(/broken\/index\.tsx: could not be loaded.*Unexpected token/);
+
+    const result = collectFeatures(modules, { dev: true });
+    expect(result.features.map((f) => f.id)).toEqual(['good']);
+
+    render(<FeatureProblems problems={problems} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('2 feature problem(s)');
+    expect(screen.getByRole('alert')).toHaveTextContent('module level failure');
   });
 });
 

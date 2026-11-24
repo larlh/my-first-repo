@@ -15,6 +15,13 @@
       "when": 1794617828766,
       "tag": "0001_contract_closing",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795514053185,
+      "tag": "0002_avatar_quality",
+      "breakpoints": true
     }
   ]
 }

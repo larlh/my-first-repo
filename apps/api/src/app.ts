@@ -26,6 +26,17 @@ import { API_VERSION, registerCoreRoutes } from './plugins/core-routes';
 import { registerErrorHandling } from './plugins/errors';
 import './types';
 
+/**
+ * A request URL as it may be written to the log: bearer-like values are replaced. Whoever can
+ * read the logs must not be able to open a file link, accept an invitation or watch a shared
+ * video with what they find there.
+ */
+export function redactUrl(url: string): string {
+  return url
+    .replace(/([?&](?:sig|token)=)[^&#]*/gi, '$1[redacted]')
+    .replace(/^(\/api\/(?:invites\/lookup|public\/shares)\/)[^/?#]+/, '$1[redacted]');
+}
+
 export interface BuildAppOptions {
   config?: ApiConfig;
   /** Inject dependencies (tests). When omitted they are created from the config. */
@@ -55,6 +66,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
               'req.headers.cookie',
               'res.headers["set-cookie"]',
             ],
+            // Request lines never carry a capability: signatures of file links and the tokens
+            // of invitations and share links are masked (see `redactUrl`).
+            serializers: {
+              req: (request: {
+                method: string;
+                url: string;
+                host?: string;
+                ip?: string;
+                socket?: { remotePort?: number };
+              }) => ({
+                method: request.method,
+                url: redactUrl(request.url),
+                host: request.host,
+                remoteAddress: request.ip,
+                remotePort: request.socket?.remotePort,
+              }),
+            },
             ...(config.NODE_ENV === 'development'
               ? {
                   transport: {

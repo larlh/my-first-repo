@@ -94,6 +94,37 @@ export interface FeatureRegistry {
 
 type FeatureModule = { default?: unknown; feature?: unknown };
 
+/** What `src/features/<name>/index.ts(x)` exports. */
+export type ManifestModule = { default?: FeatureManifest; feature?: FeatureManifest };
+
+/**
+ * Load feature manifests one by one so a feature that cannot even be imported (a syntax error
+ * while it is being written, a missing file, an exception at module level) is left out and
+ * reported instead of taking the whole application down with it.
+ */
+export async function loadManifests(
+  loaders: Record<string, () => Promise<ManifestModule>>,
+): Promise<{ modules: Record<string, ManifestModule>; problems: string[] }> {
+  const files = Object.keys(loaders).sort();
+  const results = await Promise.allSettled(
+    // `then` also turns a loader that throws synchronously into a rejection.
+    files.map((file) => Promise.resolve().then(loaders[file] as () => Promise<ManifestModule>)),
+  );
+  const modules: Record<string, ManifestModule> = {};
+  const problems: string[] = [];
+  results.forEach((result, index) => {
+    const file = files[index] as string;
+    if (result.status === 'fulfilled') {
+      modules[file] = result.value;
+      return;
+    }
+    const reason: unknown = result.reason;
+    const message = reason instanceof Error ? reason.message : String(reason);
+    problems.push(`${file}: could not be loaded and was left out — ${message}`);
+  });
+  return { modules, problems };
+}
+
 function isManifest(value: unknown): value is FeatureManifest {
   return (
     typeof value === 'object' &&

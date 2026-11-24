@@ -4,6 +4,13 @@ import { defineRoute } from '../../lib/define-route';
 import { defineModule } from '../../lib/modules';
 
 /**
+ * Ping jobs are not rows: their only owner mark is the job id itself, which carries the id of
+ * the workspace that queued it. Another workspace asking for that id gets the same 404 as for
+ * a job that does not exist.
+ */
+const pingJobPrefix = (workspaceId: string): string => `ping_${workspaceId.replace(/^ws_/, '')}_`;
+
+/**
  * EXAMPLE MODULE (real, autoloaded). Shows the minimal shape of a module:
  *   - one file `modules/<name>/index.ts` default-exporting `defineModule({ name, register })`
  *   - routes declared in the shared contract (`api.<group>.<route>`) and implemented with
@@ -20,17 +27,20 @@ export default defineModule({
     );
 
     // API → queue → worker round trip: enqueue a `system` job…
-    defineRoute(app, api.system.pingWorker, async ({ body, app: instance }) => {
+    defineRoute(app, api.system.pingWorker, async ({ auth, body, app: instance }) => {
       const { jobId } = await instance.queues.enqueue(
         'system',
         { kind: 'ping', echo: body.echo },
-        { jobId: `ping_${newId('event').slice(4)}` },
+        { jobId: `${pingJobPrefix(auth.workspaceId)}${newId('event').slice(4)}` },
       );
       return { jobId, state: 'waiting' as const, result: null };
     });
 
     // …and read its state / result back.
-    defineRoute(app, api.system.workerPingStatus, async ({ params, app: instance }) => {
+    defineRoute(app, api.system.workerPingStatus, async ({ auth, params, app: instance }) => {
+      if (!params.jobId.startsWith(pingJobPrefix(auth.workspaceId))) {
+        throw AppError.notFound('Ping job');
+      }
       const job = await instance.queues.getJob('system', params.jobId);
       if (!job) throw AppError.notFound('Ping job');
       return { jobId: job.id, state: job.state, result: job.result };

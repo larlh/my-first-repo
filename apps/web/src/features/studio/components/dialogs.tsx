@@ -1,42 +1,35 @@
-import {
-  CREDIT_COSTS,
-  TEMPLATE_CATEGORIES,
-  creditsForRender,
-  resolutionAllowed,
-  usesPhotorealAvatars,
-} from '@parlante/shared';
+import { TEMPLATE_CATEGORIES, resolutionAllowed, usesPhotorealAvatars } from '@parlante/shared';
 import type { Resolution, TemplateCategory } from '@parlante/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { CircleCheck, Clapperboard, Coins, Download, ExternalLink } from 'lucide-react';
+import { CircleCheck, Clapperboard, Download, ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { JobStatus } from '@/components/JobStatus';
+import { PhotorealNotice, RenderSettings, renderGate } from '@/components/RenderSettings';
 import { api, apiClient, apiQueryKey, downloadUrl, useApiMutation } from '@/lib/api';
 import type { ApiError } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useJobPolling } from '@/lib/jobs';
 import { useSession } from '@/lib/session';
+import { PATHS, hasRoute, useRegistry } from '@/shell';
 import {
   Button,
   Dialog,
   Input,
-  SegmentedControl,
   Select,
   Textarea,
-  cn,
   toast,
   useErrorText,
+  useServerMessage,
 } from '@/ui';
+import { quoteRender } from '../model/timing';
 import { selectComposition, useEditor, usePreviewState, useStudio } from '../state/context';
-import { PhotorealNotice } from './pickers';
 
 interface DialogState {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
-
-const RESOLUTIONS: Resolution[] = ['720p', '1080p'];
 
 function ErrorNote({ error, title }: { error: unknown; title?: string }) {
   const describe = useErrorText();
@@ -58,10 +51,13 @@ function ErrorNote({ error, title }: { error: unknown; title?: string }) {
  */
 export function RenderDialog({ open, onOpenChange }: DialogState) {
   const { t } = useTranslation('studio');
+  const { t: tShell } = useTranslation('shell');
+  const billing = hasRoute(useRegistry(), PATHS.billing);
   const format = useFormat();
   const session = useSession();
   const client = useQueryClient();
-  const { video, saver, save } = useStudio();
+  const serverMessage = useServerMessage();
+  const { video, saver, save, library } = useStudio();
   const composition = useEditor(selectComposition);
   const { timeline } = usePreviewState();
   const [resolution, setResolution] = useState<Resolution>('720p');
@@ -84,7 +80,12 @@ export function RenderDialog({ open, onOpenChange }: DialogState) {
             action: { label: t('render.open'), onClick: () => onOpenChange(true) },
           });
         } else if (phase === 'failed') {
-          toast.error(t('render.failedToast'), { description: finished.error?.message });
+          toast.error(t('render.failedToast'), {
+            description: serverMessage(finished.error?.message, {
+              code: finished.error?.code,
+              reason: finished.error?.reason,
+            }),
+          });
         }
       },
     },
@@ -113,8 +114,21 @@ export function RenderDialog({ open, onOpenChange }: DialogState) {
   }, [open]);
 
   const photoreal = usesPhotorealAvatars(composition);
-  const credits = creditsForRender(timeline.totalMs, resolution, { photoreal });
-  const affordable = credits <= session.credits;
+  const audioDurations: Record<string, number> = {};
+  for (const scene of composition.scenes) {
+    if (scene.script.kind !== 'audio') continue;
+    const length = library.media(`asset:${scene.script.assetId}`)?.durationMs;
+    if (length) audioDurations[scene.script.assetId] = length;
+  }
+  // `credits` is what the render will cost; the API may hold one 30 s step more (or less)
+  // while it runs, because it prices its estimate: the balance has to cover both.
+  const quote = quoteRender(composition, timeline.totalMs, resolution, audioDurations);
+  const gate = renderGate({
+    plan: session.plan.id,
+    balance: session.credits,
+    resolution,
+    cost: quote,
+  });
   const active = job.isActive || video.status === 'queued' || video.status === 'rendering';
   const upToDate =
     video.status === 'completed' &&
@@ -195,10 +209,10 @@ export function RenderDialog({ open, onOpenChange }: DialogState) {
           variant="primary"
           leftIcon={<Clapperboard aria-hidden="true" />}
           loading={starting}
-          disabled={!affordable || save.status === 'conflict'}
+          disabled={gate.blocked || save.status === 'conflict'}
           onClick={() => void start()}
         >
-          {t('render.start')}
+          {tShell('render.start')}
         </Button>
       </>
     );
@@ -207,7 +221,7 @@ export function RenderDialog({ open, onOpenChange }: DialogState) {
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={t(`render.title.${view}`)}
+      title={view === 'form' ? tShell('render.title') : t(`render.title.${view}`)}
       description={view === 'form' ? t('render.text') : undefined}
       dismissible={!starting}
       footer={footer}
@@ -222,7 +236,9 @@ export function RenderDialog({ open, onOpenChange }: DialogState) {
             etaEstimated={job.etaEstimated}
             stage={video.renderStage ? t(`render.stage.${video.renderStage}`) : undefined}
           />
-          {video.usesPhotorealAvatars && <PhotorealNotice />}
+          {video.usesPhotorealAvatars && (
+            <PhotorealNotice engine={library.avatarEngine} durationMs={timeline.totalMs} />
+          )}
           <p className="text-sm text-fg-muted">{t('render.progressText')}</p>
           {error !== null && <ErrorNote error={error} />}
         </div>
@@ -246,59 +262,25 @@ export function RenderDialog({ open, onOpenChange }: DialogState) {
           title={t('render.failedTitle')}
           error={
             video.error
-              ? Object.assign(new Error(video.error.message), { code: video.error.code })
+              ? Object.assign(new Error(video.error.message), {
+                  code: video.error.code,
+                  reason: video.error.reason,
+                })
               : new Error(t('render.failedToast'))
           }
         />
       )}
       {view === 'form' && (
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold">{t('render.resolution')}</p>
-            <SegmentedControl
-              aria-label={t('render.resolution')}
-              block
-              value={resolution}
-              onValueChange={setResolution}
-              options={RESOLUTIONS.map((value) => ({
-                value,
-                label: value,
-                disabled: !resolutionAllowed(session.plan.id, value),
-              }))}
-            />
-            {RESOLUTIONS.some((value) => !resolutionAllowed(session.plan.id, value)) && (
-              <p className="text-sm text-fg-muted">
-                {t('render.resolutionLocked', { plan: session.plan.name })}
-              </p>
-            )}
-          </div>
-          <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-2 rounded-lg bg-bg-sunken p-4 text-sm">
-            <dt className="text-fg-muted">{t('render.duration')}</dt>
-            <dd className="nums text-right font-medium">
-              ≈ {format.duration(Math.round(timeline.totalMs / 1000) * 1000)}
-            </dd>
-            <dt className="text-fg-muted">{t('render.cost')}</dt>
-            <dd
-              className="nums flex items-center justify-end gap-1.5 text-right font-semibold"
-              data-testid="render-cost"
-            >
-              <Coins className="size-4 text-saffron-text" aria-hidden="true" />
-              {t('render.credits', { count: credits })}
-            </dd>
-            <dt className="text-fg-muted">{t('render.balance')}</dt>
-            <dd className={cn('nums text-right font-medium', !affordable && 'text-danger-text')}>
-              {t('render.credits', { count: session.credits })}
-            </dd>
-          </dl>
-          <p className="-mt-2 text-xs text-fg-muted">
-            {t('render.costNote', {
-              base: CREDIT_COSTS.renderPer30s,
-              hd: CREDIT_COSTS.render1080pMultiplier,
-              photoreal: CREDIT_COSTS.renderPhotorealMultiplier,
-            })}
-            {limits.watermark ? ` ${t('render.watermark')}` : ''}
-          </p>
-          {photoreal && <PhotorealNotice />}
+        <RenderSettings
+          resolution={resolution}
+          onResolutionChange={setResolution}
+          durationMs={timeline.totalMs}
+          cost={quote}
+          photoreal={photoreal}
+          engine={library.avatarEngine}
+          error={error}
+          billingPath={billing ? PATHS.billing : null}
+        >
           {video.videoUrl && !upToDate && (
             <p className="text-sm text-fg-muted">{t('render.outdated')}</p>
           )}
@@ -316,13 +298,7 @@ export function RenderDialog({ open, onOpenChange }: DialogState) {
                   })}
             </p>
           )}
-          {!affordable && error === null && (
-            <p role="alert" className="text-sm font-medium text-danger-text">
-              {t('render.notEnough')}
-            </p>
-          )}
-          {error !== null && <ErrorNote error={error} />}
-        </div>
+        </RenderSettings>
       )}
     </Dialog>
   );

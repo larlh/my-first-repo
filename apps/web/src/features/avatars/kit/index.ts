@@ -12,6 +12,7 @@ export * from './CostLine';
 export * from './CountBadge';
 export * from './EnginePanel';
 export * from './FailureNote';
+export * from './QualityNote';
 export * from './consent';
 export * from './engine';
 export * from './failure';

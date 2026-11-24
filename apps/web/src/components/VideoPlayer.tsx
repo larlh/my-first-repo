@@ -13,8 +13,8 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { Slider as RadixSlider } from 'radix-ui';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentProps, KeyboardEvent, ReactNode } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import type { ComponentProps, KeyboardEvent, ReactNode, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toAppUrl } from '@/lib/api/files';
 import { cn } from '@/lib/cn';
@@ -41,6 +41,14 @@ export interface SubtitleTrack {
   cues?: readonly TimedText[];
 }
 
+/** Imperative control of a mounted player (`<VideoPlayer controls={ref} />`). */
+export interface VideoPlayerHandle {
+  /** Jump to an instant (clamped to the duration). `play: true` also starts playback. */
+  seek: (ms: number, options?: { play?: boolean }) => void;
+  play: () => void;
+  pause: () => void;
+}
+
 export interface VideoPlayerProps {
   src: string;
   /** Accessible name of the player (the video title). */
@@ -58,6 +66,8 @@ export interface VideoPlayerProps {
   downloadName?: string;
   onEnded?: () => void;
   onTimeUpdate?: (currentMs: number) => void;
+  /** Receives `seek` / `play` / `pause`, e.g. for a transcript whose lines jump to their instant. */
+  controls?: Ref<VideoPlayerHandle>;
   className?: string;
 }
 
@@ -120,6 +130,7 @@ export function VideoPlayer({
   downloadName,
   onEnded,
   onTimeUpdate,
+  controls,
   className,
 }: VideoPlayerProps) {
   const { t } = useTranslation('shell');
@@ -189,13 +200,17 @@ export function VideoPlayer({
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
-  // A new source resets the transport.
+  // A new source resets the transport. Effects run after the browser has started loading the
+  // file: with a fast or cached source `loadedmetadata` (and even `play`) can land first, so
+  // the reset reads what the element already knows instead of wiping it.
   useEffect(() => {
+    const el = video.current;
+    const known = el && el.readyState >= 1 && Number.isFinite(el.duration) ? el.duration : 0;
     setFailed(false);
-    setCurrentMs(0);
-    setDurationMs(0);
+    setCurrentMs(el && known > 0 ? el.currentTime * 1000 : 0);
+    setDurationMs(known * 1000);
     setBufferedMs(0);
-    setPlaying(false);
+    setPlaying(el !== null && known > 0 && !el.paused);
   }, [src]);
 
   const toggle = useCallback(() => {
@@ -213,6 +228,31 @@ export function VideoPlayer({
     el.currentTime = next / 1000;
     setCurrentMs(next);
   }, []);
+
+  // Before the metadata arrives the duration is unknown and `seek` would clamp to 0: the
+  // requested instant is kept and applied by `onLoadedMetadata`.
+  const pendingSeek = useRef<{ ms: number; play: boolean } | null>(null);
+  useImperativeHandle(
+    controls,
+    () => ({
+      seek: (ms, options) => {
+        const el = video.current;
+        if (!el) return;
+        const play = options?.play === true;
+        if (el.readyState < 1 || !Number.isFinite(el.duration)) {
+          pendingSeek.current = { ms, play };
+          if (play) void el.play().catch(() => undefined);
+          return;
+        }
+        seek(ms);
+        onTimeUpdate?.(Math.max(0, ms));
+        if (play && el.paused) void el.play().catch(() => undefined);
+      },
+      play: () => void video.current?.play().catch(() => undefined),
+      pause: () => video.current?.pause(),
+    }),
+    [seek, onTimeUpdate],
+  );
 
   const changeVolume = useCallback((next: number) => {
     const el = video.current;
@@ -356,6 +396,9 @@ export function VideoPlayer({
           setDurationMs(Number.isFinite(el.duration) ? el.duration * 1000 : 0);
           setVolume(el.volume);
           setMuted(el.muted);
+          const pending = pendingSeek.current;
+          pendingSeek.current = null;
+          if (pending) seek(pending.ms);
         }}
         onDurationChange={(event) => {
           const el = event.currentTarget;

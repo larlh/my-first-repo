@@ -145,11 +145,25 @@ export function EnginePanel({
                     ? t('kit.engine.offText')
                     : t('kit.engine.partialText')}
               </p>
-              {engine?.reason && (
-                <p className="rounded-md border border-on-media/20 px-3 py-2 font-mono text-xs break-words text-on-media/80">
-                  <span className="mr-1.5 text-on-media/50">{t('kit.engine.reason')}</span>
-                  {engine.reason}
-                </p>
+              {(engine?.reasonCode || engine?.reason) && (
+                <div className="rounded-md border border-on-media/20 px-3 py-2 text-xs text-on-media/80">
+                  {/* The stable code is explained in the person's language; the engine's own
+                      sentence (English) stays below as the technical detail. */}
+                  {engine.reasonCode && (
+                    <p data-engine-reason={engine.reasonCode} className="text-sm text-pretty">
+                      <span className="mr-1.5 text-on-media/50">{t('kit.engine.reason')}</span>
+                      {t(`kit.engine.reasons.${engine.reasonCode}`)}
+                    </p>
+                  )}
+                  {engine.reason && (
+                    <p className={cn('font-mono break-words', engine.reasonCode && 'mt-1.5')}>
+                      {!engine.reasonCode && (
+                        <span className="mr-1.5 text-on-media/50">{t('kit.engine.reason')}</span>
+                      )}
+                      {engine.reason}
+                    </p>
+                  )}
+                </div>
               )}
               <div>
                 <p className="mb-1.5 font-semibold">{t('kit.engine.howTo')}</p>

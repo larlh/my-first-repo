@@ -32,8 +32,10 @@ const es = {
     mode: {
       basic:
         'Contestará la heurística local: busca la respuesta en el conocimiento que le des y, si no la encuentra, lo dice con frases hechas. No razona ni improvisa. Es gratis. Con una clave de Anthropic en el servidor contesta Claude.',
-      premium:
-        'Contestará {{name}}. Empezar una conversación cuesta 2 créditos; los mensajes no se cobran aparte.',
+      premium_one:
+        'Contestará {{name}}. Empezar una conversación cuesta {{count}} crédito; los mensajes no se cobran aparte.',
+      premium_other:
+        'Contestará {{name}}. Empezar una conversación cuesta {{count}} créditos; los mensajes no se cobran aparte.',
     },
     costDetail: 'Se cobra una vez, al empezar la conversación.',
     start: 'Empezar a hablar',
@@ -158,8 +160,10 @@ const en: typeof es = {
     mode: {
       basic:
         'The local heuristic will answer: it looks the answer up in the knowledge you give it and, when it is not there, says so with stock phrases. It does not reason or improvise. It is free. With an Anthropic key on the server, Claude answers.',
-      premium:
-        '{{name}} will answer. Starting a conversation costs 2 credits; messages are not charged separately.',
+      premium_one:
+        '{{name}} will answer. Starting a conversation costs {{count}} credit; messages are not charged separately.',
+      premium_other:
+        '{{name}} will answer. Starting a conversation costs {{count}} credits; messages are not charged separately.',
     },
     costDetail: 'Charged once, when the conversation starts.',
     start: 'Start talking',

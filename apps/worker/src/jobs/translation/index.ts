@@ -189,6 +189,21 @@ async function processLanguage(
     endMs: segment.endMs,
     text: (translation.texts[i] ?? '').replace(/\s+/g, ' ').trim(),
   }));
+  // Moderated AGAIN, in the target language: this is the text that will be spoken and burned
+  // in, and a transcript that passed in its own language can become blocked content once it
+  // is translated. Failing here fails only this language; nothing of it is stored or dubbed.
+  const verdict = await ctx.providers.moderation.check({
+    text: translated.map((segment) => segment.text).join('\n'),
+    language,
+    context: 'translation',
+  });
+  if (!verdict.allowed) {
+    throw new AppError('CONTENT_BLOCKED', 'The translated text was blocked by moderation', {
+      field: 'translation',
+      language,
+      flags: verdict.flags,
+    });
+  }
   await saveOutputSegments(ctx, ref, output.id, translated);
   run.provenance.translation = translation.provider;
   if (typeof translation.coverage === 'number' && translation.coverage < 0.6) {

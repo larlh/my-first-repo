@@ -1,5 +1,13 @@
-import { estimateSpeechMs, interpolate, sceneDurationMs } from '@parlante/shared';
-import type { Composition, RenderRuntime, Scene, SceneRuntime } from '@parlante/shared';
+import {
+  applyVariables,
+  creditsForRender,
+  estimateCompositionDurationMs,
+  estimateSpeechMs,
+  interpolate,
+  sceneDurationMs,
+  usesPhotorealAvatars,
+} from '@parlante/shared';
+import type { Composition, RenderRuntime, Resolution, Scene, SceneRuntime } from '@parlante/shared';
 import type { SceneTiming } from '@parlante/renderer';
 
 /* Durations and instants the Studio shows. The timeline itself is `computeTimeline` from the
@@ -56,29 +64,33 @@ export function editInstantMs(scene: Scene, timing: SceneTiming): number {
   return timing.startMs + Math.min(settled + 34, lastFrame);
 }
 
-/** Values the preview substitutes for `{{variables}}`: their non-empty defaults. */
+/**
+ * Values the preview substitutes for `{{variables}}`: the declared defaults, empty ones
+ * included — exactly what `applyVariables` (the export without values) uses.
+ */
 export function previewVariableValues(composition: Composition): Record<string, string> {
   const values: Record<string, string> = {};
-  for (const variable of composition.variables) {
-    if (variable.defaultValue.trim() !== '') values[variable.name] = variable.defaultValue;
-  }
+  for (const variable of composition.variables) values[variable.name] = variable.defaultValue;
   return values;
 }
 
+/** What an export without values puts in place of a placeholder that has no value: nothing. */
+const missingValue = (): string => '';
+
 /**
- * The document the preview draws: `{{variables}}` with a default show that default — what an
- * export without values would show; the others stay visible as placeholders. Scene and layer
- * ids are untouched, and the same object is returned when there is nothing to substitute.
+ * The document the preview draws: every `{{variable}}` replaced like the export does it
+ * (`applyVariables` in @parlante/shared) — its default, or nothing when it has none — so the
+ * canvas never shows a placeholder the MP4 will not have. Scene and layer ids are untouched,
+ * and the same object is returned when there is nothing to substitute.
  */
 export function previewComposition(composition: Composition): Composition {
   const values = previewVariableValues(composition);
-  if (Object.keys(values).length === 0) return composition;
   let changed = false;
   const scenes = composition.scenes.map((scene) => {
     let sceneChanged = false;
     const layers = scene.layers.map((layer) => {
       if (layer.type !== 'text') return layer;
-      const text = interpolate(layer.text, values);
+      const text = interpolate(layer.text, values, missingValue);
       if (text === layer.text) return layer;
       sceneChanged = true;
       return { ...layer, text };
@@ -90,9 +102,9 @@ export function previewComposition(composition: Composition): Composition {
   return changed ? { ...composition, scenes } : composition;
 }
 
-/** Text actually sent to the TTS for a script: defaults applied, unknown variables spoken by name. */
+/** Text actually sent to the TTS for a script: the same substitution as the export. */
 export function spokenText(text: string, values: Record<string, string>): string {
-  return interpolate(text, values, (name) => name).trim();
+  return interpolate(text, values, missingValue).trim();
 }
 
 /** Total of the per-scene estimates, for the header and the render dialog. */
@@ -101,4 +113,38 @@ export function totalDurationMs(composition: Composition, runtime: RenderRuntime
     (total, scene) => total + sceneDurationInfo(scene, runtime.scenes[scene.id]).durationMs,
     0,
   );
+}
+
+export interface RenderQuote {
+  /** What the render ends up costing: priced on the measured length of the preview. */
+  cost: number;
+  /**
+   * What the API holds when the render starts. It has not synthesised the audio at that point,
+   * so it prices its ESTIMATE of the length (`startRender` in @parlante/jobs: the same
+   * `estimateCompositionDurationMs` on the document with its variables applied) and settles
+   * to the real length at the end. Near a 30 s step the two can differ by one step.
+   */
+  reserve: number;
+  /** Credits the balance must cover for the API to accept the render. */
+  needed: number;
+}
+
+/**
+ * Cost of rendering the document as the Studio shows it. `measuredMs` is the length of the
+ * preview timeline; `audioDurations` maps the uploaded narrations to their length (asset → ms).
+ */
+export function quoteRender(
+  composition: Composition,
+  measuredMs: number,
+  resolution: Resolution,
+  audioDurations: Record<string, number> = {},
+): RenderQuote {
+  const photoreal = usesPhotorealAvatars(composition);
+  const estimatedMs = estimateCompositionDurationMs(
+    applyVariables(composition, {}),
+    audioDurations,
+  );
+  const cost = creditsForRender(measuredMs, resolution, { photoreal });
+  const reserve = creditsForRender(estimatedMs, resolution, { photoreal });
+  return { cost, reserve, needed: Math.max(cost, reserve) };
 }

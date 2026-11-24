@@ -165,14 +165,7 @@ const es = {
     status: { processing: 'Preparándose', ready: 'Listo', failed: 'Con error' },
     photorealBadge: 'Fotorrealista',
     instantBadge: '2D instantáneo',
-    photorealTitle: 'El render fotorrealista es lento',
-    photorealMeasured:
-      'Medido en esta máquina ({{device}}): animar el avatar tarda unos {{time}} por cada 10 s de vídeo. La vista previa usa un sustituto estático.',
-    photorealUnmeasured:
-      'En CPU, animar el avatar puede tardar minutos por cada 10 s de vídeo (aún sin medir en esta máquina). La vista previa usa un sustituto estático.',
-    engineUnavailable:
-      'El motor neuronal no está disponible ahora: puedes editar, pero no renderizar este vídeo',
-    nonCommercial: 'Aviso de licencia: uno de los modelos instalados no permite uso comercial.',
+    photorealPreview: 'La vista previa del Studio usa un sustituto estático.',
     framing: 'Encuadre',
     framings: { closeup: 'Primer plano', bust: 'Busto', half: 'Medio cuerpo' },
     shape: 'Recorte',
@@ -371,8 +364,9 @@ const es = {
   },
   variables: {
     title: 'Variables',
-    text: 'Valor por defecto de cada variable. La vista previa lo usa; el vídeo en lote lo sustituye por cada fila.',
+    text: 'Valor por defecto de cada variable. La vista previa y el render lo usan; el vídeo en lote lo sustituye por cada fila.',
     placeholder: 'Valor por defecto',
+    empty: 'Sin valor: el hueco queda vacío en la vista previa y en el vídeo.',
   },
   inspector: { label: 'Propiedades', scene: 'Escena', layers: 'Capas', video: 'Vídeo' },
   animation: {
@@ -394,28 +388,14 @@ const es = {
   },
   render: {
     title: {
-      form: 'Renderizar vídeo',
       progress: 'Renderizando…',
       done: 'Vídeo listo',
       failed: 'El render ha fallado',
     },
     text: 'Se genera un MP4 (H.264 + AAC) con subtítulos SRT y VTT. Puedes seguir editando mientras tanto.',
-    resolution: 'Resolución',
-    resolutionLocked:
-      'El plan {{plan}} exporta a 720p. 1080p está disponible en planes superiores.',
-    duration: 'Duración estimada',
-    cost: 'Coste',
-    balance: 'Saldo del workspace',
-    credits_one: '{{count}} crédito',
-    credits_other: '{{count}} créditos',
-    costNote:
-      '{{base}} crédito por cada 30 s empezados a 720p; ×{{hd}} a 1080p y ×{{photoreal}} con avatares fotorrealistas. Se ajusta a la duración real al terminar.',
-    watermark: 'Tu plan añade una pequeña marca de agua.',
     outdated: 'El último render no incluye tus cambios más recientes.',
-    notEnough: 'No hay créditos suficientes para este render.',
     saveFirst:
       'Antes de renderizar hay que guardar los cambios, y ahora no se ha podido. Revisa el estado de guardado.',
-    start: 'Renderizar',
     cancel: 'Cancelar render',
     keepEditing: 'Seguir editando',
     progressLabel: 'Render de «{{title}}»',
@@ -650,14 +630,7 @@ const en: typeof es = {
     status: { processing: 'Being prepared', ready: 'Ready', failed: 'Failed' },
     photorealBadge: 'Photorealistic',
     instantBadge: 'Instant 2D',
-    photorealTitle: 'Photorealistic rendering is slow',
-    photorealMeasured:
-      'Measured on this machine ({{device}}): animating the avatar takes about {{time}} per 10 s of video. The preview uses a static stand-in.',
-    photorealUnmeasured:
-      'On CPU, animating the avatar can take minutes per 10 s of video (not measured on this machine yet). The preview uses a static stand-in.',
-    engineUnavailable:
-      'The neural engine is not available right now: you can edit, but not render this video',
-    nonCommercial: 'Licence notice: one of the installed models does not allow commercial use.',
+    photorealPreview: 'The Studio preview uses a static stand-in.',
     framing: 'Framing',
     framings: { closeup: 'Close-up', bust: 'Bust', half: 'Half body' },
     shape: 'Mask',
@@ -857,8 +830,9 @@ const en: typeof es = {
   },
   variables: {
     title: 'Variables',
-    text: 'Default value of each variable. The preview uses it; batch videos replace it per row.',
+    text: 'Default value of each variable. The preview and the render use it; batch videos replace it per row.',
     placeholder: 'Default value',
+    empty: 'No value: the gap stays empty in the preview and in the video.',
   },
   inspector: { label: 'Properties', scene: 'Scene', layers: 'Layers', video: 'Video' },
   animation: {
@@ -880,27 +854,14 @@ const en: typeof es = {
   },
   render: {
     title: {
-      form: 'Render video',
       progress: 'Rendering…',
       done: 'Video ready',
       failed: 'The render failed',
     },
     text: 'An MP4 (H.264 + AAC) is generated with SRT and VTT subtitles. You can keep editing meanwhile.',
-    resolution: 'Resolution',
-    resolutionLocked: 'The {{plan}} plan exports at 720p. 1080p is available on higher plans.',
-    duration: 'Estimated length',
-    cost: 'Cost',
-    balance: 'Workspace balance',
-    credits_one: '{{count}} credit',
-    credits_other: '{{count}} credits',
-    costNote:
-      '{{base}} credit per started 30 s at 720p; ×{{hd}} at 1080p and ×{{photoreal}} with photorealistic avatars. Settled to the real length when it finishes.',
-    watermark: 'Your plan adds a small watermark.',
     outdated: 'The last render does not include your latest changes.',
-    notEnough: 'There are not enough credits for this render.',
     saveFirst:
       'Changes must be saved before rendering, and that was not possible right now. Check the save status.',
-    start: 'Render',
     cancel: 'Cancel render',
     keepEditing: 'Keep editing',
     progressLabel: 'Render of “{{title}}”',

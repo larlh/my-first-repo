@@ -4,7 +4,7 @@ import { AudioLines, Mic, Play, Search, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ProviderBadge } from '@/components/ProviderBadge';
+import { ProviderBadge, useProviderName } from '@/components/ProviderBadge';
 import { api, useApiQuery } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import {
@@ -157,6 +157,7 @@ function VoiceRow({
  */
 export default function VoicesPage() {
   const { t, i18n } = useTranslation('voices');
+  const providerName = useProviderName();
   const session = useSession();
   const available = useAvailableRoutes();
   const desktop = useIsDesktop();
@@ -353,7 +354,7 @@ export default function VoicesPage() {
                 { value: ANY, label: t('filters.anyProvider') },
                 ...providers.map((provider) => ({
                   value: provider.id,
-                  label: provider.name,
+                  label: providerName(provider),
                   description:
                     provider.quality === 'basic' ? t('filters.basic') : t('filters.premium'),
                 })),

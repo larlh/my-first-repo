@@ -13,7 +13,9 @@ import {
   AvatarStage,
   Callout,
   LIB_ROUTES,
+  QualityNote,
   portraitSeconds,
+  useFailureReason,
   useStartVideo,
 } from '@/features/avatars/kit';
 import type { EngineStatus } from '@/features/avatars/kit';
@@ -36,6 +38,7 @@ export function AvatarJob({ avatarId, engine, onAnother }: AvatarJobProps) {
   const format = useFormat();
   const session = useSession();
   const describe = useErrorText();
+  const failureReason = useFailureReason();
   const invalidate = useInvalidateApi();
   const locale = i18n.language.startsWith('en') ? 'en' : 'es';
 
@@ -86,6 +89,7 @@ export function AvatarJob({ avatarId, engine, onAnother }: AvatarJobProps) {
   const processing = avatar.status === 'processing';
   const ready = avatar.status === 'ready';
   const failed = avatar.status === 'failed';
+  const failure = failureReason(avatar.error, t('job.failedUnknown'));
   const typical = generated ? portraitSeconds(engine) : null;
 
   return (
@@ -181,6 +185,7 @@ export function AvatarJob({ avatarId, engine, onAnother }: AvatarJobProps) {
             >
               {t('job.readyText')}
             </Callout>
+            <QualityNote quality={avatar.quality} />
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
               <div className="col-span-2 flex flex-wrap items-center gap-2">
                 <ProviderBadge provider={avatar.provider} />
@@ -239,7 +244,10 @@ export function AvatarJob({ avatarId, engine, onAnother }: AvatarJobProps) {
               icon={<TriangleAlert />}
               title={t('job.failedTitle')}
             >
-              <p>{avatar.error?.message ?? t('job.failedUnknown')}</p>
+              <p data-failure-reason={avatar.error?.reason ?? undefined}>{failure.text}</p>
+              {failure.detail && (
+                <p className="mt-1 font-mono text-xs break-words opacity-80">{failure.detail}</p>
+              )}
               <p className="mt-1.5">{t('job.refunded')}</p>
             </Callout>
             <div className="flex flex-wrap gap-2">

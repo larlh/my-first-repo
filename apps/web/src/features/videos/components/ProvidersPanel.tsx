@@ -46,6 +46,10 @@ export function ProvidersPanel({ video }: { video: Video }) {
   });
   const planned: ProvenanceEntry[] = capabilities.data
     ? RENDER_CAPABILITIES.flatMap((capability) => {
+        // The neural engine only animates photorealistic avatars: a video with 2D avatars
+        // would not use it, so it is not announced (it read as "high quality" on a 2D draft,
+        // even with the engine switched off).
+        if (capability === 'lipsync' && !video.usesPhotorealAvatars) return [];
         const provider = capabilities.data.active[capability];
         return provider ? [{ capability, provider }] : [];
       })

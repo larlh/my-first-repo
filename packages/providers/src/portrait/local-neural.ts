@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { engineAvatarCacheFile } from '@parlante/shared';
 import type {
   PortraitGenerationRequest,
   PortraitPreparationRequest,
@@ -7,6 +10,7 @@ import type {
 } from '@parlante/shared';
 import { createEngineJobDir, engineImageExtension, engineStatus, runEngineJob } from '../engine';
 import type { EngineHttpOptions } from '../engine';
+import { resolveEngineWorkDir } from '../env';
 import type { ProviderEnv } from '../env';
 
 const INFO: ProviderRef = {
@@ -22,11 +26,16 @@ const MAX_PROMPT_CHARS = 1000;
 /**
  * `local-neural`: portraits with the local engine (services/avatar-engine).
  *  - `generate`: text → portrait of a SYNTHETIC person (`POST /v1/portraits/generate`, side
- *    AVATAR_PORTRAIT_SIZE). Returns the model and the seed actually kept (the engine retries
- *    with derived seeds when its quality control fails).
+ *    AVATAR_PORTRAIT_SIZE; `gender` steers the presenter template). Returns the model, the
+ *    seed actually kept (the engine retries with derived seeds when its quality control fails)
+ *    and the verdict of that control (`quality`: `passed`, `issues`, `attempts`).
  *  - `prepare`:  photo → upright, framed portrait + background matte + landmarks
  *    (`POST /v1/portraits/prepare`). No usable face ⇒ AppError('UNPROCESSABLE') with the
  *    engine's message and `details.reason` (`no_face`, `multiple_faces`, `not_frontal`…).
+ *    `matteModel` says which model drew the matte: the dedicated one (ORMBG, `matting`) or the
+ *    coarser fallback segmenter the engine degrades to when ORMBG is missing — never a failure.
+ *  - `forget`:   deletes the features the engine cached for a prepared portrait
+ *    (`engineAvatarCacheFile` in the shared work dir) when its avatar is deleted.
  * Files travel through a private directory of the engine work dir (`createEngineJobDir`);
  * results always end up in `request.outputDir`.
  */
@@ -67,6 +76,17 @@ export function createLocalNeuralPortraitProvider(
           provider: INFO,
           model: result.model,
           ...(result.seedUsed !== undefined ? { seed: result.seedUsed } : {}),
+          // The engine keeps its least bad attempt when none passes its quality control:
+          // the verdict travels with the portrait so nobody presents it as a clean one.
+          ...(result.qcPassed !== undefined
+            ? {
+                quality: {
+                  passed: result.qcPassed,
+                  issues: result.qcIssues ?? [],
+                  ...(result.attempts !== undefined ? { attempts: result.attempts } : {}),
+                },
+              }
+            : {}),
         };
       } finally {
         await job.remove();
@@ -108,11 +128,18 @@ export function createLocalNeuralPortraitProvider(
           height: result.height,
           landmarks: result.landmarks,
           landmarksSource: result.landmarksSource,
+          ...(result.matteModel !== undefined ? { matteModel: result.matteModel } : {}),
           provider: INFO,
         };
       } finally {
         await job.remove();
       }
+    },
+
+    async forget({ portraitSha256 }) {
+      // The cache lives in the directory both processes share; a missing entry is fine.
+      const file = path.join(resolveEngineWorkDir(env), engineAvatarCacheFile(portraitSha256));
+      await fs.rm(file, { force: true });
     },
   };
 }

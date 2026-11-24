@@ -1,14 +1,18 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PLANS, api, createComposition, newId } from '@parlante/shared';
 import {
+  and,
   apiKeys,
   assets,
+  avatars,
   chargeCredits,
+  consentRecords,
   creditLedger,
   eq,
   refundCredits,
   renderJobs,
   videos,
+  voices,
   webhookEndpoints,
   workspaces,
 } from '@parlante/db';
@@ -238,6 +242,58 @@ describe('plan changes (simulated checkout)', () => {
       entry: null,
       simulated: true,
     });
+  });
+
+  it('counts avatars and cloned voices like the modules that enforce the allowance: failed ones do not take a place', async () => {
+    const owner = await t.signUp({ plan: 'creator' });
+    const ws = owner.workspace.id;
+    const consentId = newId('consent');
+    await t.db.insert(consentRecords).values({
+      id: consentId,
+      workspaceId: ws,
+      userId: owner.user.id,
+      kind: 'voice_clone',
+      subjectName: 'Persona de Prueba',
+      relationship: 'self',
+      statementVersion: 'test',
+      statement: 'test',
+      locale: 'es',
+      ip: '127.0.0.1',
+    });
+    await t.db.insert(avatars).values(
+      (['ready', 'processing', 'failed', 'failed'] as const).map((status) => ({
+        id: newId('avatar'),
+        workspaceId: ws,
+        name: `Avatar ${status}`,
+        origin: 'generated' as const,
+        status,
+      })),
+    );
+    await t.db.insert(voices).values(
+      (['ready', 'failed'] as const).map((status) => ({
+        id: newId('voice'),
+        workspaceId: ws,
+        name: `Voz ${status}`,
+        language: 'es' as const,
+        status,
+        consentId,
+      })),
+    );
+
+    const overview = await t.call(api.billing.overview, { as: owner });
+    expect(overview.body.usage).toMatchObject({ photoAvatars: 2, clonedVoices: 1 });
+
+    // Free allows 1 avatar: two live ones block the downgrade, the failed ones are not the reason.
+    const blocked = await t.call(api.billing.changePlan, { as: owner, body: { planId: 'free' } });
+    expect(blocked.status).toBe(409);
+    expect(blocked.error.details).toEqual({
+      exceeded: [{ limit: 'maxPhotoAvatars', max: PLANS.free.limits.maxPhotoAvatars, value: 2 }],
+    });
+    await t.db
+      .delete(avatars)
+      .where(and(eq(avatars.workspaceId, ws), eq(avatars.status, 'processing')));
+    const down = await t.call(api.billing.changePlan, { as: owner, body: { planId: 'free' } });
+    expect(down.status).toBe(200);
   });
 
   it('is reserved to owners and validated', async () => {

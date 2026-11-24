@@ -2,7 +2,7 @@ import { TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { isApiError } from '@/lib/api';
-import { Button } from '@/ui';
+import { Button, useServerMessage } from '@/ui';
 import { Callout } from './Callout';
 import { creationFailure } from './failure';
 import { LIB_ROUTES, useAvailableRoutes } from './routes';
@@ -21,7 +21,15 @@ export function FailureNote({ error, className }: FailureNoteProps) {
   const { t } = useTranslation('avatars');
   const available = useAvailableRoutes();
   const failure = isApiError(error) ? creationFailure(error) : 'generic';
-  const detail = error instanceof Error ? error.message : '';
+  const serverMessage = useServerMessage();
+  const details = isApiError(error) ? (error.details as { reason?: unknown } | null) : null;
+  const detail =
+    error instanceof Error
+      ? serverMessage(error.message, {
+          code: isApiError(error) ? error.code : null,
+          reason: typeof details?.reason === 'string' ? details.reason : null,
+        })
+      : '';
   return (
     <Callout
       tone="danger"

@@ -4,8 +4,9 @@
  *
  * Related entry points: '@/ui' (component kit), '@/lib/api' (typed client + hooks),
  * '@/lib/session', '@/lib/format', '@/lib/jobs', '@/lib/i18n', '@/lib/theme',
- * '@/components/*' (Logo, VideoPlayer, JobStatus, ProviderBadge). */
-export { defineFeature } from './app/features';
+ * '@/components/*' (Logo, VideoPlayer, JobStatus, ProviderBadge, RenderSettings). */
+export { defineFeature, hasRoute } from './app/features';
+export { useRegistry } from './app/RegistryContext';
 export type {
   FeatureManifest,
   FeatureRoute,
