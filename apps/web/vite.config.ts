@@ -24,6 +24,11 @@ const apiTarget = (setting('VITE_API_PROXY_TARGET') ?? 'http://localhost:4000').
 
 /** Port of the dev / preview server (`WEB_PORT`, default 5173). */
 const webPort = Number(setting('WEB_PORT') ?? 5173);
+/**
+ * Bind address of the dev / preview server (`WEB_HOST`). Unset = localhost only. `0.0.0.0` serves
+ * other devices on the local network; their origin must then be listed in `WEB_ORIGIN`.
+ */
+const webHost = setting('WEB_HOST') || undefined;
 
 /** Paths owned by the API: first-party API + signed files, public API v1, health and docs. */
 const proxied = ['/api', '/v1', '/health', '/docs', '/openapi.json'];
@@ -43,6 +48,7 @@ export default defineConfig({
     __PARLANTE_API_PROXY_TARGET__: JSON.stringify(apiTarget),
   },
   server: {
+    host: webHost,
     port: webPort,
     strictPort: true,
     proxy: Object.fromEntries(
@@ -50,6 +56,7 @@ export default defineConfig({
     ),
   },
   preview: {
+    host: webHost,
     port: webPort,
     proxy: Object.fromEntries(
       proxied.map((path) => [path, { target: apiTarget, changeOrigin: false }]),
