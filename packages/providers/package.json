@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dictation:setup": "tsx src/scripts/dictation-setup.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

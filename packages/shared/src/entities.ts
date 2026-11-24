@@ -109,6 +109,67 @@ export const ENGINE_REASON_CODES = [
 export const EngineReasonCodeSchema = z.enum(ENGINE_REASON_CODES);
 export type EngineReasonCode = z.infer<typeof EngineReasonCodeSchema>;
 
+/* ---------- dictation (microphone → text in any text field) ---------- */
+
+/** Longest audio segment `POST /api/dictation/transcribe` accepts (the window of the model). */
+export const DICTATION_MAX_SEGMENT_MS = 30_000;
+/** Sample rate of the WAV segments the web app sends (PCM 16-bit mono). */
+export const DICTATION_SAMPLE_RATE = 16_000;
+
+/**
+ * Stable, TRANSLATABLE reason why LOCAL dictation is not available (same idea as
+ * `ENGINE_REASON_CODES`). It travels in `Capabilities.dictation.local.reasonCode` and in
+ * `details.reason` of the 503 of `POST /api/dictation/transcribe`.
+ *  - `model_not_installed`  the speech model was never downloaded (`pnpm dictation:setup`)
+ *  - `model_incomplete`     files of the model are missing or have another size (run it again)
+ *  - `runtime_unavailable`  the model is there but could not be loaded or run on this machine
+ *  - `not_configured`       this server was built without a local dictation provider
+ *  - `unknown`              anything else
+ */
+export const DICTATION_REASON_CODES = [
+  'model_not_installed',
+  'model_incomplete',
+  'runtime_unavailable',
+  'not_configured',
+  'unknown',
+] as const;
+export const DictationReasonCodeSchema = z.enum(DICTATION_REASON_CODES);
+export type DictationReasonCode = z.infer<typeof DictationReasonCodeSchema>;
+
+/**
+ * Dictation engines as the web app sees them. `local` is the engine of THIS server (audio is
+ * transcribed on the machine that runs Parlante and never stored). The `browser` engine (Web
+ * Speech API) lives entirely in the web app and is not described here: the server has no part
+ * in it.
+ */
+export const DictationCapabilitiesSchema = z.object({
+  local: z.object({
+    available: z.boolean(),
+    /** Provider that transcribes (honesty rule); null when the server has none. */
+    provider: ProviderRefSchema.nullable(),
+    /** English sentence for logs; UIs translate `reasonCode`. Null when available. */
+    reason: z.string().nullable().default(null),
+    reasonCode: DictationReasonCodeSchema.nullable(),
+    /** Languages accepted as the `language` hint (and candidates of auto-detection). */
+    languages: z.array(LanguageCodeSchema),
+  }),
+  /** Longest segment accepted, in milliseconds: the client cuts longer speech into phrases. */
+  maxSegmentMs: z.number().int().positive(),
+});
+export type DictationCapabilities = z.infer<typeof DictationCapabilitiesSchema>;
+
+/** What a producer that knows nothing about dictation reports (additive default). */
+export const DICTATION_NOT_CONFIGURED: DictationCapabilities = {
+  local: {
+    available: false,
+    provider: null,
+    reason: 'This server has no local dictation provider',
+    reasonCode: 'not_configured',
+    languages: [],
+  },
+  maxSegmentMs: DICTATION_MAX_SEGMENT_MS,
+};
+
 export const CapabilitiesSchema = z.object({
   /** Active provider per capability. */
   active: z.record(CapabilitySchema, ProviderRefSchema),
@@ -152,6 +213,11 @@ export const CapabilitiesSchema = z.object({
     /** MEASURED seconds to generate one portrait on this machine (null until measured). */
     secondsPerPortrait: z.number().positive().nullable().default(null),
   }),
+  /**
+   * Dictation by microphone. Additive: producers that do not report it yield
+   * `DICTATION_NOT_CONFIGURED`, so consumers always receive the block.
+   */
+  dictation: DictationCapabilitiesSchema.default(DICTATION_NOT_CONFIGURED),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
 

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { envBoolean, envOptionalString, findRepoRoot } from '@parlante/shared/node';
+import { DEFAULT_WHISPER_MODEL, WHISPER_MODEL_IDS } from './stt/whisper-models';
 
 /**
  * Environment variables that select and configure providers. `auto` (the default) means: use
@@ -43,8 +44,22 @@ export const providerEnvSchema = z.object({
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
 
   // ---- STT
-  STT_PROVIDER: z.enum(['auto', 'manual', 'openai']).default('auto'),
+  /**
+   * `auto` → `openai` when keyed, else `local-whisper` when its model is installed, else
+   * `manual` (the user supplies the transcript).
+   */
+  STT_PROVIDER: z.enum(['auto', 'manual', 'openai', 'local-whisper']).default('auto'),
   OPENAI_STT_MODEL: z.string().default('whisper-1'),
+
+  // ---- local speech recognition (dictation by microphone, and STT when no key is set)
+  /** Local Whisper model (docs/MODELS.md). Install it with `pnpm dictation:setup`. */
+  DICTATION_MODEL: z.enum(WHISPER_MODEL_IDS).default(DEFAULT_WHISPER_MODEL),
+  /** Directory of the speech models. Relative paths resolve from the repo root. */
+  DICTATION_MODEL_DIR: z.string().default('./data/models'),
+  /** CPU threads of the speech model. 0 = every core, up to 4. */
+  DICTATION_THREADS: z.coerce.number().int().min(0).max(64).default(0),
+  /** Unload the speech model after this many seconds without use (0 = keep it in memory). */
+  DICTATION_IDLE_UNLOAD_SEC: z.coerce.number().int().min(0).max(86_400).default(900),
 
   // ---- LLM / translation
   LLM_PROVIDER: z.enum(['auto', 'local', 'anthropic']).default('auto'),

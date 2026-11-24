@@ -1,4 +1,12 @@
-import type { Capabilities, EngineModelInfo, EngineStatus, Providers } from '@parlante/shared';
+import { DICTATION_MAX_SEGMENT_MS, DICTATION_NOT_CONFIGURED } from '@parlante/shared';
+import type {
+  Capabilities,
+  DictationCapabilities,
+  DictationProvider,
+  EngineModelInfo,
+  EngineStatus,
+  Providers,
+} from '@parlante/shared';
 import { parseEnv } from '@parlante/shared/node';
 import { providerEnvSchema } from './env';
 import type { ProviderEnv } from './env';
@@ -7,7 +15,7 @@ import { createLlmProvider } from './llm/index';
 import { createModerationProvider } from './moderation/index';
 import { createPortraitProvider } from './portrait/index';
 import { createStorageProvider } from './storage/index';
-import { createSttProvider } from './stt/index';
+import { createDictationProvider, createSttProvider } from './stt/index';
 import { createTranslationProvider } from './translation/index';
 import { createTtsProviders } from './tts/index';
 import { createVoiceCloneProvider } from './voice-clone/index';
@@ -28,6 +36,7 @@ export function createProviders(env: ProviderEnv): Providers {
     portrait: createPortraitProvider(env),
     moderation: createModerationProvider(env),
     storage: createStorageProvider(env),
+    dictation: createDictationProvider(env),
   };
 }
 
@@ -92,14 +101,49 @@ export function mergeEngineStatus(
 }
 
 /**
+ * State of dictation for `/api/capabilities`. Never throws: a provider whose status check
+ * fails is reported as unavailable, and a registry without one as not configured.
+ */
+export async function describeDictation(
+  provider: DictationProvider | undefined,
+): Promise<DictationCapabilities> {
+  if (!provider) return DICTATION_NOT_CONFIGURED;
+  try {
+    const status = await provider.status();
+    return {
+      local: {
+        available: status.available,
+        provider: provider.info,
+        reason: status.reason,
+        reasonCode: status.available ? null : (status.reasonCode ?? 'unknown'),
+        languages: status.languages,
+      },
+      maxSegmentMs: DICTATION_MAX_SEGMENT_MS,
+    };
+  } catch (err) {
+    return {
+      local: {
+        available: false,
+        provider: provider.info,
+        reason: err instanceof Error ? err.message : 'Dictation status check failed',
+        reasonCode: 'unknown',
+        languages: [],
+      },
+      maxSegmentMs: DICTATION_MAX_SEGMENT_MS,
+    };
+  }
+}
+
+/**
  * Snapshot for `GET /api/capabilities`: which provider is active per capability, plus the live
  * state of the photorealistic avatar engine (never throws: an unreachable engine is reported
  * as unavailable).
  */
 export async function describeCapabilities(providers: Providers): Promise<Capabilities> {
-  const [lipsync, portrait] = await Promise.all([
+  const [lipsync, portrait, dictation] = await Promise.all([
     statusOrUnavailable(providers.lipsync.status()),
     statusOrUnavailable(providers.portrait.status()),
+    describeDictation(providers.dictation),
   ]);
   const engine = mergeEngineStatus(lipsync, portrait);
   return {
@@ -117,5 +161,6 @@ export async function describeCapabilities(providers: Providers): Promise<Capabi
     ttsProviders: providers.tts.all().map((p) => p.info),
     sttRequiresTranscript: providers.stt.requiresUserTranscript,
     avatarEngine: engine,
+    dictation,
   };
 }

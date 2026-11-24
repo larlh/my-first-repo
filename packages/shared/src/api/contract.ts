@@ -40,7 +40,10 @@ export interface RouteDef {
   auth: RouteAuth;
   /** Minimum workspace role (session auth). Defaults to `viewer`. */
   minRole?: Role;
-  /** Product feature number from the master prompt scope (1–16); 0 = infrastructure. */
+  /**
+   * Product feature number from the master prompt scope (1–16); 0 = infrastructure;
+   * 17 = dictation by microphone (added after the master prompt).
+   */
   feature: number;
   summary: string;
   tag: string;

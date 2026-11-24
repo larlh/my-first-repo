@@ -16,6 +16,7 @@ import {
   voiceRoutes,
 } from './content';
 import type { RouteDef } from './contract';
+import { dictationRoutes } from './dictation';
 import {
   apiKeyRoutes,
   authRoutes,
@@ -33,6 +34,7 @@ export * from './system';
 export * from './identity';
 export * from './content';
 export * from './ai';
+export * from './dictation';
 export * from './public-v1';
 
 /**
@@ -62,6 +64,7 @@ export const api = {
   photoAvatars: photoAvatarRoutes,
   voiceClones: voiceCloneRoutes,
   v1: publicV1Routes,
+  dictation: dictationRoutes,
 } as const;
 
 export type ApiContract = typeof api;

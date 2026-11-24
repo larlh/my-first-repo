@@ -30,6 +30,10 @@ export const apiEnvSchema = baseEnvSchema.extend(providerEnvSchema.shape).extend
    */
   ALLOW_PRIVATE_URLS: envBoolean(false),
   OPENAPI_ENABLED: envBoolean(true),
+  /** Dictation: segments per minute one user may send (needs RATE_LIMIT_ENABLED). */
+  DICTATION_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).max(10_000).default(60),
+  /** Dictation: segments that may be running or waiting for the model at once, all users. */
+  DICTATION_MAX_PENDING: z.coerce.number().int().min(1).max(1000).default(4),
 });
 
 export type ApiConfig = z.infer<typeof apiEnvSchema>;

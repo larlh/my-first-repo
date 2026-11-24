@@ -158,6 +158,10 @@ export async function createTestApp(
     // this machine (:8090) never changes a test's outcome. Tests of a running engine stub the
     // provider or pass their own AVATAR_ENGINE_URL.
     AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
+    // Same rule for the local speech model: a model installed on this machine (./data/models)
+    // must not turn `STT_PROVIDER=auto` into automatic transcription inside a test. Tests of
+    // the real model pass their own DICTATION_MODEL_DIR.
+    DICTATION_MODEL_DIR: path.join(storageDir, '_no-speech-models'),
     ...env,
   });
   const app = await buildApp({ ...buildOptions, config, db: handle.db, queues });

@@ -7,7 +7,7 @@ import type {
   ScriptTone,
   VoiceProfile,
 } from './entities';
-import type { EngineReasonCode, Gender } from './entities';
+import type { DictationReasonCode, EngineReasonCode, Gender } from './entities';
 import type { LanguageCode } from './languages';
 import type { VisemeCue, WordCue } from './runtime';
 import type { TimedText } from './subtitles';
@@ -116,6 +116,51 @@ export interface STTProvider extends BaseProvider {
    */
   readonly requiresUserTranscript: boolean;
   transcribe(request: STTRequest): Promise<STTResult>;
+}
+
+/* ---------- dictation (short microphone segments → text, on this machine) ---------- */
+
+export interface DictationStatus {
+  available: boolean;
+  /** English sentence for logs (null when available). */
+  reason: string | null;
+  /** Stable code the UI translates (null when available). */
+  reasonCode: DictationReasonCode | null;
+  /** Languages accepted as a hint; auto-detection chooses among them. */
+  languages: LanguageCode[];
+  /** Id of the model in use (docs/MODELS.md), or null when none is installed. */
+  model: string | null;
+}
+
+export interface DictationRequest {
+  /** Mono PCM 16-bit at `sampleRate`. The provider never stores or logs it. */
+  samples: Int16Array;
+  /** Must be 16 000 Hz (`DICTATION_SAMPLE_RATE`). */
+  sampleRate: number;
+  /** Hint. Omitted ⇒ the provider detects the language among `DictationStatus.languages`. */
+  language?: LanguageCode;
+  signal?: AbortSignal;
+}
+
+export interface DictationResult {
+  /** Recognised text, trimmed. Empty when the segment holds no speech. */
+  text: string;
+  /** The hint when given, otherwise the detected language (null when nothing was spoken). */
+  language: LanguageCode | null;
+  provider: ProviderRef;
+}
+
+/**
+ * Speech recognition of short segments for dictation. ALWAYS local: the audio never leaves
+ * the machine (the product promise of the `local` dictation engine), so there is no external
+ * adapter behind this interface.
+ *  - `status()` never throws and is cheap (called by `GET /api/capabilities`).
+ *  - `transcribe()` throws `AppError('SERVICE_UNAVAILABLE', …, { reason: DictationReasonCode })`
+ *    when the model is not installed or cannot run, and never blocks the event loop.
+ */
+export interface DictationProvider extends BaseProvider {
+  status(): Promise<DictationStatus>;
+  transcribe(request: DictationRequest): Promise<DictationResult>;
 }
 
 /* ---------- LLM (task-level: each task has a deterministic local fallback) ---------- */
@@ -517,4 +562,9 @@ export interface Providers {
   portrait: PortraitProvider;
   moderation: ModerationProvider;
   storage: StorageProvider;
+  /**
+   * Local dictation. Optional (additive): registries built before it existed, and test doubles,
+   * may omit it — callers treat a missing provider as "not configured".
+   */
+  dictation?: DictationProvider;
 }
