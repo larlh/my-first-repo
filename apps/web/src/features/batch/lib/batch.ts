@@ -50,11 +50,16 @@ export function normalizeName(name: string): string {
 
 /**
  * First guess of the mapping: a column with exactly the variable's name, else one whose name
- * (or the variable's label) matches loosely. A column feeds at most one variable.
+ * (or the variable's label) matches loosely. A column feeds at most one variable; `reserved`
+ * columns are never guessed (the person already gave them to a variable).
  */
-export function autoMap(variables: readonly SourceVariable[], columns: readonly string[]): Mapping {
+export function autoMap(
+  variables: readonly SourceVariable[],
+  columns: readonly string[],
+  reserved: Iterable<string> = [],
+): Mapping {
   const mapping: Mapping = {};
-  const taken = new Set<string>();
+  const taken = new Set<string>(reserved);
   for (const variable of variables) {
     const exact = columns.find((column) => column === variable.name && !taken.has(column));
     if (exact !== undefined) {
@@ -74,20 +79,34 @@ export function autoMap(variables: readonly SourceVariable[], columns: readonly 
   return mapping;
 }
 
-/** Keep a mapping valid after the CSV changed: columns that no longer exist are dropped. */
+/**
+ * The mapping in effect: what the person chose by hand (`choices`: a column, or null for
+ * "no column") wins while that column still exists; every other variable is guessed from the
+ * current columns. So the guess follows the CSV as it is typed or replaced, and a choice made
+ * by hand survives edits that keep its column.
+ */
 export function reconcileMapping(
-  mapping: Mapping,
+  choices: Mapping,
   variables: readonly SourceVariable[],
   columns: readonly string[],
 ): Mapping {
-  const guess = autoMap(variables, columns);
+  const kept: Mapping = {};
+  for (const variable of variables) {
+    const choice = choices[variable.name];
+    if (choice === null || (choice !== undefined && columns.includes(choice))) {
+      kept[variable.name] = choice;
+    }
+  }
+  const reserved = Object.values(kept).filter((column): column is string => !!column);
+  const guess = autoMap(
+    variables.filter((variable) => !(variable.name in kept)),
+    columns,
+    reserved,
+  );
   const next: Mapping = {};
   for (const variable of variables) {
-    const current = mapping[variable.name];
     next[variable.name] =
-      current !== undefined && (current === null || columns.includes(current))
-        ? current
-        : (guess[variable.name] ?? null);
+      variable.name in kept ? (kept[variable.name] ?? null) : (guess[variable.name] ?? null);
   }
   return next;
 }
@@ -253,17 +272,43 @@ export function personalisedTexts(composition: Composition): PersonalisedText[] 
   return out;
 }
 
-/** Two example rows for a set of variables (the "use an example" button). */
+/** What an example person brings: values for the variable names a batch usually has. */
+export interface SamplePerson {
+  name: string;
+  company: string;
+  city: string;
+}
+
+const SAMPLE_FIELDS: Record<string, keyof SamplePerson> = {
+  nombre: 'name',
+  name: 'name',
+  cliente: 'name',
+  customer: 'name',
+  empresa: 'company',
+  company: 'company',
+  compania: 'company',
+  ciudad: 'city',
+  city: 'city',
+};
+
+/**
+ * Example rows for a set of variables (the "use an example" button): a variable that reads
+ * like a name, a company or a city gets that of the example person; any other one gets its
+ * own name numbered per row ("tema 1", "tema 2"), so the example never pretends to know
+ * what the variable means.
+ */
 export function sampleRows(
   variables: readonly SourceVariable[],
-  samples: readonly string[][],
+  people: readonly SamplePerson[],
 ): Record<string, string>[] {
-  return samples.map((sample) =>
+  return people.map((person, index) =>
     Object.fromEntries(
-      variables.map((variable, index) => [
-        variable.name,
-        sample[index % sample.length] ?? variable.name,
-      ]),
+      variables.map((variable) => {
+        const field =
+          SAMPLE_FIELDS[normalizeName(variable.name)] ??
+          SAMPLE_FIELDS[normalizeName(variable.label)];
+        return [variable.name, field ? person[field] : `${variable.name} ${index + 1}`];
+      }),
     ),
   );
 }

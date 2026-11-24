@@ -140,7 +140,7 @@ export default function AvatarsPage() {
       <div
         role="search"
         aria-label={t('filters.label')}
-        className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_repeat(3,11rem)_auto]"
+        className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-[minmax(0,1fr)_repeat(3,11rem)_auto]"
       >
         <Input
           type="search"
@@ -149,7 +149,7 @@ export default function AvatarsPage() {
           leading={<Search aria-hidden="true" />}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          wrapperClassName="sm:col-span-2 lg:col-span-1"
+          wrapperClassName="col-span-2 lg:col-span-1"
         />
         <Select
           aria-label={t('filters.gender')}
@@ -175,6 +175,7 @@ export default function AvatarsPage() {
         />
         <Select
           aria-label={t('filters.style')}
+          className={hasActiveFilters(filters) ? undefined : 'max-sm:col-span-2'}
           value={filters.style ?? ANY}
           onValueChange={(value) =>
             update({ style: value === ANY ? null : AvatarStyleSchema.parse(value) })

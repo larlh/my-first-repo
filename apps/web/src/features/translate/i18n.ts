@@ -126,8 +126,10 @@ const es = {
     },
     cost: {
       pending: 'Elige el vídeo y los idiomas para calcular el coste',
-      detail:
-        '{{rate}} créditos por minuto empezado e idioma: {{minutes}} min × {{languages}} idiomas. Si un idioma falla, se devuelve su parte.',
+      detail_one:
+        '{{rate}} créditos por minuto empezado e idioma: {{minutes}} min × {{count}} idioma. Si el doblaje falla, se devuelven.',
+      detail_other:
+        '{{rate}} créditos por minuto empezado e idioma: {{minutes}} min × {{count}} idiomas. Si un idioma falla, se devuelve su parte.',
       rule: '{{rate}} créditos por cada minuto empezado de vídeo y por cada idioma de destino.',
     },
     problems: {
@@ -334,8 +336,10 @@ const en: typeof es = {
     },
     cost: {
       pending: 'Choose the video and the languages to work out the cost',
-      detail:
-        '{{rate}} credits per started minute and language: {{minutes}} min × {{languages}} languages. If a language fails, its share is refunded.',
+      detail_one:
+        '{{rate}} credits per started minute and language: {{minutes}} min × {{count}} language. If the dub fails, they are refunded.',
+      detail_other:
+        '{{rate}} credits per started minute and language: {{minutes}} min × {{count}} languages. If a language fails, its share is refunded.',
       rule: '{{rate}} credits for every started minute of video and every target language.',
     },
     problems: {

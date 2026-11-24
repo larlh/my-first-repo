@@ -10,6 +10,8 @@ export type RecorderState =
   | 'denied'
   /** No microphone API in this browser / context. */
   | 'unsupported'
+  /** The browser found no microphone to record from. */
+  | 'missing'
   | 'error';
 
 export interface Recording {
@@ -24,6 +26,13 @@ export function recordingSupported(): boolean {
     typeof MediaRecorder === 'function' &&
     typeof AudioContext === 'function'
   );
+}
+
+/** Which state a rejected `getUserMedia` leaves the recorder in, by `DOMException` name. */
+export function recorderFailure(name: string): 'denied' | 'missing' | 'error' {
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'denied';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'missing';
+  return 'error';
 }
 
 /**
@@ -121,7 +130,7 @@ export function useRecorder(options: {
     } catch (err) {
       release();
       const name = err instanceof DOMException ? err.name : '';
-      setState(name === 'NotAllowedError' || name === 'SecurityError' ? 'denied' : 'error');
+      setState(recorderFailure(name));
     }
   }, [finish, release]);
 

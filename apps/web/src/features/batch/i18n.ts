@@ -115,7 +115,7 @@ const es = {
     title: 'Nuevo lote',
     description:
       'Cinco pasos: el molde, los datos, las columnas, la revisión de las filas y el lanzamiento.',
-    defaultName: 'Lote de «{{title}}»',
+    defaultName: 'Lote de {{title}}',
     source: {
       title: 'El molde',
       text: 'El vídeo cuyas variables se rellenan con cada fila. Puede ser un borrador.',
@@ -318,7 +318,7 @@ const en: typeof es = {
     eyebrow: 'Personalised video in batch',
     title: 'New batch',
     description: 'Five steps: the mould, the data, the columns, the row check and the launch.',
-    defaultName: 'Batch of “{{title}}”',
+    defaultName: 'Batch of {{title}}',
     source: {
       title: 'The mould',
       text: 'The video whose variables are filled with every row. It can be a draft.',

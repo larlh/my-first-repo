@@ -132,7 +132,8 @@ export function Stage({ avatar, label, phase, runtime, clock, controls, classNam
           )}
         >
           {phase === 'speaking' ? (
-            <VoiceBars size="sm" label={null} />
+            // Ink bars: the lamp itself is the accent colour.
+            <VoiceBars size="sm" label={null} className="text-accent-fg" />
           ) : (
             <span
               aria-hidden="true"

@@ -216,7 +216,7 @@ export default function NewTranslationPage() {
                 max={100}
                 step={1}
                 formatValue={(value) =>
-                  value === 0 ? t('new.dub.originalOff') : format.percent(value / 100)
+                  value === 0 ? t('new.dub.originalOff') : format.percent(value)
                 }
               />
               <Switch
@@ -250,7 +250,7 @@ export default function NewTranslationPage() {
                 ).map(([step, provider]) => (
                   <div key={step} className="flex min-w-0 flex-col items-start gap-1">
                     <dt className="eyebrow text-fg-subtle">{t(`providers.${step}`)}</dt>
-                    <dd>
+                    <dd className="max-w-full min-w-0">
                       <ProviderBadge provider={provider} size="sm" />
                     </dd>
                   </div>
@@ -271,7 +271,7 @@ export default function NewTranslationPage() {
                   ? t('new.cost.detail', {
                       rate: CREDITS_PER_MINUTE_AND_LANGUAGE,
                       minutes: billedMinutes(duration),
-                      languages: form.targets.length,
+                      count: form.targets.length,
                     })
                   : t('new.cost.rule', { rate: CREDITS_PER_MINUTE_AND_LANGUAGE })
               }

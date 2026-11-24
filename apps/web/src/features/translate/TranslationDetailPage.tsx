@@ -214,7 +214,7 @@ export default function TranslationDetailPage() {
               <dd className="nums text-right font-medium">
                 {job.options.originalAudioVolume === 0
                   ? t('detail.originalOff')
-                  : format.percent(job.options.originalAudioVolume)}
+                  : format.percent(job.options.originalAudioVolume * 100)}
               </dd>
               <dt className="text-fg-muted">{t('detail.facts.subtitles')}</dt>
               <dd className="text-right font-medium">
@@ -230,13 +230,14 @@ export default function TranslationDetailPage() {
           <section className="min-w-0 rounded-xl border border-line bg-surface p-4 shadow-xs">
             <h2 className="eyebrow text-fg-subtle">{t('detail.providers')}</h2>
             {job.providers ? (
-              <ul className="mt-3 flex flex-col gap-2 text-sm">
+              <ul className="mt-3 flex min-w-0 flex-col gap-3 text-sm">
                 {PROVIDER_STEPS.map((step) => {
                   const provider = job.providers?.[step];
                   return provider ? (
-                    <li key={step} className="flex min-w-0 items-center justify-between gap-3">
+                    // Stacked: provider names are long and this column is narrow.
+                    <li key={step} className="flex min-w-0 flex-col items-start gap-1">
                       <span className="text-fg-muted">{t(`providers.${step}`)}</span>
-                      <ProviderBadge provider={provider} size="sm" />
+                      <ProviderBadge provider={provider} size="sm" className="max-w-full" />
                     </li>
                   ) : null;
                 })}

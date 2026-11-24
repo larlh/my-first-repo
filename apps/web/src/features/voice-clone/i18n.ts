@@ -47,6 +47,9 @@ const es = {
     deniedTitle: 'Sin acceso al micrófono',
     deniedText:
       'El navegador ha bloqueado el micrófono. Dale permiso a esta página en la barra de direcciones o sube un archivo de audio.',
+    missingTitle: 'No se encuentra ningún micrófono',
+    missingText:
+      'El navegador no ve ningún micrófono en este equipo. Conecta uno y vuelve a intentarlo, o sube un archivo de audio.',
     errorTitle: 'No se pudo grabar',
     errorText:
       'El micrófono falló o la grabación no se pudo procesar. Inténtalo otra vez o sube un archivo.',
@@ -194,6 +197,9 @@ const en: typeof es = {
     deniedTitle: 'No access to the microphone',
     deniedText:
       'The browser blocked the microphone. Allow it for this page in the address bar or upload an audio file.',
+    missingTitle: 'No microphone found',
+    missingText:
+      'The browser cannot see a microphone on this device. Connect one and try again, or upload an audio file.',
     errorTitle: 'Recording failed',
     errorText:
       'The microphone failed or the recording could not be processed. Try again or upload a file.',

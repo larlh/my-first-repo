@@ -4,13 +4,13 @@ import { Button, FileDropzone, Textarea } from '@/ui';
 import { CSV_MAX_CHARS, toCsv } from '../lib/csv';
 import type { CsvError, ParsedCsv } from '../lib/csv';
 import { sampleRows } from '../lib/batch';
-import type { SourceVariable } from '../lib/batch';
+import type { SamplePerson, SourceVariable } from '../lib/batch';
 
 /** Example people for the "use an example" button (data, not interface text). */
-const SAMPLES = [
-  ['Lucía', 'Ferrer Asesores', 'Madrid', 'lunes'],
-  ['Marc', 'Taller Riera', 'Girona', 'jueves'],
-  ['Ainhoa', 'Clínica Ibai', 'Bilbao', 'martes'],
+const SAMPLES: SamplePerson[] = [
+  { name: 'Lucía', company: 'Ferrer Asesores', city: 'Madrid' },
+  { name: 'Marc', company: 'Taller Riera', city: 'Girona' },
+  { name: 'Ainhoa', company: 'Clínica Ibai', city: 'Bilbao' },
 ];
 
 const DELIMITER_KEYS = { ',': 'comma', ';': 'semicolon', '\t': 'tab' } as const;

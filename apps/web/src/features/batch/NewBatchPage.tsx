@@ -58,7 +58,8 @@ export default function NewBatchPage() {
 
   const [source, setSource] = useState<BatchSource | null>(null);
   const [text, setText] = useState('');
-  const [mapping, setMapping] = useState<Mapping>({});
+  /** Columns the person assigned by hand; everything else is guessed from the CSV header. */
+  const [choices, setChoices] = useState<Mapping>({});
   const [name, setName] = useState('');
   const [nameTouched, setNameTouched] = useState(false);
   const [resolution, setResolution] = useState<Resolution>('720p');
@@ -68,10 +69,10 @@ export default function NewBatchPage() {
   const variables = useMemo(() => source?.variables ?? [], [source]);
   const columns = useMemo(() => parsed?.columns ?? [], [parsed]);
 
-  // Keep the mapping in step with the video and the CSV (keeps the person's own choices).
-  useEffect(() => {
-    setMapping((current) => reconcileMapping(current, variables, columns));
-  }, [variables, columns]);
+  const mapping = useMemo(
+    () => reconcileMapping(choices, variables, columns),
+    [choices, variables, columns],
+  );
   useEffect(() => {
     if (!nameTouched && source) {
       setName(t('new.defaultName', { title: source.title }).slice(0, NAME_MAX));
@@ -80,6 +81,7 @@ export default function NewBatchPage() {
 
   const onSource = useCallback((next: BatchSource | null) => {
     setSource(next);
+    setChoices({});
     setFailure(null);
   }, []);
 
@@ -187,7 +189,9 @@ export default function NewBatchPage() {
                 variables={variables}
                 columns={columns}
                 mapping={mapping}
-                onChange={setMapping}
+                onChoose={(variable, column) =>
+                  setChoices((current) => ({ ...current, [variable]: column }))
+                }
                 sample={parsed.rows[0]}
               />
               {check.unmapped.length > 0 && (

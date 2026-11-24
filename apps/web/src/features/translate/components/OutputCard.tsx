@@ -111,7 +111,10 @@ export function OutputCard({ result, jobName, voiceName }: OutputCardProps) {
           ) : status === 'processing' ? (
             <>
               <p>{t('output.processing', { language: languageInText(language, locale) })}</p>
-              <ProgressBar label={t('output.processing', { language: languageInText(language, locale) })} value={null} />
+              <ProgressBar
+                label={t('output.processing', { language: languageInText(language, locale) })}
+                value={null}
+              />
             </>
           ) : (
             <p>{t('output.pending')}</p>

@@ -8,13 +8,14 @@ export interface MappingTableProps {
   variables: readonly SourceVariable[];
   columns: readonly string[];
   mapping: Mapping;
-  onChange: (mapping: Mapping) => void;
+  /** The person gave a variable a column by hand (null = no column). */
+  onChoose: (variable: string, column: string | null) => void;
   /** First data row: shown as a sample of what each column carries. */
   sample: Record<string, string> | undefined;
 }
 
 /** Step 3 of a batch: which CSV column feeds each `{{variable}}` of the video. */
-export function MappingTable({ variables, columns, mapping, onChange, sample }: MappingTableProps) {
+export function MappingTable({ variables, columns, mapping, onChoose, sample }: MappingTableProps) {
   const { t } = useTranslation('batch');
   return (
     <Table dense>
@@ -45,9 +46,7 @@ export function MappingTable({ variables, columns, mapping, onChange, sample }: 
                   size="sm"
                   aria-label={t('mapping.columnFor', { name: variable.name })}
                   value={column ?? NONE}
-                  onValueChange={(next) =>
-                    onChange({ ...mapping, [variable.name]: next === NONE ? null : next })
-                  }
+                  onValueChange={(next) => onChoose(variable.name, next === NONE ? null : next)}
                   options={[
                     { value: NONE, label: t('mapping.none') },
                     ...columns.map((name) => ({ value: name, label: name })),

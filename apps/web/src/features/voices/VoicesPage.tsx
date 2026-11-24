@@ -305,7 +305,7 @@ export default function VoicesPage() {
           <div
             role="search"
             aria-label={t('filters.label')}
-            className="mb-5 grid gap-3 sm:grid-cols-3"
+            className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3"
           >
             <Input
               type="search"
@@ -314,10 +314,11 @@ export default function VoicesPage() {
               leading={<Search aria-hidden="true" />}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              wrapperClassName="sm:col-span-3"
+              wrapperClassName="col-span-2 sm:col-span-3"
             />
             <Select
               aria-label={t('filters.language')}
+              className="max-sm:col-span-2"
               value={filters.language ?? ANY}
               onValueChange={(value) =>
                 update({

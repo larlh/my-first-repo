@@ -306,6 +306,11 @@ export function CloneForm({ used, onCreated }: CloneFormProps) {
             {t('record.deniedText')}
           </Callout>
         )}
+        {recorder.state === 'missing' && (
+          <Callout className="mt-3" tone="warning" role="alert" title={t('record.missingTitle')}>
+            {t('record.missingText')}
+          </Callout>
+        )}
         {recorder.state === 'error' && (
           <Callout className="mt-3" tone="danger" role="alert" title={t('record.errorTitle')}>
             {t('record.errorText')}
