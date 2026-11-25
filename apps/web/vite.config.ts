@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -75,5 +76,10 @@ export default defineConfig({
     // everything takes 1.5–2× longer. vitest's default of 5 s is sized for unit tests — every
     // other package of the repo already sets its own.
     testTimeout: 20_000,
+    // vitest starts one worker per core by default. On a 16-core machine with 7 GB of RAM that
+    // starved every jsdom worker: lazy routes stayed on "Cargando…" past the findBy timeout and
+    // 30–44 tests failed, a different set each run. Capped at 4 (the timings above were measured
+    // there) all 550 pass in the same ~47 s. `--maxWorkers` on the CLI still overrides it.
+    maxWorkers: Math.min(4, availableParallelism()),
   },
 });
