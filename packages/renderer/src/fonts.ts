@@ -3,7 +3,8 @@ import { FONT_FAMILIES, FONT_WEIGHTS } from '@parlante/shared';
 /**
  * Font manifest shared by both platforms. Files come from the @fontsource packages
  * (`<package>/files/<slug>-<subset>-<weight>-<style>.woff2`).
- *  - Node: `registerNodeFonts()` registers every existing file under the family name.
+ *  - Node: `registerNodeFonts()` registers every existing file under a private name per family
+ *    (see `setRegisteredFamilyNames`), so fonts installed on the machine cannot replace them.
  *  - Browser: the web app imports the @fontsource CSS (normal AND italic, every weight) and
  *    `ensureBrowserFonts()` waits for them.
  *
@@ -88,8 +89,22 @@ export function baselineOffset(family: string, sizePx: number, lineHeightPx: num
 }
 
 /**
+ * Name under which a platform registered each bundled family, when it is not the family name
+ * itself. The Node adapter sets it: Skia also sees the fonts installed on the machine, and a
+ * system font with the same family name (Ubuntu's `fonts-inter`, for one) won over the bundled
+ * file, so exports changed with the host and no longer matched the browser preview.
+ * Browsers load the @fontsource CSS under the real names and never set it.
+ */
+let registeredFamilyName: ((family: string) => string) | null = null;
+
+export function setRegisteredFamilyNames(map: ((family: string) => string) | null): void {
+  registeredFamilyName = map;
+}
+
+/**
  * Canvas `font` shorthand for a bundled family. Always go through this helper so browser and
- * Node build identical strings. `sizePx` is in output pixels.
+ * Node build equivalent strings (same families, as registered on each platform). `sizePx` is in
+ * output pixels.
  */
 export function canvasFont(
   family: string,
@@ -97,5 +112,6 @@ export function canvasFont(
   weight: number = 400,
   italic = false,
 ): string {
-  return `${italic ? 'italic ' : ''}${weight} ${sizePx}px "${family}", "Inter", sans-serif`;
+  const name = registeredFamilyName ?? ((f: string) => f);
+  return `${italic ? 'italic ' : ''}${weight} ${sizePx}px "${name(family)}", "${name(FALLBACK_FONT_FAMILY)}", sans-serif`;
 }

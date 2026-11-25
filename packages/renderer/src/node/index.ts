@@ -5,7 +5,8 @@ import { GlobalFonts, createCanvas, loadImage } from '@napi-rs/canvas';
 import type { Canvas } from '@napi-rs/canvas';
 import type { Composition, RenderRuntime } from '@parlante/shared';
 import { setCanvasFactory } from '../cache';
-import { listFontFiles } from '../fonts';
+import { FONT_FAMILY_NAMES } from '@parlante/shared';
+import { listFontFiles, setRegisteredFamilyNames } from '../fonts';
 import { matteCanvas } from '../matte';
 import { renderFrame } from '../render-frame';
 import type { Ctx2D, RenderAssets, RenderImage, RenderOptions, RenderPlatform } from '../types';
@@ -27,11 +28,24 @@ export type NodeCanvas = Canvas;
 const require = createRequire(import.meta.url);
 let fontsRegistered: number | null = null;
 
+const BUNDLED_FAMILIES = new Set<string>(FONT_FAMILY_NAMES);
+
 /**
- * Register every bundled @fontsource file (woff2) under its family name. All subsets of a
- * family share the name, so Latin, Cyrillic and Greek text resolve to the same family; glyphs
- * a family lacks come from Inter through the family list of `canvasFont`, like in a browser.
- * Idempotent; returns the number of font files registered.
+ * Name the bundled files of `family` are registered under in Skia. Not the family name itself:
+ * Skia also matches the fonts installed on the machine, and on a host with a system "Inter"
+ * (Ubuntu's `fonts-inter`) that one was drawn instead of the bundled file — the export then
+ * depended on the host and differed from the browser preview. Families that are not bundled
+ * keep their name and resolve as before.
+ */
+export function bundledFamilyName(family: string): string {
+  return BUNDLED_FAMILIES.has(family) ? `Parlante Bundled ${family}` : family;
+}
+
+/**
+ * Register every bundled @fontsource file (woff2) under its private name (`bundledFamilyName`).
+ * All subsets of a family share the name, so Latin, Cyrillic and Greek text resolve to the same
+ * family; glyphs a family lacks come from Inter through the family list of `canvasFont`, like
+ * in a browser. Idempotent; returns the number of font files registered.
  */
 export function registerNodeFonts(): number {
   if (fontsRegistered !== null) return fontsRegistered;
@@ -50,7 +64,7 @@ export function registerNodeFonts(): number {
     if (!dir) continue;
     const file = path.join(dir, font.file);
     if (!fs.existsSync(file)) continue; // not every family ships every subset/style
-    if (GlobalFonts.registerFromPath(file, font.family)) count += 1;
+    if (GlobalFonts.registerFromPath(file, bundledFamilyName(font.family))) count += 1;
   }
   fontsRegistered = count;
   return count;
@@ -88,6 +102,8 @@ export function canvasAsImage(canvas: NodeCanvas): RenderImage {
 
 // Off-screen canvases for the renderer core (group opacity, transitions, raster caches).
 setCanvasFactory(createNodeCanvas);
+// Font strings built by `canvasFont` name the bundled files, never a same-named system font.
+setRegisteredFamilyNames(bundledFamilyName);
 
 export const nodePlatform: RenderPlatform = {
   name: 'node',

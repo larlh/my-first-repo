@@ -405,10 +405,11 @@ describe('drawSubtitleCue', () => {
     const classic = draw('Hola mundo', { preset: 'classic' });
     const ink = classic.bbox(white);
     if (!ink) throw new Error('subtitle was not drawn');
-    // Dark outline right around the letters, nothing solid further out.
-    expect(classic.count((r, g, b, a) => a > 200 && r < 40 && g < 40 && b < 50)).toBeGreaterThan(
-      300,
-    );
+    // Dark outline right around the letters, nothing solid further out. Measured against the
+    // letters' own ink (≈ 0.8 here, 0 for the presets without an outline) rather than a pixel
+    // count, which shifts with the exact build of the font.
+    const outline = classic.count((r, g, b, a) => a > 200 && r < 40 && g < 40 && b < 50);
+    expect(outline).toBeGreaterThan(classic.count(white) * 0.5);
     expect(classic.px(ink.x0 - 30, Math.round((ink.y0 + ink.y1) / 2))[3]).toBe(0);
     const minimal = draw('Hola mundo', { preset: 'minimal' });
     const small = minimal.bbox(white);
