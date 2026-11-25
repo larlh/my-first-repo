@@ -397,8 +397,18 @@ async function main(browser) {
           label: 'guion',
           accept: (text) => normalize(text).split(' ').length >= 4,
         });
-        check('en el guion la frase conserva su punto final', script.trim().endsWith('.'), script);
         await until('the transcription to be recorded', () => transcriptions.length > sent);
+        // Unlike a title, the script keeps the sentence's closing mark. Whether there IS one is
+        // up to the model: with eSpeak it writes the full sentence with its period, but a natural
+        // neural English voice transcribed as Spanish can come back cut short and without one.
+        // So the script must end the way the server's text ends — never stripped, never invented.
+        const served = String(transcriptions[sent].body.text ?? '').trim();
+        const closing = /[.!?…]$/.test(served) ? served.slice(-1) : '';
+        check(
+          'en el guion la frase conserva su puntuación final',
+          closing ? script.trim().endsWith(closing) : !/[.!?…]$/.test(script.trim()),
+          `servidor: «${served}» → guion: «${script.trim()}»`,
+        );
         checkEqual(
           'el guion se dicta en el idioma de la voz de la escena, no en el del usuario',
           transcriptions[sent].body.language,
