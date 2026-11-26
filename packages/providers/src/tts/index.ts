@@ -1,11 +1,13 @@
 import type { Providers, TTSProvider } from '@parlante/shared';
 import type { ProviderEnv } from '../env';
+import { createChatterboxTtsProvider } from './chatterbox';
 import { createElevenLabsProvider } from './elevenlabs';
 import { createEspeakProvider } from './espeak';
 import { createKokoroProvider, createPiperProvider, hasInstalledNeuralVoice } from './neural';
 import type { NeuralVoiceDeps } from './neural';
 import { createOpenAiTtsProvider } from './openai';
 
+export { createChatterboxTtsProvider } from './chatterbox';
 export { createElevenLabsProvider } from './elevenlabs';
 export { createEspeakProvider } from './espeak';
 export { ESPEAK_VOICES } from './espeak-voices';
@@ -69,6 +71,10 @@ export function createTtsProviders(env: ProviderEnv, deps: NeuralVoiceDeps = {})
   const kokoro = createKokoroProvider(env, deps);
   const piper = createPiperProvider(env, deps);
   for (const provider of [espeak, kokoro, piper]) active.set(provider.info.id, provider);
+  // Speaks the voices cloned by the local voice engine. Always active so those voices resolve;
+  // it has no stock voices, so it never becomes the default (it is not in `ranked()`).
+  const chatterbox = createChatterboxTtsProvider(env);
+  active.set(chatterbox.info.id, chatterbox);
   if (env.ELEVENLABS_API_KEY) {
     const p = createElevenLabsProvider(env);
     active.set(p.info.id, p);

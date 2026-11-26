@@ -131,8 +131,9 @@ export async function deleteAvatarCascade(
 }
 
 /**
- * Remove a cloned voice from the external service that hosts it. Local voice profiles have
- * nothing outside this machine. Throws when the voice cannot be removed there:
+ * Remove a cloned voice from where it lives outside the database: the external service, or
+ * the local voice engine (which keeps the voice's conditionals). Basic local voice profiles
+ * have nothing outside the row. Throws when the voice cannot be removed there:
  *  - PROVIDER_NOT_CONFIGURED: it was created with a provider that is not the active one;
  *  - PROVIDER_ERROR: the provider refused or could not be reached.
  */
@@ -140,9 +141,14 @@ export async function deleteExternalVoice(
   providers: Pick<Providers, 'voiceClone'>,
   voice: Pick<VoiceRow, 'provider' | 'providerVoiceId'>,
 ): Promise<void> {
-  if (!voice.provider || voice.provider.local || !voice.providerVoiceId) return;
+  if (!voice.provider || !voice.providerVoiceId) return;
   const active = providers.voiceClone;
-  if (active.info.id !== voice.provider.id) {
+  const handled = active.handles
+    ? active.handles(voice.provider.id)
+    : !voice.provider.local && active.info.id === voice.provider.id;
+  // A basic voice profile is only the row itself (and its sample, deleted by the caller).
+  if (!handled && voice.provider.local) return;
+  if (!handled) {
     throw new AppError(
       'PROVIDER_NOT_CONFIGURED',
       `This voice is stored at ${voice.provider.name}, which is not configured now. Configure it and try again to delete the voice there`,

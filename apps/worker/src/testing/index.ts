@@ -65,6 +65,9 @@ export async function createTestWorker(env: Record<string, string> = {}): Promis
     // neural engine that happens to run on this machine (:8090) never changes a test's outcome.
     // Whoever wants the real engine passes its URL (scripts/demo.ts does).
     AVATAR_ENGINE_URL: 'http://127.0.0.1:9',
+    // And for the local voice engine (:8091): with it running, `VOICE_CLONE_PROVIDER=auto`
+    // would clone with Chatterbox. Tests of the engine inject a client double.
+    VOICE_ENGINE_URL: 'http://127.0.0.1:9',
     // Same rule for the local speech model: a model installed on this machine (./data/models)
     // must not turn `STT_PROVIDER=auto` into automatic transcription inside a test. Tests of
     // the real model pass their own DICTATION_MODEL_DIR.

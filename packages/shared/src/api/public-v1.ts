@@ -9,6 +9,7 @@ import {
   AssetSchema,
   AvatarSchema,
   PublicVideoSchema,
+  SynthesizedSpeechSchema,
   TemplateIdSchema,
   TemplateSchema,
   VideoStatusSchema,
@@ -18,6 +19,7 @@ import { AvatarIdSchema, VoiceIdSchema, idOf } from '../ids';
 import { LanguageCodeSchema, LocaleSchema } from '../languages';
 import { PaginationQuerySchema, paginated } from '../pagination';
 import { PlanIdSchema } from '../plans';
+import { SynthesizeBodySchema } from './content';
 import { OkSchema, listOf, route } from './contract';
 
 /* -------------------------------------------------------------------------------------------
@@ -105,6 +107,30 @@ export const publicV1Routes = {
     summary: 'Voices available to the workspace',
     query: z.object({ language: LanguageCodeSchema.optional() }),
     response: listOf(VoiceSchema),
+  }),
+  /**
+   * The same synthesis as the app's voice preview (`synthesizeForWorkspace`: moderation, voice
+   * resolution, the cache shared with renders) for other apps: any voice of `GET /v1/voices`,
+   * stock or CLONED in this workspace. Cloned voices are AI-generated speech of a person who
+   * consented; their audio carries the provider's watermark when it has one (local clones:
+   * Perth) and the response names the provider that produced it.
+   */
+  synthesizeSpeech: route({
+    method: 'POST',
+    path: '/v1/speech',
+    auth: 'apiKey',
+    feature: 9,
+    tag: 'Public API v1',
+    summary: 'Text → WAV + word/viseme timeline with a voice of the workspace (stock or cloned)',
+    body: SynthesizeBodySchema,
+    response: SynthesizedSpeechSchema,
+    errors: [
+      'CONTENT_BLOCKED',
+      'NOT_FOUND',
+      'INVALID_STATE',
+      'PROVIDER_NOT_CONFIGURED',
+      'PROVIDER_ERROR',
+    ],
   }),
   listTemplates: route({
     method: 'GET',

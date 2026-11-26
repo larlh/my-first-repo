@@ -85,7 +85,7 @@ const es = {
     doesNot: 'No:',
     basic: {
       name: 'Modo básico local',
-      text: 'Este servidor no tiene un servicio externo de clonado. Se analiza tu muestra en este equipo y se ajusta una voz sintética local para que se acerque a la tuya.',
+      text: 'Ni el motor de voz local ni un servicio externo de clonado están activos. Se analiza tu muestra en este equipo y se ajusta una voz sintética local para que se acerque a la tuya.',
       points: {
         pitch:
           'Mide el tono medio de tu voz, elige la voz local más parecida (una neuronal, si está instalada) y le aplica ese tono.',
@@ -95,7 +95,20 @@ const es = {
         accent: 'No copia tu acento ni tu entonación.',
       },
       upgrade:
-        'Para un clonado que sí reproduzca el timbre, quien administra el servidor puede configurar un proveedor externo (ELEVENLABS_API_KEY). Esta página lo indicará cuando esté activo.',
+        'Para un clonado que sí reproduzca el timbre, quien administra el servidor puede arrancar el motor de voz local (pnpm voice-engine; español de España) o configurar un proveedor externo (ELEVENLABS_API_KEY). Esta página lo indicará cuando esté activo.',
+    },
+    neural: {
+      name: 'Clonado neuronal local',
+      text: 'El clonado lo hace {{name}} en este equipo: un modelo abierto (licencia MIT) que reproduce el timbre de la voz a partir de la muestra.',
+      points: {
+        timbre: 'Reproduce el timbre y la entonación de la muestra.',
+        accent: 'Habla español con acento de España.',
+        local:
+          'La muestra no sale de este equipo. Solo se guardan los rasgos de voz que se extraen de ella, y se borran al eliminar la voz o revocar el consentimiento.',
+        watermark:
+          'Todo el audio que genera lleva una marca de agua inaudible (Perth) que lo identifica como generado por IA.',
+        languages: 'Solo clona voces en español; en otros idiomas se usa el modo básico.',
+      },
     },
     premium: {
       name: 'Clonado externo',
@@ -116,6 +129,7 @@ const es = {
     explain: {
       basic:
         'Se mide el tono y la velocidad de la muestra y se elige la voz local más parecida como base.',
+      neural: '{{name}} está extrayendo el timbre de la muestra en este equipo.',
       premium: '{{name}} está creando la voz a partir de la muestra.',
     },
     noEta: 'Este trabajo no informa de porcentaje ni de tiempo restante.',
@@ -126,6 +140,9 @@ const es = {
     readyText: 'Ya puedes elegirla en el Studio y en la biblioteca de voces.',
     listen: 'Escuchar la voz',
     stop: 'Parar',
+    neuralTitle: 'Clonada en este equipo',
+    neuralText:
+      'La voz reproduce el timbre de la muestra (Chatterbox, español de España). Todo lo que diga lleva una marca de agua inaudible que lo identifica como generado por IA.',
     basicTitle: 'Clonada en modo básico',
     basicText:
       'Es la voz local más parecida a la tuya (una neuronal, si está instalada) ajustada al tono y la velocidad que se midieron en tu muestra. No reproduce tu timbre.',
@@ -237,7 +254,7 @@ const en: typeof es = {
     doesNot: 'No:',
     basic: {
       name: 'Local basic mode',
-      text: 'This server has no external cloning service. Your sample is analysed on this machine and a local synthetic voice is adjusted to get close to yours.',
+      text: 'Neither the local voice engine nor an external cloning service is active. Your sample is analysed on this machine and a local synthetic voice is adjusted to get close to yours.',
       points: {
         pitch:
           'Measures the mean pitch of your voice, picks the closest local voice (a neural one, when installed) and applies that pitch to it.',
@@ -247,7 +264,20 @@ const en: typeof es = {
         accent: 'It does not copy your accent or your intonation.',
       },
       upgrade:
-        'For cloning that does reproduce the timbre, whoever runs the server can configure an external provider (ELEVENLABS_API_KEY). This page will say so when it is active.',
+        'For cloning that does reproduce the timbre, whoever runs the server can start the local voice engine (pnpm voice-engine; Spanish from Spain) or configure an external provider (ELEVENLABS_API_KEY). This page will say so when it is active.',
+    },
+    neural: {
+      name: 'Local neural cloning',
+      text: 'Cloning is done by {{name}} on this machine: an open model (MIT licence) that reproduces the timbre of the voice from the sample.',
+      points: {
+        timbre: 'Reproduces the timbre and intonation of the sample.',
+        accent: 'Speaks Spanish with an accent from Spain.',
+        local:
+          'The sample never leaves this machine. Only the voice features extracted from it are kept, and they are deleted with the voice or when the consent is revoked.',
+        watermark:
+          'All the audio it generates carries an inaudible watermark (Perth) that identifies it as AI-generated.',
+        languages: 'It clones Spanish voices only; other languages use the basic mode.',
+      },
     },
     premium: {
       name: 'External cloning',
@@ -268,6 +298,7 @@ const en: typeof es = {
     explain: {
       basic:
         'The pitch and pace of the sample are measured and the closest local voice is chosen as the base.',
+      neural: '{{name}} is extracting the timbre of the sample on this machine.',
       premium: '{{name}} is creating the voice from the sample.',
     },
     noEta: 'This job reports no percentage and no time remaining.',
@@ -278,6 +309,9 @@ const en: typeof es = {
     readyText: 'You can now pick it in the Studio and in the voice library.',
     listen: 'Listen to the voice',
     stop: 'Stop',
+    neuralTitle: 'Cloned on this machine',
+    neuralText:
+      'The voice reproduces the timbre of the sample (Chatterbox, Spanish from Spain). Everything it says carries an inaudible watermark that identifies it as AI-generated.',
     basicTitle: 'Cloned in basic mode',
     basicText:
       'It is the local voice closest to yours (a neural one, when installed) adjusted to the pitch and pace measured in your sample. It does not reproduce your timbre.',

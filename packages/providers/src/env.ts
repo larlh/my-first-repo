@@ -97,7 +97,15 @@ export const providerEnvSchema = z.object({
   ANTHROPIC_FALLBACKS: envBoolean(true),
 
   // ---- voice cloning
-  VOICE_CLONE_PROVIDER: z.enum(['auto', 'local', 'elevenlabs']).default('auto'),
+  VOICE_CLONE_PROVIDER: z.enum(['auto', 'local', 'elevenlabs', 'chatterbox']).default('auto'),
+  /**
+   * Base URL of services/voice-engine (realistic local cloning with Chatterbox es-ES; started
+   * with `pnpm voice-engine`). With VOICE_CLONE_PROVIDER=auto it clones Spanish voices whenever
+   * it answers; voices it cloned are spoken by the `chatterbox` TTS provider.
+   */
+  VOICE_ENGINE_URL: z.string().url().default('http://127.0.0.1:8091'),
+  /** Shared secret of the voice engine; REQUIRED when it is not on loopback. */
+  VOICE_ENGINE_TOKEN: envOptionalString,
 
   // ---- moderation
   MODERATION_PROVIDER: z.enum(['local']).default('local'),

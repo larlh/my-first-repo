@@ -68,7 +68,9 @@ async function discardClone(
   created: VoiceCloneResult | null,
   options: { files: boolean },
 ): Promise<void> {
-  if (created && !created.provider.local) {
+  // External services AND the local voice engine keep the voice outside this row; a basic
+  // voice profile has nothing to delete (its provider's deleteVoice is a no-op).
+  if (created && (!created.provider.local || created.profile === null)) {
     await ctx.providers.voiceClone
       .deleteVoice(created.providerVoiceId)
       .catch((err: unknown) =>

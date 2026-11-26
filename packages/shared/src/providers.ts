@@ -483,8 +483,22 @@ export interface VoiceCloneResult {
 
 export interface VoiceCloneProvider extends BaseProvider {
   createVoice(request: VoiceCloneRequest): Promise<VoiceCloneResult>;
-  /** Remove the voice from the external service (no-op locally). */
+  /**
+   * Remove the voice wherever it lives outside the database row: the external service, or the
+   * local voice engine (no-op for the basic voice profile). Idempotent.
+   */
   deleteVoice(providerVoiceId: string): Promise<void>;
+  /**
+   * The provider that would clone a voice in `language` right now (default Spanish). Present
+   * when the choice depends on a local service being up (`auto` + the voice engine); absent =
+   * always `info`. `/api/capabilities` reports this, so the UI names the engine that clones.
+   */
+  current?(language?: LanguageCode): Promise<ProviderRef>;
+  /**
+   * True when voices created by provider `providerId` are deleted through this provider's
+   * `deleteVoice`. Absent = only voices of `info.id`.
+   */
+  handles?(providerId: string): boolean;
 }
 
 /* ---------- moderation ---------- */

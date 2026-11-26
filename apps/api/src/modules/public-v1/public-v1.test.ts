@@ -13,10 +13,12 @@ import {
   apiKeys,
   assets,
   avatars,
+  consentRecords,
   eq,
   getCreditBalance,
   renderJobs,
   videos,
+  voices,
   workspaces,
 } from '@parlante/db';
 import { getBuiltinTemplate, listBuiltinTemplates } from '@parlante/templates';
@@ -135,10 +137,14 @@ describe('authentication', () => {
     for (const route of routes) {
       const url = route.path.replace(':videoId', newId('video'));
       // A well-formed request, so the only thing missing is the credential.
+      const payload =
+        route.path === '/v1/speech'
+          ? { text: 'Hola.', voiceId: TEST_VOICE, language: 'es' }
+          : { input: scriptInput() };
       const res = await t.inject({
         method: route.method,
         url,
-        ...('body' in route ? { payload: { input: scriptInput() } } : {}),
+        ...('body' in route ? { payload } : {}),
       });
       expect([route.method, route.path, res.statusCode]).toEqual([route.method, route.path, 401]);
       expect(res.json()).toMatchObject({ error: { code: 'INVALID_API_KEY' } });
@@ -192,6 +198,57 @@ describe('catalogues', () => {
     expect(
       (await t.call(api.v1.listVoices, { as: key, query: { language: 'xx' as never } })).status,
     ).toBe(400);
+  });
+
+  it('synthesizes speech with stock voices and with voices cloned in the workspace only', async () => {
+    const { owner, key } = await workspaceWithKey();
+    const other = await workspaceWithKey();
+    const cloned = async (actor: typeof owner) => {
+      const consentId = newId('consent');
+      await t.db.insert(consentRecords).values({
+        id: consentId,
+        workspaceId: actor.workspace.id,
+        userId: actor.user.id,
+        kind: 'voice_clone',
+        subjectName: 'Ana García',
+        relationship: 'self',
+        statementVersion: '2026-01',
+        statement: 'I consent',
+        locale: 'es',
+        ip: '203.0.113.9',
+      });
+      const id = newId('voice');
+      await t.db.insert(voices).values({
+        id,
+        workspaceId: actor.workspace.id,
+        name: 'Voz de Ana',
+        language: 'es',
+        gender: 'female',
+        status: 'ready',
+        ttsProviderId: 'espeak',
+        providerVoiceId: 'es-f1',
+        profile: null,
+        consentId,
+      });
+      return id;
+    };
+    const mine = await cloned(owner);
+    const theirs = await cloned(other.owner);
+    const speak = (voiceId: string, text = 'Hola, esto es una prueba de la API.') =>
+      t.call(api.v1.synthesizeSpeech, { as: key, body: { text, voiceId, language: 'es' } });
+
+    for (const voiceId of [TEST_VOICE, mine]) {
+      const res = await speak(voiceId);
+      expect(res.status).toBe(200);
+      expect(res.body.mimeType).toBe('audio/wav');
+      expect(res.body.provider).toMatchObject({ id: 'espeak' });
+      expect(res.body.runtime.words.length).toBeGreaterThan(0);
+      const audio = await fetchUrl(t, res.body.audioUrl);
+      expect(audio.statusCode).toBe(200);
+    }
+    // Another workspace's cloned voice does not exist for this key.
+    expect((await speak(theirs)).status).toBe(404);
+    expect((await speak(mine, `Texto con ${BLOCKED_WORD}`)).status).toBe(422);
   });
 
   it('lists built-in and own templates, in the language asked for', async () => {

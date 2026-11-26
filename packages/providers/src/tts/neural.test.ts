@@ -497,6 +497,8 @@ describe('default provider ranking (TTS_PROVIDER)', () => {
       'espeak',
       'kokoro',
       'piper',
+      // Speaks voices cloned by the local voice engine; it has no stock voices.
+      'chatterbox',
     ]);
   });
 

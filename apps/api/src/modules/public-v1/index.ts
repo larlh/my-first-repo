@@ -24,6 +24,7 @@ import { listAvatarCatalog } from '../avatars/catalog';
 import { listTemplateCatalog, loadTemplateSource, templateDeps } from '../templates/service';
 import { createDraftVideo, deleteVideo, findVideo, videoDeps } from '../videos/service';
 import { listVoiceCatalog } from '../voices/catalog';
+import { synthesizeForWorkspace } from '../voices/synthesize';
 import { buildV1Document, v1DocsPage } from './openapi';
 import { KeyRateLimiter, V1_RATE_LIMITS, enforceRateLimit } from './rate-limit';
 
@@ -140,6 +141,10 @@ export default defineModule({
       );
       return { items: items.filter((voice) => voice.status === 'ready') };
     });
+
+    defineV1Route(api.v1.synthesizeSpeech, async ({ auth, body }) =>
+      synthesizeForWorkspace({ db, providers, fileUrl }, auth.workspaceId, body),
+    );
 
     defineV1Route(api.v1.listTemplates, async ({ auth, request }) => {
       return {

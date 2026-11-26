@@ -1,7 +1,7 @@
 import type { ProviderRef } from '@parlante/shared';
-import { Check, Cloud, Cpu, X } from 'lucide-react';
+import { Check, Cloud, Cpu, Sparkles, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { ProviderBadge } from '@/components/ProviderBadge';
+import { ProviderBadge, providerTier, useProviderName } from '@/components/ProviderBadge';
 import { Skeleton, cn } from '@/ui';
 
 export interface ModePanelProps {
@@ -13,25 +13,36 @@ export interface ModePanelProps {
 
 /**
  * Honesty panel of voice cloning (master prompt §2): says which provider will do the work
- * and, for the local "basic mode", exactly what it does and what it does not — it fits a
- * local voice to the pitch and pace of the sample, it does not copy the timbre.
+ * and exactly what it does and what it does not — the local "basic mode" fits a local voice
+ * to the pitch and pace of the sample (no timbre); the local neural engine reproduces the
+ * timbre on this machine, in Spanish only; an external service receives the sample.
  */
 export function ModePanel({ provider, loading, className }: ModePanelProps) {
   const { t } = useTranslation('voice-clone');
-  const basic = !provider || provider.quality === 'basic';
-  const points: { ok: boolean; key: string }[] = basic
-    ? [
-        { ok: true, key: 'pitch' },
-        { ok: true, key: 'pace' },
-        { ok: true, key: 'offline' },
-        { ok: false, key: 'timbre' },
-        { ok: false, key: 'accent' },
-      ]
-    : [
-        { ok: true, key: 'timbre' },
-        { ok: true, key: 'languages' },
-        { ok: false, key: 'leaves' },
-      ];
+  const providerName = useProviderName();
+  const mode = provider ? providerTier(provider) : 'basic';
+  const points: { ok: boolean; key: string }[] =
+    mode === 'basic'
+      ? [
+          { ok: true, key: 'pitch' },
+          { ok: true, key: 'pace' },
+          { ok: true, key: 'offline' },
+          { ok: false, key: 'timbre' },
+          { ok: false, key: 'accent' },
+        ]
+      : mode === 'neural'
+        ? [
+            { ok: true, key: 'timbre' },
+            { ok: true, key: 'accent' },
+            { ok: true, key: 'local' },
+            { ok: true, key: 'watermark' },
+            { ok: false, key: 'languages' },
+          ]
+        : [
+            { ok: true, key: 'timbre' },
+            { ok: true, key: 'languages' },
+            { ok: false, key: 'leaves' },
+          ];
   return (
     <section
       aria-label={t('mode.title')}
@@ -42,12 +53,18 @@ export function ModePanel({ provider, loading, className }: ModePanelProps) {
           aria-hidden="true"
           className="flex size-9 shrink-0 items-center justify-center rounded-md bg-on-media/10"
         >
-          {basic ? <Cpu className="size-5" /> : <Cloud className="size-5" />}
+          {mode === 'basic' ? (
+            <Cpu className="size-5" />
+          ) : mode === 'neural' ? (
+            <Sparkles className="size-5" />
+          ) : (
+            <Cloud className="size-5" />
+          )}
         </span>
         <div className="min-w-0">
           <p className="eyebrow text-on-media/60">{t('mode.title')}</p>
           <p className="display text-lg leading-tight" role="status">
-            {loading ? t('mode.checking') : basic ? t('mode.basic.name') : t('mode.premium.name')}
+            {loading ? t('mode.checking') : t(`mode.${mode}.name`)}
           </p>
         </div>
       </header>
@@ -60,7 +77,7 @@ export function ModePanel({ provider, loading, className }: ModePanelProps) {
         <div className="flex flex-col gap-4 p-4 text-sm sm:p-5">
           {provider && <ProviderBadge provider={provider} className="self-start" />}
           <p className="text-pretty">
-            {basic ? t('mode.basic.text') : t('mode.premium.text', { name: provider?.name ?? '' })}
+            {t(`mode.${mode}.text`, { name: provider ? providerName(provider) : '' })}
           </p>
           <ul className="flex flex-col gap-2">
             {points.map((point) => (
@@ -82,12 +99,12 @@ export function ModePanel({ provider, loading, className }: ModePanelProps) {
                 </span>
                 <span className="min-w-0 text-pretty">
                   <span className="sr-only">{point.ok ? t('mode.does') : t('mode.doesNot')}</span>
-                  {t(`mode.${basic ? 'basic' : 'premium'}.points.${point.key}`)}
+                  {t(`mode.${mode}.points.${point.key}`)}
                 </span>
               </li>
             ))}
           </ul>
-          {basic && (
+          {mode === 'basic' && (
             <p className="border-t border-line pt-3 text-xs text-pretty text-fg-muted">
               {t('mode.basic.upgrade')}
             </p>

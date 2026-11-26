@@ -45,7 +45,7 @@ const es = {
     text: 'Prueba con otro idioma u otra búsqueda.',
     clonedTitle: 'Aún no has clonado ninguna voz',
     clonedText:
-      'Sube una muestra de tu voz, con tu consentimiento, y úsala en tus vídeos. Sin claves externas funciona en modo básico: aproxima tu tono, no tu timbre.',
+      'Sube una muestra de tu voz, con tu consentimiento, y úsala en tus vídeos. Con el motor de voz local en marcha se clona tu timbre en este equipo (español de España); sin él, en modo básico: aproxima tu tono, no tu timbre.',
   },
   groups: {
     cloned: 'Tus voces clonadas',
@@ -97,6 +97,8 @@ const es = {
     pitchResampled:
       'Esta voz no tiene control de tono propio: se cambia reproduciendo el audio más rápido o más lento (hasta {{min}} / {{max}}), y el timbre cambia con él.',
     unavailableStatus: 'Esta voz todavía no está instalada.',
+    neuralCloned:
+      'Clonada en este equipo con un modelo neuronal abierto: reproduce el timbre de la muestra. Todo lo que dice lleva una marca de agua inaudible (Perth) que lo identifica como generado por IA.',
     basicCloned:
       'Clonado en modo básico: es la voz local más parecida a la tuya (una neuronal, si está instalada) ajustada al tono y la velocidad de tu muestra. No reproduce tu timbre.',
     profile: {
@@ -173,7 +175,7 @@ const en: typeof es = {
     text: 'Try another language or another search.',
     clonedTitle: 'You have not cloned any voice yet',
     clonedText:
-      'Upload a sample of your voice, with your consent, and use it in your videos. Without external keys it works in basic mode: it approximates your pitch, not your timbre.',
+      'Upload a sample of your voice, with your consent, and use it in your videos. With the local voice engine running your timbre is cloned on this machine (Spanish from Spain); without it, in basic mode: it approximates your pitch, not your timbre.',
   },
   groups: {
     cloned: 'Your cloned voices',
@@ -225,6 +227,8 @@ const en: typeof es = {
     pitchResampled:
       'This voice has no pitch control of its own: pitch is changed by playing the audio faster or slower (up to {{min}} / {{max}}), and the timbre changes with it.',
     unavailableStatus: 'This voice is not installed yet.',
+    neuralCloned:
+      'Cloned on this machine with an open neural model: it reproduces the timbre of the sample. Everything it says carries an inaudible watermark (Perth) that identifies it as AI-generated.',
     basicCloned:
       'Cloned in basic mode: the local voice closest to yours (a neural one, when installed) adjusted to the pitch and speed of your sample. It does not reproduce your timbre.',
     profile: {

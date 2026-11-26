@@ -163,11 +163,15 @@ async function ttsProvidersWithVoices(providers: Providers): Promise<Capabilitie
  * as unavailable).
  */
 export async function describeCapabilities(providers: Providers): Promise<Capabilities> {
-  const [lipsync, portrait, dictation, ttsProviders] = await Promise.all([
+  const [lipsync, portrait, dictation, ttsProviders, voiceClone] = await Promise.all([
     statusOrUnavailable(providers.lipsync.status()),
     statusOrUnavailable(providers.portrait.status()),
     describeDictation(providers.dictation),
     ttsProvidersWithVoices(providers),
+    // The engine that would clone right now (auto: the local voice engine only while it answers).
+    providers.voiceClone.current
+      ? providers.voiceClone.current().catch(() => providers.voiceClone.info)
+      : Promise.resolve(providers.voiceClone.info),
   ]);
   const engine = mergeEngineStatus(lipsync, portrait);
   return {
@@ -176,7 +180,7 @@ export async function describeCapabilities(providers: Providers): Promise<Capabi
       stt: providers.stt.info,
       llm: providers.llm.info,
       translation: providers.translation.info,
-      voiceClone: providers.voiceClone.info,
+      voiceClone,
       lipsync: providers.lipsync.info,
       portrait: providers.portrait.info,
       moderation: providers.moderation.info,

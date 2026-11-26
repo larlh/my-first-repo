@@ -6,6 +6,7 @@ import {
   Cpu,
   Play,
   Plus,
+  Sparkles,
   Square,
   Trash2,
   TriangleAlert,
@@ -13,7 +14,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { JobStatusBadge } from '@/components/JobStatus';
-import { ProviderBadge, useProviderName } from '@/components/ProviderBadge';
+import { ProviderBadge, providerTier, useProviderName } from '@/components/ProviderBadge';
 import { api, useApiMutation, useInvalidateApi } from '@/lib/api';
 import { useFormat } from '@/lib/format';
 import { useJobPolling } from '@/lib/jobs';
@@ -97,7 +98,8 @@ export function VoiceJob({ voiceId, onAnother }: VoiceJobProps) {
 
   const language = baseLanguage(voice.language) ?? 'es';
   const sampleText = VOICE_PREVIEW_TEXTS[language] ?? (VOICE_PREVIEW_TEXTS.es as string);
-  const basic = voice.provider.quality === 'basic';
+  const tier = providerTier(voice.provider);
+  const basic = tier === 'basic';
   const playing = speech.status === 'playing' || speech.status === 'loading';
 
   return (
@@ -127,7 +129,7 @@ export function VoiceJob({ voiceId, onAnother }: VoiceJobProps) {
           <p className="text-sm text-pretty text-fg-muted">
             {basic
               ? t('job.explain.basic')
-              : t('job.explain.premium', { name: providerName(voice.provider) })}{' '}
+              : t(`job.explain.${tier}`, { name: providerName(voice.provider) })}{' '}
             {t('job.noEta')}
           </p>
           <Callout tone="neutral">{t('job.leave')}</Callout>
@@ -172,6 +174,11 @@ export function VoiceJob({ voiceId, onAnother }: VoiceJobProps) {
           {basic && (
             <Callout tone="saffron" icon={<Cpu />} title={t('job.basicTitle')}>
               {t('job.basicText')}
+            </Callout>
+          )}
+          {tier === 'neural' && (
+            <Callout tone="saffron" icon={<Sparkles />} title={t('job.neuralTitle')}>
+              {t('job.neuralText')}
             </Callout>
           )}
 

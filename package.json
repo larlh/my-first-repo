@@ -11,6 +11,7 @@
   "scripts": {
     "services": "bash scripts/dev-services.sh",
     "avatar-engine": "bash services/avatar-engine/run.sh",
+    "voice-engine": "bash services/voice-engine/run.sh",
     "dictation:setup": "pnpm --filter @parlante/providers dictation:setup",
     "voices:setup": "pnpm --filter @parlante/providers voices:setup",
     "dev": "concurrently -k -n api,worker,web -c blue,magenta,green \"pnpm --filter @parlante/api dev\" \"pnpm --filter @parlante/worker dev\" \"pnpm --filter @parlante/web dev\"",

@@ -14,6 +14,7 @@
 #   E2E_WEB_MODE   build (default: production bundle served by `vite preview`, no file watching)
 #                  | dev (Vite dev server: quicker to start, reloads when files change)
 #   E2E_KEEP       1 = keep database, storage and logs after the run (debugging)
+#   E2E_VOICE_CLONE_PROVIDER  local (default) | chatterbox | auto; chatterbox needs `pnpm voice-engine`
 #   E2E_RUN_ID     suffix of the database / queue prefix / work directory (default: random)
 #   E2E_WORK_DIR   where logs, storage and artifacts go    (default: $TMPDIR/parlante-e2e-<id>)
 #   DATABASE_ADMIN_URL  maintenance connection used to create / drop the database
@@ -214,7 +215,10 @@ export RATE_LIMIT_MAX="${E2E_RATE_LIMIT_MAX:-100000}"
 # from the API. E2E_TTS_PROVIDER=espeak runs the stack on the reserve voice alone.
 export TTS_PROVIDER="${E2E_TTS_PROVIDER:-neural}"
 export STT_PROVIDER=manual LLM_PROVIDER=local TRANSLATION_PROVIDER=local
-export VOICE_CLONE_PROVIDER=local MODERATION_PROVIDER=local
+# Voice cloning: the basic profile unless E2E_VOICE_CLONE_PROVIDER=chatterbox|auto asks for the
+# local voice engine (services/voice-engine, shared by every stack on this machine).
+export VOICE_CLONE_PROVIDER="${E2E_VOICE_CLONE_PROVIDER:-local}" MODERATION_PROVIDER=local
+export VOICE_ENGINE_URL="${E2E_VOICE_ENGINE_URL:-http://127.0.0.1:8091}"
 export AVATAR_ENGINE_URL="${E2E_AVATAR_ENGINE_URL:-http://127.0.0.1:9}"
 export AVATAR_ENGINE_WORK_DIR="${E2E_AVATAR_ENGINE_WORK_DIR:-$WORK_DIR/engine}"
 export VITE_API_PROXY_TARGET="$API_URL"

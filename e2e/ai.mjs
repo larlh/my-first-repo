@@ -162,6 +162,41 @@ function needsEngine() {
     throw new Skip('needs the neural engine (set E2E_ENGINE=1 with `pnpm avatar-engine` running)');
 }
 
+/** services/voice-engine (realistic local cloning), shared by every stack on this machine. */
+const VOICE_ENGINE = (process.env.VOICE_ENGINE_URL ?? 'http://127.0.0.1:8091').replace(/\/+$/, '');
+const API = (process.env.E2E_API_URL ?? WEB).replace(/\/+$/, '');
+
+/** Perth watermark score of a 16-bit WAV, measured by the voice engine's own detector. */
+async function engineWatermark(wav) {
+  const response = await fetch(`${VOICE_ENGINE}/v1/watermark`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ audioWav: Buffer.from(wav).toString('base64') }),
+  });
+  assert(response.ok, `POST /v1/watermark of the voice engine → ${response.status}`);
+  return response.json();
+}
+
+/** Public API call with an API key (the way another app would call Parlante). */
+async function v1(method, pathname, key, body) {
+  const response = await fetch(`${API}${pathname}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${key}`,
+      ...(body ? { 'content-type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await response.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  return { status: response.status, json, text };
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Polls `fn` until it returns a truthy value. */
@@ -935,6 +970,11 @@ async function sectionVoiceClone() {
   let sampleAssetId;
   let consentId;
   const before = await credits();
+  // Who clones on this stack: the local voice engine (Chatterbox es-ES) while it answers,
+  // otherwise the basic voice profile. Each step expects what the page promises for it.
+  const cloner = (await apiGet('/api/capabilities')).active.voiceClone;
+  const engineClones = cloner.id === 'chatterbox';
+  let engineVoiceId = null;
 
   await step('se prepara una muestra de voz sintética de más de 10 s', async () => {
     const speech = (
@@ -1022,7 +1062,15 @@ async function sectionVoiceClone() {
     await apiCall('DELETE', `/api/assets/${upload.json.id}`);
   });
 
-  await step('muestra + consentimiento → voz clonada en modo local', async () => {
+  await step('muestra + consentimiento → voz clonada en este equipo', async () => {
+    const panel = await settledText(page.getByRole('region', { name: 'Cómo se clona aquí' }), [
+      engineClones ? /Clonado neuronal local/ : /Modo básico local/,
+    ]);
+    if (engineClones) {
+      assert(/Clonado neuronal local/.test(panel), 'the page names the local neural cloning');
+      assert(/Chatterbox/.test(panel) && /acento de España/.test(panel), 'and says which engine');
+      assert(!/Modo básico local/.test(panel), 'it no longer says "modo básico"');
+    } else assert(/Modo básico local/.test(panel), 'the page says it clones in basic mode');
     await fillConsent('Persona Sintética de Prueba', { accept: true });
     const creation = expectResponse(
       (r) => new URL(r.url()).pathname === '/api/voice-clones' && r.request().method() === 'POST',
@@ -1038,14 +1086,28 @@ async function sectionVoiceClone() {
     await text('Voz lista').first().waitFor({ timeout: 60_000 });
     voice = await apiGet(`/api/voices/${voice.id}`);
     assertEqual(voice.status, 'ready', 'the voice is ready');
-    assertEqual(voice.provider.local, true, 'it was cloned by the local provider');
-    assertEqual(voice.provider.quality, 'basic', 'local cloning is basic quality');
-    const main = await settledText(page.locator('main'), [
-      /Clonada en modo básico/,
-      /No reproduce tu timbre/,
-    ]);
-    assert(/Clonada en modo básico/.test(main), 'the result says it was cloned in basic mode');
-    assert(/No reproduce tu timbre/.test(main), 'the page is honest about the timbre');
+    assertEqual(voice.provider.local, true, 'it was cloned on this machine');
+    if (engineClones) {
+      assertEqual(voice.provider.id, 'chatterbox', 'the local voice engine cloned it');
+      assertEqual(voice.provider.quality, 'premium', 'a realistic clone is not labelled basic');
+      const main = await settledText(page.locator('main'), [/Clonada en este equipo/]);
+      assert(/Clonada en este equipo/.test(main), 'the result says it was cloned on this machine');
+      assert(/marca de agua/.test(main), 'and that its audio carries a watermark');
+      // "modo básico" appears only as the fallback for other languages, never as what happened.
+      assert(!/Clonada en modo básico|Modo básico local/.test(main), 'not presented as basic mode');
+      if (DATABASE_URL) {
+        engineVoiceId = psql(`select provider_voice_id from voices where id = '${voice.id}'`);
+        assert(/^cbx_/.test(engineVoiceId ?? ''), 'the engine holds the voice under a cbx_ id');
+      }
+    } else {
+      assertEqual(voice.provider.quality, 'basic', 'local cloning is basic quality');
+      const main = await settledText(page.locator('main'), [
+        /Clonada en modo básico/,
+        /No reproduce tu timbre/,
+      ]);
+      assert(/Clonada en modo básico/.test(main), 'the result says it was cloned in basic mode');
+      assert(/No reproduce tu timbre/.test(main), 'the page is honest about the timbre');
+    }
     assertEqual(await credits(), before - 10, 'cloning cost 10 credits');
     return `${voice.id} · ${voice.provider.name}`;
   });
@@ -1076,18 +1138,110 @@ async function sectionVoiceClone() {
       'the cloned voice id was sent',
     );
     const speech = await response.json();
-    const stats = wavStats(await download(speech.audioUrl));
+    const wav = await download(speech.audioUrl);
+    const stats = wavStats(wav);
     assert(stats.durationMs > 800 && stats.rms > 0.01, 'the cloned voice produces audible speech');
     const consolePanel = page.getByRole('region', { name: /^Preescucha de / });
+    const label = engineClones
+      ? /Clonada en este equipo con un modelo neuronal/
+      : /Clonado en modo básico/;
     assert(
-      /Clonado en modo básico/.test(await settledText(consolePanel, [/Clonado en modo básico/])),
-      'the console labels the clone as basic mode',
+      label.test(await settledText(consolePanel, [label])),
+      'the console labels the clone for what it is',
     );
+    if (engineClones) {
+      assertEqual(speech.provider.id, 'chatterbox', 'the voice engine speaks the cloned voice');
+      const mark = await engineWatermark(wav);
+      assert(mark.detected, `the audio carries the Perth watermark (score ${mark.watermark})`);
+    }
     await consolePanel
       .getByRole('button', { name: 'Parar' })
       .click({ timeout: 1000 })
       .catch(() => {});
     return `WAV de ${stats.durationMs} ms con ${speech.provider.name}`;
+  });
+
+  await step('la voz clonada habla por la API pública /v1: síntesis y vídeo', async () => {
+    if (!engineClones) throw new Skip('the local voice engine is not cloning on this stack');
+    const created = await apiCall('POST', '/api/api-keys', {
+      expect: 201,
+      body: { name: 'Otra app (clonado e2e)' },
+    });
+    const key = created.json.key;
+    const listed = await v1('GET', '/v1/voices?language=es', key);
+    assert(
+      listed.json.items.some((item) => item.id === voice.id && item.kind === 'cloned'),
+      'GET /v1/voices lists the cloned voice',
+    );
+    const said = await v1('POST', '/v1/speech', key, {
+      text: 'Hola, os hablo con mi voz clonada desde la API pública de Parlante.',
+      voiceId: voice.id,
+      language: 'es',
+    });
+    assertEqual(
+      said.status,
+      200,
+      `POST /v1/speech with the cloned voice (${said.text.slice(0, 200)})`,
+    );
+    assertEqual(said.json.provider.id, 'chatterbox', 'spoken by the local voice engine');
+    assert(said.json.runtime.words.length >= 10, 'with word timings for subtitles and lips');
+    const wav = await download(said.json.audioUrl);
+    const mark = await engineWatermark(wav);
+    assert(mark.detected, `the /v1 audio carries the Perth watermark (score ${mark.watermark})`);
+
+    const avatars = (await v1('GET', '/v1/avatars', key)).json.items;
+    const avatar = avatars.find((item) => item.rendering === 'instant') ?? avatars[0];
+    assert(avatar, 'there is an avatar to present the video');
+    const video = await v1('POST', '/v1/videos', key, {
+      title: 'Vídeo con voz clonada (e2e)',
+      input: {
+        type: 'script',
+        text: 'Este vídeo lo narra una voz clonada en este equipo, con consentimiento y marca de agua.',
+        avatarId: avatar.id,
+        voiceId: voice.id,
+        language: 'es',
+      },
+      resolution: '720p',
+    });
+    assertEqual(
+      video.status,
+      202,
+      `POST /v1/videos with the cloned voice (${video.text.slice(0, 200)})`,
+    );
+    let done = video.json;
+    const deadline = Date.now() + 10 * 60_000;
+    while (!['completed', 'failed'].includes(done.status) && Date.now() < deadline) {
+      await sleep(2000);
+      done = (await v1('GET', `/v1/videos/${video.json.id}`, key)).json;
+    }
+    assertEqual(done.status, 'completed', `the video renders (${JSON.stringify(done.error)})`);
+    assertEqual(
+      done.providers?.tts?.id,
+      'chatterbox',
+      'the video names the voice engine as its voice',
+    );
+    const mp4 = path.join(OUT, 'cloned-voice-video.mp4');
+    fs.writeFileSync(mp4, await download(done.videoUrl));
+    const extracted = path.join(OUT, 'cloned-voice-video.wav');
+    execFileSync('ffmpeg', [
+      '-y',
+      '-v',
+      'error',
+      '-i',
+      mp4,
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '24000',
+      '-c:a',
+      'pcm_s16le',
+      extracted,
+    ]);
+    const sound = wavStats(fs.readFileSync(extracted));
+    assert(sound.durationMs > 3000 && sound.rms > 0.01, 'the MP4 carries the cloned voice');
+    const videoMark = await engineWatermark(fs.readFileSync(extracted));
+    return `/v1/speech ${(wav.length / 1024).toFixed(0)} KB, marca ${mark.watermark} · vídeo ${(done.durationMs / 1000).toFixed(1)} s (${avatar.name}), marca tras AAC ${videoMark.watermark}`;
   });
 
   await step('revocar el consentimiento lo borra todo en cascada (API, BD y disco)', async () => {
@@ -1172,6 +1326,11 @@ async function sectionVoiceClone() {
         `disco: borrados ${voiceFilesBefore.length} + ${assetFilesBefore.length} archivos`,
       );
     } else notes.push('disco no comprobado (E2E_STORAGE_DIR sin definir)');
+    if (engineVoiceId) {
+      const left = await fetch(`${VOICE_ENGINE}/v1/voices/${engineVoiceId}`);
+      assertEqual(left.status, 404, 'the voice engine no longer holds the voice');
+      notes.push(`motor de voz: ${engineVoiceId} borrado`);
+    }
     return notes.join(' · ');
   });
 }

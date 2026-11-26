@@ -173,6 +173,15 @@ los guiones (Anthropic, ElevenLabs, OpenAI), el audio a transcribir (OpenAI) y l
 a clonar (ElevenLabs). Quien configura las claves es responsable de que ese envío esté
 permitido y de informar a sus usuarios.
 
+**Clonado de voz local (motor de voz).** Con `pnpm voice-engine` en marcha, las voces en español
+se clonan en este equipo con Chatterbox Multilingual (Resemble AI, licencia MIT): la muestra no
+sale de la máquina y el motor solo guarda los rasgos de voz derivados de ella, que se borran al
+eliminar la voz o revocar su consentimiento (si el motor no responde en ese momento, el borrado
+falla de forma visible y se puede repetir). Todo el audio que genera lleva la marca de agua
+inaudible Perth, que lo identifica como generado por IA: el motor comprueba la marca antes de
+devolver cada audio y no arranca sin ella. El consentimiento es el mismo que para cualquier
+clonado y la API pública `/v1` solo puede usar las voces clonadas del propio workspace.
+
 **Dictado por micrófono.** Lo que dictas se convierte en texto y el audio se descarta: no se
 almacena en ningún sitio ni queda en los registros, y el texto solo existe en el campo donde lo
 has dictado (se guarda si guardas ese campo, como si lo hubieras tecleado). Qué sale del equipo

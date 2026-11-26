@@ -424,6 +424,12 @@ export function VoiceConsole({
               {cloned ? t('console.basicCloned') : t('console.basicStock')}
             </p>
           )}
+          {tier === 'neural' && cloned && (
+            <p className="mt-3 flex gap-2 border-t border-line pt-3 text-xs text-pretty text-fg-muted">
+              <Sparkles aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+              {t('console.neuralCloned')}
+            </p>
+          )}
           {tier === 'neural' && !cloned && (
             <p className="mt-3 flex gap-2 border-t border-line pt-3 text-xs text-pretty text-fg-muted">
               <Sparkles aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />

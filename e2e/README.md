@@ -26,15 +26,16 @@ servidor de desarrollo), espera a que respondan, ejecuta los scripts que reciba 
 si algo falla— para los procesos, borra la base de datos, las claves de Redis de su prefijo y sus
 archivos. Si un script falla, deja los registros y las capturas en el directorio que imprime.
 
-| Variable                        | Para qué                                                                                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `E2E_API_PORT` / `E2E_WEB_PORT` | Puertos (4211 / 5211)                                                                                                                      |
-| `E2E_HOOK_PORT`                 | Puerto del receptor local de webhooks (puerto de la API + 50)                                                                              |
-| `E2E_WEB_MODE`                  | `build` (por defecto) o `dev`                                                                                                              |
-| `E2E_KEEP=1`                    | No borrar nada al terminar (depuración)                                                                                                    |
-| `E2E_TTS_PROVIDER`              | `TTS_PROVIDER` de la pila (por defecto `neural`: voces locales, nunca un proveedor externo aunque haya claves; `espeak` = solo la reserva) |
-| `E2E_ONLY`                      | Secciones de `core.mjs` a ejecutar, separadas por comas                                                                                    |
-| `PLAYWRIGHT_MODULE`             | Ruta de Playwright si no está en el workspace ni en `NODE_PATH`                                                                            |
+| Variable                        | Para qué                                                                                                                                             |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `E2E_API_PORT` / `E2E_WEB_PORT` | Puertos (4211 / 5211)                                                                                                                                |
+| `E2E_HOOK_PORT`                 | Puerto del receptor local de webhooks (puerto de la API + 50)                                                                                        |
+| `E2E_WEB_MODE`                  | `build` (por defecto) o `dev`                                                                                                                        |
+| `E2E_KEEP=1`                    | No borrar nada al terminar (depuración)                                                                                                              |
+| `E2E_TTS_PROVIDER`              | `TTS_PROVIDER` de la pila (por defecto `neural`: voces locales, nunca un proveedor externo aunque haya claves; `espeak` = solo la reserva)           |
+| `E2E_VOICE_CLONE_PROVIDER`      | `VOICE_CLONE_PROVIDER` de la pila (por defecto `local`; `chatterbox` clona con el motor de voz local, que debe estar arrancado: `pnpm voice-engine`) |
+| `E2E_ONLY`                      | Secciones de `core.mjs` a ejecutar, separadas por comas                                                                                              |
+| `PLAYWRIGHT_MODULE`             | Ruta de Playwright si no está en el workspace ni en `NODE_PATH`                                                                                      |
 
 Requisitos: PostgreSQL y Redis (`pnpm services`), `ffmpeg`/`ffprobe` y Playwright con Chromium.
 

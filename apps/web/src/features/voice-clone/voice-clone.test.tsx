@@ -86,6 +86,28 @@ describe('clone a voice', () => {
     expect(within(panel).queryByText(/No reproduce tu timbre/)).toBeNull();
   });
 
+  it('names the local voice engine, never "modo básico", when it does the cloning', async () => {
+    const chatterbox = {
+      id: 'chatterbox',
+      name: 'Chatterbox es-ES (local)',
+      quality: 'premium' as const,
+      local: true,
+    };
+    const api = createFakeApi()
+      .on('GET', '/api/capabilities', () => makeLibraryCapabilities({ voiceClone: chatterbox }))
+      .on('GET', '/api/voices', () => ({ items: [] }));
+    renderFeatures(features, '/voices/clone', api);
+    const panel = await screen.findByRole('region', { name: 'Cómo se clona aquí' });
+    expect(await within(panel).findByText('Clonado neuronal local')).toBeVisible();
+    expect(
+      within(panel).getByText(/El clonado lo hace Chatterbox es-ES \(local\) en este equipo/),
+    ).toBeVisible();
+    expect(within(panel).getByText(/acento de España/)).toBeVisible();
+    expect(within(panel).getByText(/marca de agua inaudible \(Perth\)/)).toBeVisible();
+    expect(within(panel).queryByText(/[Mm]odo básico local/)).toBeNull();
+    expect(within(panel).queryByText(/La muestra se envía/)).toBeNull();
+  });
+
   it('refuses to upload the sample without the consent declaration', async () => {
     const user = userEvent.setup();
     const uploads = fakeUploads(() => ({ status: 201, body: sampleAsset() }));
