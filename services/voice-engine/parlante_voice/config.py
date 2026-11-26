@@ -10,9 +10,13 @@ from urllib.parse import urlparse
 SERVICE_DIR = Path(__file__).resolve().parent.parent
 REPO_DIR = SERVICE_DIR.parent.parent
 
-# Defaults chosen by ear on 2026-11-26 with the person whose voice was cloned ("toma C").
+# Defaults chosen by ear on 2026-11-26 with the people whose voices were cloned. cfg_weight was
+# 0.3 first ("toma C"), but at 0.3 the es-ES T3 is followed loosely and the voice "sesea": the
+# /θ/ of z, ce, ci came out as strong as /s/ (onset 4-11 kHz energy, θ minus s: -1.9 dB) and it
+# sounded Latin American. 0.7 restores the Castilian distinction (-9.2 dB; 0.5: -7.1 dB) and was
+# picked by ear as the best take; it also avoids the slow sentences 0.3 produced.
 DEFAULT_EXAGGERATION = 0.3
-DEFAULT_CFG_WEIGHT = 0.3
+DEFAULT_CFG_WEIGHT = 0.7
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_SEED = 7
 

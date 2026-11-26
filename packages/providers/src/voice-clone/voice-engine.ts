@@ -11,7 +11,7 @@ import type { SpeechHttpOptions } from '../tts/http';
  * conditionals derived from the sample (`cbx_…` ids); every audio it returns carries the Perth
  * watermark, checked by the engine's detector before it answers (`watermark` = score 0..1).
  *
- *   GET    /health            state, device, licence, defaults (exaggeration 0.3, cfg 0.3, temp 0.7)
+ *   GET    /health            state, device, licence, defaults (exaggeration 0.3, cfg 0.7, temp 0.7)
  *   POST   /v1/voices         {sampleWav, language, consentId} → {voiceId, referenceSec}
  *   DELETE /v1/voices/:id     {deleted} (idempotent)
  *   POST   /v1/speech         {voiceId, text, language, speed, pitch} → {audioWav, segments, …}

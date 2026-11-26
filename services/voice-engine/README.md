@@ -16,8 +16,8 @@ to it over a small loopback HTTP API; the only client is
 | `POST /v1/speech`        | `{voiceId, text, language, speed?, pitch?}` → WAV (base64) + where each sentence sits + watermark |
 | `POST /v1/watermark`     | `{audioWav}` → `{watermark, detected}`: Perth detector score of any WAV                           |
 
-Defaults chosen by ear with the person whose voice was cloned (2026-11-26): `exaggeration=0.3`,
-`cfg_weight=0.3`, `temperature=0.7` (`VOICE_ENGINE_EXAGGERATION`, `_CFG_WEIGHT`, `_TEMPERATURE`).
+Defaults chosen by ear with the people whose voices were cloned (2026-11-26): `exaggeration=0.3`,
+`cfg_weight=0.7`, `temperature=0.7` (`VOICE_ENGINE_EXAGGERATION`, `_CFG_WEIGHT`, `_TEMPERATURE`).
 
 ## Quick start
 
@@ -61,7 +61,10 @@ first call). On CPU it works but is several times slower than real time.
 - Spanish only (the T3 is the es-ES finetune). Other languages use the basic profile.
 - Chatterbox gives no timings: words are estimated per sentence (`estimateSpeechTimeline`) over
   the span the engine reports for each chunk, which keeps subtitles and the 2D mouth aligned.
-- With `cfg_weight=0.3` some sentences come out slow (it follows the pace of the reference).
+- `cfg_weight` sets the accent as much as the pace: at 0.3 the es-ES model is followed loosely and the
+  voice sesea (/θ/ as strong as /s/, sounds Latin American) and some sentences come out slow;
+  0.7 keeps the Castilian /θ/–/s/ distinction (measured: onset 4–11 kHz energy of z/ce/ci words
+  vs s words, −1.9 dB at 0.3, −7.1 dB at 0.5, −9.2 dB at 0.7).
 - The `s3gen_v3` decoder of the es-es repository does not load in chatterbox-tts 0.1.7.
 
 ## Environment fixes (reference machine)
