@@ -125,6 +125,25 @@ const SCRIPT_LAYOUT: Record<
 };
 
 /**
+ * Where a PHOTOREALISTIC presenter goes instead (any avatar id that is not `stock_…`, the same
+ * test as `usesPhotorealAvatars`): a full-height `closeup`. Stock portraits are square head-and-
+ * shoulders shots with little picture under the chin, so in `bust` the photo sits on the bottom
+ * edge and the mouth falls where the burned-in subtitles go (measured over the 11 stock faces:
+ * mouth at 83 % of the height in 9:16, under a 2-line subtitle box starting at 79 %; chin
+ * covered in 16:9 and 1:1 too). Zooming in is the only way to lift the face while the picture
+ * still reaches the bottom edge: with these boxes the mouth sits at ≈ 64 % and the lowest chin
+ * at ≈ 76 % in every format. Instant avatars keep `bust`, which already leaves their face high
+ * (their closeup would lower it). `packages/stock-assets/src/photoreal-layout.test.ts` pins both.
+ */
+const PHOTO_SCRIPT_AVATAR: Record<AspectRatio, { x: number; y: number; w: number; h: number }> = {
+  '16:9': { x: 0.5, y: 0, w: 0.44, h: 1 },
+  '9:16': { x: 0, y: 0, w: 1, h: 1 },
+  '1:1': { x: 0.12, y: 0, w: 0.76, h: 1 },
+};
+/** 16:9 without a headline: the photoreal presenter centred. */
+const PHOTO_SCRIPT_AVATAR_CENTRED = { x: 0.28, y: 0, w: 0.44, h: 1 };
+
+/**
  * THE script → Composition layout: one scene per entry with the talking avatar, an optional
  * headline and the narration. Used by BOTH the AI script writer screen (web, before
  * `POST /api/videos` with `source: 'script'`) and the public API (`POST /v1/videos` with
@@ -137,18 +156,25 @@ export function compositionFromScript(
 ): Composition {
   const aspect = options.aspect ?? '16:9';
   const layout = SCRIPT_LAYOUT[aspect];
+  const photoreal = !options.avatarId.startsWith('stock_');
   const backgroundRole: BrandColorRole = 'background';
   const built = (scenes.length > 0 ? scenes : [{ text: '' }]).map((scene, index) => {
     const headline = scene.headline?.trim() ?? '';
-    const avatarBox =
-      headline === '' && aspect === '16:9' ? { x: 0.3, y: 0.14, w: 0.4, h: 0.86 } : layout.avatar;
+    const centred = headline === '' && aspect === '16:9';
+    const avatarBox = photoreal
+      ? centred
+        ? PHOTO_SCRIPT_AVATAR_CENTRED
+        : PHOTO_SCRIPT_AVATAR[aspect]
+      : centred
+        ? { x: 0.3, y: 0.14, w: 0.4, h: 0.86 }
+        : layout.avatar;
     const layers: NewLayerInput[] = [
       {
         type: 'avatar',
         name: 'Avatar',
         avatarId: options.avatarId,
         box: avatarBox,
-        framing: 'bust',
+        framing: photoreal ? 'closeup' : 'bust',
         z: 1,
       },
     ];
