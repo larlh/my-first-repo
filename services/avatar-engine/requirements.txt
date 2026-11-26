@@ -1,0 +1,21 @@
+# Parlante avatar engine — pinned runtime dependencies (PyPI only, Python 3.11-3.13).
+# Each team keeps its own block; pins are exact so installs are reproducible.
+
+# ---- core / prepare / animate / server (owner: motor-animación) ----
+numpy==2.5.4
+opencv-python-headless==5.0.0.93
+onnx==1.23.2                 # derives the split generator graphs (one-off)
+onnxruntime==1.32.0          # GPU hosts: replace by onnxruntime-gpu==1.32.0 (CUDA path, unverified)
+openvino==2026.4.1           # CPU backend for the convolutional graphs
+ai-edge-litert==2.3.0        # LiteRT interpreter for the MediaPipe selfie segmenter (fallback matte)
+psutil==7.2.2
+fastapi==0.162.7
+uvicorn==0.54.0
+pydantic==2.14.3
+
+# ---- tests (owner: motor-animación) ----
+pytest==9.2.0
+httpx==0.28.1
+
+# ---- portrait / matting (owner: motor-retratos) ----
+tokenizers==0.23.3           # CLIP BPE tokenizer of the portrait generator (no transformers, no torch)

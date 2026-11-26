@@ -1,0 +1,352 @@
+/* Shell + UI kit strings (namespace `shell`). Spanish is the source: `en.ts` must mirror its
+ * shape (type-checked). Feature strings live in each feature manifest, not here. */
+export const es = {
+  ui: {
+    loading: 'Cargando…',
+    close: 'Cerrar',
+    cancel: 'Cancelar',
+    confirm: 'Confirmar',
+    retry: 'Reintentar',
+    loadMore: 'Cargar más',
+    notifications: 'Notificaciones',
+    dropzone: {
+      title: 'Arrastra un archivo o haz clic para elegirlo',
+      titleMany: 'Arrastra archivos o haz clic para elegirlos',
+      drop: 'Suelta para subir',
+      maxSize: 'máx. {{max}}',
+      rejectType: '«{{name}}» no tiene un formato admitido.',
+      rejectSize: '«{{name}}» supera el tamaño máximo ({{max}}).',
+      rejectCount: 'Solo se admite un archivo cada vez.',
+    },
+    color: {
+      pick: 'Elegir color',
+      custom: 'Color personalizado',
+      presets: 'Colores sugeridos',
+    },
+  },
+  errors: {
+    generic: 'Algo ha fallado',
+    VALIDATION_ERROR: 'Revisa los datos introducidos',
+    BAD_REQUEST: 'La petición no es válida',
+    UNAUTHENTICATED: 'Tu sesión ha caducado. Vuelve a iniciar sesión',
+    INVALID_CREDENTIALS: 'El correo o la contraseña no son correctos',
+    INVALID_API_KEY: 'La clave de API no es válida',
+    INSUFFICIENT_CREDITS: 'No quedan créditos suficientes en este workspace',
+    FORBIDDEN: 'No tienes permiso para hacer esto',
+    PLAN_LIMIT_EXCEEDED: 'Has alcanzado el límite de tu plan',
+    CONSENT_REQUIRED: 'Hace falta registrar el consentimiento antes de continuar',
+    NOT_FOUND: 'No hemos encontrado lo que buscas',
+    CONFLICT: 'Ya existe algo igual',
+    EMAIL_TAKEN: 'Ya hay una cuenta con ese correo',
+    INVALID_STATE: 'Ahora mismo no se puede hacer esta acción',
+    REVISION_CONFLICT:
+      'Alguien ha modificado esto mientras tanto. Recarga para ver la última versión',
+    PAYLOAD_TOO_LARGE: 'El archivo es demasiado grande',
+    UNSUPPORTED_MEDIA_TYPE: 'Ese tipo de archivo no está admitido',
+    CONTENT_BLOCKED: 'El contenido no cumple las normas de uso',
+    TRANSCRIPT_REQUIRED: 'En modo básico hay que aportar la transcripción',
+    UNSAFE_URL: 'Esa URL no está permitida',
+    UNPROCESSABLE: 'No se ha podido procesar la petición',
+    RATE_LIMITED: 'Demasiadas peticiones seguidas. Espera un momento',
+    INTERNAL: 'Error interno del servidor',
+    NOT_IMPLEMENTED: 'Esta función todavía no está disponible',
+    PROVIDER_ERROR: 'El proveedor de IA ha devuelto un error',
+    PROVIDER_NOT_CONFIGURED: 'Ese proveedor no está configurado en este servidor',
+    SERVICE_UNAVAILABLE: 'El servicio no está disponible en este momento',
+    NETWORK_ERROR: 'No hay conexión con el servidor',
+    ABORTED: 'Operación cancelada',
+    INVALID_RESPONSE: 'El servidor ha respondido algo inesperado',
+    technical: 'Detalle técnico (en inglés): {{message}}',
+    reasons: {
+      engine_unreachable: 'El motor neuronal local no está arrancado o se ha detenido.',
+      engine_timeout: 'El motor neuronal local no ha contestado a tiempo.',
+      engine_error: 'El motor neuronal local ha respondido con un error interno.',
+      engine_invalid: 'El motor neuronal local ha respondido algo que este servidor no entiende.',
+      weights_missing: 'Al motor neuronal local le faltan pesos de modelos por descargar.',
+      voice_not_installed:
+        'Esta voz neuronal no está instalada en este equipo. En la carpeta de Parlante, ejecuta «pnpm voices:setup» y vuelve a intentarlo, o elige otra voz.',
+      voice_incomplete:
+        'La instalación de esta voz neuronal quedó a medias. Ejecuta de nuevo «pnpm voices:setup» en la carpeta de Parlante, o elige otra voz.',
+      voice_runtime_unavailable:
+        'El modelo de esta voz neuronal está instalado, pero no se ha podido cargar en este servidor. Revisa el registro de la API o elige otra voz.',
+      not_configured: 'Este servidor no tiene configurado ningún motor de avatares.',
+      unknown: 'El motor neuronal local no está disponible.',
+    },
+  },
+  job: {
+    phase: {
+      idle: 'Sin iniciar',
+      queued: 'En cola',
+      running: 'En proceso',
+      completed: 'Completado',
+      partial: 'Completado en parte',
+      failed: 'Fallido',
+      canceled: 'Cancelado',
+    },
+    eta: 'quedan {{time}}',
+    etaApprox: 'quedan ~{{time}}',
+    etaUnknown: 'calculando tiempo…',
+    etaAlmost: 'casi listo',
+    waiting: 'esperando turno',
+  },
+  player: {
+    label: 'Reproductor de vídeo: {{title}}',
+    play: 'Reproducir',
+    pause: 'Pausar',
+    mute: 'Silenciar',
+    unmute: 'Activar sonido',
+    volume: 'Volumen',
+    seek: 'Posición',
+    position: '{{current}} de {{total}}',
+    captions: 'Subtítulos',
+    captionsOn: 'Mostrar subtítulos',
+    captionsOff: 'Ocultar subtítulos',
+    captionsNone: 'Desactivados',
+    speed: 'Velocidad: {{rate}}×',
+    speedLabel: 'Velocidad',
+    download: 'Descargar',
+    fullscreen: 'Pantalla completa',
+    exitFullscreen: 'Salir de pantalla completa',
+    buffering: 'Cargando vídeo…',
+    error: 'No se ha podido cargar el vídeo.',
+  },
+  provider: {
+    basic: 'Modo básico',
+    premium: 'Alta calidad',
+    basicHint: 'Generado en local con {{name}}, sin servicios externos. Calidad básica.',
+    premiumHint: 'Generado con {{name}}, un proveedor externo de alta calidad.',
+    neural: 'Neuronal local',
+    neuralHint:
+      'Generado en este equipo con {{name}}, un modelo neuronal abierto. Sin servicios externos ni claves.',
+    names: {
+      localHeuristic: 'Heurística local',
+      localBlocklist: 'Lista de bloqueo (local)',
+      localDisk: 'Disco local',
+      localNeuralEngine: 'Motor neuronal local',
+      localVoiceProfile: 'Perfil de voz (local)',
+      localGlossary: 'Traducción básica por glosario (local)',
+      userTranscript: 'Transcripción aportada por el usuario',
+      externalLipsync: 'Lip-sync externo',
+      avatar2d: 'Avatar 2D',
+      kokoroLocal: 'Kokoro (neuronal local)',
+      piperLocal: 'Piper (neuronal local)',
+    },
+  },
+  session: {
+    loading: 'Abriendo tu sesión…',
+  },
+  guard: {
+    forbiddenTitle: 'No tienes acceso a esta sección',
+    forbiddenText:
+      'Hace falta el rol de {{role}} o superior en este workspace; tu rol es {{current}}. Pide acceso a quien lo administra.',
+  },
+  roles: {
+    owner: 'Propietario',
+    admin: 'Administrador',
+    editor: 'Editor',
+    viewer: 'Lector',
+  },
+  workspace: {
+    switcher: 'Workspace actual: {{name}}. Cambiar de workspace',
+    planAndRole: 'Plan {{plan}} · {{role}}',
+    yours: 'Tus workspaces',
+    current: 'Actual',
+    create: 'Crear workspace',
+    createTitle: 'Nuevo workspace',
+    createText: 'Un espacio aparte con sus propios vídeos, miembros y créditos.',
+    createAction: 'Crear y cambiar',
+    name: 'Nombre',
+    namePlaceholder: 'Equipo de marketing',
+    nameRequired: 'Escribe un nombre.',
+    created: 'Workspace «{{name}}» creado',
+    switchFailed: 'No se ha podido cambiar de workspace',
+  },
+  credits: {
+    title: 'Créditos',
+    ofMonthly: 'de {{total}} al mes',
+    meter: 'Créditos disponibles',
+    count_one: '{{count}} crédito',
+    count_other: '{{count}} créditos',
+    low: 'Te quedan pocos créditos.',
+    manage_one: '{{count}} crédito. Ver plan y uso',
+    manage_other: '{{count}} créditos. Ver plan y uso',
+  },
+  render: {
+    title: 'Renderizar vídeo',
+    titleAgain: 'Volver a renderizar',
+    start: 'Renderizar',
+    resolution: 'Resolución',
+    resolutionLocked: 'El plan {{plan}} exporta a 720p. Con un plan superior podrás elegir 1080p.',
+    duration: 'Duración estimada',
+    cost: 'Coste',
+    balance: 'Saldo del workspace',
+    costNote_one:
+      '{{count}} crédito por cada 30 s empezados a 720p; ×{{hd}} a 1080p y ×{{photoreal}} con avatares fotorrealistas. Se reserva al empezar y se ajusta a la duración real al terminar.',
+    costNote_other:
+      '{{count}} créditos por cada 30 s empezados a 720p; ×{{hd}} a 1080p y ×{{photoreal}} con avatares fotorrealistas. Se reservan al empezar y se ajustan a la duración real al terminar.',
+    reserveNote_one:
+      'Al empezar se reserva {{count}} crédito (la duración se estima antes de sintetizar la voz); al terminar se cobra el coste real.',
+    reserveNote_other:
+      'Al empezar se reservan {{count}} créditos (la duración se estima antes de sintetizar la voz); al terminar se cobra el coste real.',
+    watermark: 'Tu plan añade una pequeña marca de agua de Parlante.',
+    notEnough: 'No hay créditos suficientes para este render.',
+    seePlans: 'Ver planes y créditos',
+    photoreal: {
+      title: 'El render fotorrealista es lento',
+      measuredVideo:
+        'Este vídeo usa avatares fotorrealistas. Con la velocidad medida en esta máquina ({{device}}), animarlos llevará unos {{time}}.',
+      measured:
+        'Medido en esta máquina ({{device}}): animar el avatar tarda unos {{time}} por cada 10 s de vídeo.',
+      unmeasured:
+        'Los avatares fotorrealistas los anima el motor neuronal local. En CPU puede tardar varios minutos por cada 10 s de vídeo (aún sin medir en esta máquina); verás el tiempo restante mientras avanza.',
+      unavailable: 'Ahora no se puede renderizar con avatares fotorrealistas.',
+      nonCommercial:
+        'Aviso de licencia: uno de los modelos instalados solo permite uso no comercial.',
+    },
+  },
+  prefs: {
+    language: 'Idioma',
+    theme: 'Tema',
+    themes: { system: 'Como el sistema', light: 'Claro', dark: 'Oscuro' },
+    languageNotSaved: 'No se ha podido guardar el idioma en tu perfil',
+    switchLanguage: 'Cambiar a {{language}}',
+    toLight: 'Cambiar a tema claro',
+    toDark: 'Cambiar a tema oscuro',
+  },
+  dictation: {
+    button: 'Dictar con el micrófono',
+    stopButton: 'Detener el dictado',
+    unavailable: 'Dictado no disponible',
+    panel: 'Estado del dictado',
+    stop: 'Detener',
+    close: 'Cerrar',
+    escHint: 'Pulsa Esc para detener',
+    state: {
+      requesting: 'Esperando el permiso del micrófono…',
+      requestingHint: 'Acepta el aviso del navegador para empezar a dictar.',
+      listening: 'Escuchando…',
+      listeningHintLocal: 'El texto aparece al terminar cada frase.',
+      listeningHintBrowser: 'El texto se escribe al cerrar cada frase.',
+      transcribing: 'Transcribiendo…',
+      pending_one: 'Transcribiendo {{count}} frase…',
+      pending_other: 'Transcribiendo {{count}} frases…',
+      level: 'Nivel de entrada del micrófono',
+    },
+    engine: {
+      local: 'Motor local',
+      localPrivacy:
+        'Se transcribe en tu instalación de Parlante: el audio no sale de ella ni se guarda.',
+      browser: 'Dictado del navegador',
+      browserBadge: 'Navegador · Web Speech',
+      browserPrivacy:
+        'El audio lo reconoce el servicio de voz de tu navegador (en Chrome se envía a Google).',
+    },
+    errors: {
+      permission_denied:
+        'El navegador no tiene permiso para usar el micrófono. Permítelo en el icono del candado de la barra de direcciones y vuelve a intentarlo.',
+      no_microphone: 'No se ha encontrado ningún micrófono. Conecta uno y vuelve a intentarlo.',
+      microphone_busy:
+        'No se ha podido abrir el micrófono. Puede que otra aplicación lo esté usando.',
+      microphone_lost: 'El micrófono ha dejado de enviar audio. Comprueba que sigue conectado.',
+      insecure_context:
+        'El navegador solo deja usar el micrófono en páginas seguras: abre Parlante desde «localhost» o por HTTPS.',
+      unsupported:
+        'Este navegador no puede capturar audio para el dictado local. Actualízalo o usa otro.',
+      engine_unavailable: 'El dictado local no está disponible.',
+      no_engine: 'No hay ningún motor de dictado disponible. {{reason}}',
+      browser_unsupported: 'Este navegador no tiene dictado propio (Web Speech API).',
+      limit_reached_one: 'El campo ha llegado a su límite de {{count}} carácter. Dictado detenido.',
+      limit_reached_other:
+        'El campo ha llegado a su límite de {{count}} caracteres. Dictado detenido.',
+      network: 'No hay conexión con el servidor de Parlante. El dictado se ha detenido.',
+      rate_limited: 'Has dictado demasiadas frases en un minuto. Espera un momento y sigue.',
+      busy: 'El servidor está transcribiendo para otras personas. Inténtalo de nuevo en unos segundos.',
+      session_expired: 'Tu sesión ha caducado. Vuelve a iniciar sesión para dictar.',
+      audio_rejected: 'El servidor no ha aceptado el audio de esa frase. Vuelve a intentarlo.',
+      service_failed: 'El modelo de voz ha fallado con esa frase. Vuelve a intentarlo.',
+      browser_service:
+        'El servicio de voz del navegador no responde o está bloqueado. Comprueba tu conexión o usa el dictado local.',
+      language_unsupported: 'El dictado del navegador no admite el idioma de este campo.',
+    },
+    reasons: {
+      model_not_installed:
+        'El modelo de voz local no está instalado. En la carpeta de Parlante, ejecuta «pnpm dictation:setup» (descarga única de unos 140 MB) y vuelve a pulsar el micrófono.',
+      model_incomplete:
+        'La instalación del modelo de voz local está incompleta. Ejecuta de nuevo «pnpm dictation:setup» en la carpeta de Parlante.',
+      runtime_unavailable:
+        'El modelo de voz local está instalado, pero no se ha podido cargar en este servidor. Revisa el registro de la API.',
+      not_configured: 'Este servidor de Parlante no incluye el dictado local.',
+      unknown: 'El dictado local no está disponible en este servidor ahora mismo.',
+    },
+    actions: {
+      useBrowser: 'Usar el dictado del navegador…',
+      useLocal: 'Usar el dictado local',
+      preferences: 'Preferencias de dictado',
+      retry: 'Reintentar',
+    },
+    consent: {
+      title: 'Antes de usar el dictado del navegador',
+      intro:
+        'Este motor no es de Parlante: usa el reconocimiento de voz de tu navegador (Web Speech API).',
+      leaves:
+        'Tu voz sale de este equipo. En Chrome, el audio se envía a los servidores de Google para reconocerlo; otros navegadores usan su propio servicio.',
+      policy:
+        'Parlante no recibe ni guarda ese audio, y no controla lo que el servicio hace con él.',
+      alternative:
+        'Si prefieres que nada salga del equipo, usa el motor local (el predeterminado).',
+      remember:
+        'Al aceptar, el dictado del navegador queda como tu motor en este dispositivo. Puedes cambiarlo en Ajustes → Idioma, tema y dictado.',
+      accept: 'Aceptar y usar el del navegador',
+      cancel: 'Cancelar',
+    },
+    announce: {
+      listeningLocal: 'Dictado en marcha con el motor local. Habla ahora.',
+      listeningBrowser: 'Dictado en marcha con el servicio de voz del navegador. Habla ahora.',
+      stopped: 'Dictado detenido.',
+      error: 'Dictado detenido. {{message}}',
+    },
+  },
+  user: {
+    menu: 'Menú de {{name}}',
+    logout: 'Cerrar sesión',
+    logoutFailed: 'No se ha podido cerrar la sesión',
+  },
+  nav: {
+    home: 'Parlante, ir al inicio',
+    label: 'Navegación principal',
+    skip: 'Saltar al contenido',
+    open: 'Abrir navegación',
+    sections: {
+      library: 'Biblioteca',
+      ai: 'Herramientas IA',
+      workspace: 'Workspace',
+      dev: 'Desarrollo',
+    },
+  },
+  brand: {
+    onAir: 'En el aire',
+    tagline: { before: 'Dale', accent: 'voz', after: ' a tu guion.' },
+    pitch:
+      'Escribe, elige quién lo cuenta y llévate un vídeo con un avatar que habla. Sin cámara ni micrófono.',
+    offline: 'Funciona en tu equipo, sin claves de servicios externos.',
+  },
+  notFound: {
+    title: 'Aquí no hay nada',
+    text: 'La página no existe o ha cambiado de sitio. Comprueba la dirección o vuelve al inicio.',
+    action: 'Ir al inicio',
+  },
+  routeError: {
+    title: 'Esta página ha fallado',
+    text: 'Ha ocurrido un error inesperado al mostrarla. El resto de la aplicación sigue funcionando.',
+    staleTitle: 'Hay una versión nueva',
+    staleText:
+      'La aplicación se ha actualizado mientras la tenías abierta. Recarga para continuar.',
+    reload: 'Recargar',
+  },
+  index: {
+    emptyTitle: 'Hola, {{name}}',
+    emptyText: 'Esta instalación todavía no tiene secciones activas.',
+  },
+};
+
+export type ShellTranslations = typeof es;

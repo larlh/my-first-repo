@@ -1,0 +1,15 @@
+# Voice engine (Chatterbox Multilingual, MIT). Versions verified on 2026-11-26 in WSL2 Ubuntu 24.04
+# with an RTX 4060 (driver 566.24): torch 2.6.0+cu124 runs there without a driver update.
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchaudio==2.6.0+cu124
+chatterbox-tts==0.1.7
+resemble-perth==1.0.1
+transformers==5.2.0
+huggingface_hub==1.33.0
+safetensors==0.5.3
+librosa==0.11.0
+numpy==1.26.4
+# Without pkg_resources (removed in setuptools 81) perth.PerthImplicitWatermarker is None and
+# Chatterbox refuses to start: the watermark is never optional.
+setuptools<81

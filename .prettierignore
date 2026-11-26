@@ -1,0 +1,8 @@
+node_modules
+dist
+pnpm-lock.yaml
+packages/db/drizzle
+data
+docs/prompt
+**/.venv
+**/__pycache__

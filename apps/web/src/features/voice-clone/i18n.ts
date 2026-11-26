@@ -1,0 +1,341 @@
+/* Translations of "clone a voice". Spanish is the default language. */
+
+const es = {
+  nav: { voiceClone: 'Clonar voz' },
+  back: 'Voces',
+  eyebrow: 'Voz propia',
+  title: 'Clonar una voz',
+  description:
+    'Crea una voz para tus vídeos a partir de una muestra. Solo con el consentimiento de la persona que habla.',
+  consent: 'Consentimiento',
+  allowance: 'Voces clonadas: {{used}} de {{max}} (plan {{plan}})',
+  submit: 'Clonar voz',
+  submitHint: 'Al pulsar se sube la muestra, se registra tu consentimiento y empieza el análisis.',
+  cancel: 'Cancelar',
+  sample: {
+    title: 'Muestra de voz',
+    rule: 'Entre {{min}} y {{max}} de una sola persona hablando.',
+    drop: 'Arrastra un audio o haz clic para elegirlo',
+    formats: 'MP3, WAV, M4A, OGG, FLAC o WebM.',
+    recordingFile: 'grabacion-de-voz.wav',
+    unknownLength: 'Duración desconocida',
+    change: 'Cambiar muestra',
+    listen: 'Escuchar la muestra',
+    tipsTitle: 'Para una buena muestra',
+    tips: {
+      alone: 'Una sola voz, sin música ni otras personas.',
+      quiet: 'Lugar silencioso y el micrófono cerca.',
+      natural: 'Habla como hablarías en tus vídeos.',
+      length: 'Con 30 a 60 segundos es suficiente.',
+    },
+    readTitle: 'Si no sabes qué decir, lee esto',
+    readText:
+      'Hola, esta es mi voz. La grabo con calma, en un sitio tranquilo, para usarla en mis vídeos. Hablo a un ritmo natural, ni muy rápido ni muy despacio, y pronuncio cada frase con claridad, como si se lo contara a alguien que tengo delante.',
+    private:
+      'La muestra no sale de tu navegador hasta que aceptes la declaración y pulses «Clonar voz». Después se guarda como origen de la voz y se borra con ella.',
+  },
+  record: {
+    start: 'Grabar con el micrófono',
+    hint: 'El navegador te pedirá permiso. Se graba aquí y se convierte a WAV.',
+    unsupported: 'Este navegador no permite grabar aquí. Sube un archivo.',
+    requesting: 'Esperando el permiso del micrófono…',
+    recording: 'Grabando',
+    encoding: 'Preparando la grabación…',
+    keepGoing: 'sigue al menos hasta {{min}}',
+    stop: 'Terminar',
+    cancel: 'Descartar',
+    deniedTitle: 'Sin acceso al micrófono',
+    deniedText:
+      'El navegador ha bloqueado el micrófono. Dale permiso a esta página en la barra de direcciones o sube un archivo de audio.',
+    missingTitle: 'No se encuentra ningún micrófono',
+    missingText:
+      'El navegador no ve ningún micrófono en este equipo. Conecta uno y vuelve a intentarlo, o sube un archivo de audio.',
+    errorTitle: 'No se pudo grabar',
+    errorText:
+      'El micrófono falló o la grabación no se pudo procesar. Inténtalo otra vez o sube un archivo.',
+  },
+  problem: {
+    nameRequired: 'Ponle un nombre a la voz.',
+    nameTooLong: 'El nombre es demasiado largo.',
+    sampleRequired: 'Sube o graba una muestra para continuar.',
+    tooShort: 'La muestra es demasiado corta: hacen falta al menos {{min}}.',
+    tooLong: 'La muestra es demasiado larga: el máximo son {{max}}.',
+  },
+  details: {
+    title: 'Datos de la voz',
+    name: 'Nombre',
+    nameHint: 'Así aparecerá en la biblioteca de voces.',
+    language: 'Idioma de la muestra',
+    languageHint: 'El idioma en el que habla la persona.',
+    gender: 'Género',
+    genderHint: 'En modo básico decide qué voz local se toma como base.',
+  },
+  gender: { female: 'Femenina', male: 'Masculina', neutral: 'Neutra' },
+  step: {
+    idle: 'En espera',
+    uploading: 'Subiendo la muestra…',
+    consent: 'Registrando el consentimiento…',
+    creating: 'Poniendo el trabajo en cola…',
+  },
+  mode: {
+    title: 'Cómo se clona aquí',
+    checking: 'Comprobando…',
+    unknown: 'No se pudo leer qué proveedor de clonado está activo.',
+    does: 'Sí:',
+    doesNot: 'No:',
+    basic: {
+      name: 'Modo básico local',
+      text: 'Ni el motor de voz local ni un servicio externo de clonado están activos. Se analiza tu muestra en este equipo y se ajusta una voz sintética local para que se acerque a la tuya.',
+      points: {
+        pitch:
+          'Mide el tono medio de tu voz, elige la voz local más parecida (una neuronal, si está instalada) y le aplica ese tono.',
+        pace: 'Estima tu velocidad al hablar y la imita.',
+        offline: 'Funciona sin claves ni conexión; la muestra no sale de este servidor.',
+        timbre: 'No reproduce tu timbre: sonará a voz sintética, no a ti.',
+        accent: 'No copia tu acento ni tu entonación.',
+      },
+      upgrade:
+        'Para un clonado que sí reproduzca el timbre, quien administra el servidor puede arrancar el motor de voz local (pnpm voice-engine; español de España) o configurar un proveedor externo (ELEVENLABS_API_KEY). Esta página lo indicará cuando esté activo.',
+    },
+    neural: {
+      name: 'Clonado neuronal local',
+      text: 'El clonado lo hace {{name}} en este equipo: un modelo abierto (licencia MIT) que reproduce el timbre de la voz a partir de la muestra.',
+      points: {
+        timbre: 'Reproduce el timbre y la entonación de la muestra.',
+        accent: 'Habla español con acento de España.',
+        local:
+          'La muestra no sale de este equipo. Solo se guardan los rasgos de voz que se extraen de ella, y se borran al eliminar la voz o revocar el consentimiento.',
+        watermark:
+          'Todo el audio que genera lleva una marca de agua inaudible (Perth) que lo identifica como generado por IA.',
+        languages: 'Solo clona voces en español; en otros idiomas se usa el modo básico.',
+      },
+    },
+    premium: {
+      name: 'Clonado externo',
+      text: 'El clonado lo hace {{name}}, un servicio externo de alta calidad.',
+      points: {
+        timbre: 'Reproduce el timbre y la entonación de la muestra.',
+        languages: 'La voz resultante puede hablar varios idiomas.',
+        leaves: 'La muestra se envía a ese servicio para crear la voz.',
+      },
+    },
+  },
+  job: {
+    back: 'Volver al formulario',
+    eyebrow: 'Voz clonada · {{language}}',
+    working: 'Analizando la muestra',
+    elapsed: 'Tiempo transcurrido: {{time}}',
+    progressLabel: 'Clonado de {{name}}',
+    explain: {
+      basic:
+        'Se mide el tono y la velocidad de la muestra y se elige la voz local más parecida como base.',
+      neural: '{{name}} está extrayendo el timbre de la muestra en este equipo.',
+      premium: '{{name}} está creando la voz a partir de la muestra.',
+    },
+    noEta: 'Este trabajo no informa de porcentaje ni de tiempo restante.',
+    leave: 'Puedes salir de esta página: el trabajo sigue y la voz aparecerá en la biblioteca.',
+    readyToast: 'La voz {{name}} ya está lista',
+    failedToast: 'No se pudo clonar {{name}}',
+    readyTitle: 'Voz lista',
+    readyText: 'Ya puedes elegirla en el Studio y en la biblioteca de voces.',
+    listen: 'Escuchar la voz',
+    stop: 'Parar',
+    neuralTitle: 'Clonada en este equipo',
+    neuralText:
+      'La voz reproduce el timbre de la muestra (Chatterbox, español de España). Todo lo que diga lleva una marca de agua inaudible que lo identifica como generado por IA.',
+    basicTitle: 'Clonada en modo básico',
+    basicText:
+      'Es la voz local más parecida a la tuya (una neuronal, si está instalada) ajustada al tono y la velocidad que se midieron en tu muestra. No reproduce tu timbre.',
+    profile: {
+      f0: 'Tono medio medido',
+      unknown: 'No detectado',
+      pitch: 'Ajuste de tono',
+      speed: 'Ajuste de velocidad',
+      base: 'Voz base',
+    },
+    use: 'Usar en un vídeo',
+    open: 'Ver en Voces',
+    another: 'Clonar otra',
+    videoTitle: 'Vídeo con la voz de {{name}}',
+    videoCreated: 'Borrador creado con esta voz',
+    videoFailed: 'No se pudo crear el vídeo',
+    failedTitle: 'No se pudo clonar la voz',
+    failedUnknown: 'El trabajo no terminó.',
+    refunded: 'Los créditos se han devuelto.',
+    retry: 'Intentar de nuevo',
+    discard: 'Descartar',
+    deleteFailed: 'No se pudo descartar',
+  },
+  queue: { title: 'En proceso' },
+};
+
+const en: typeof es = {
+  nav: { voiceClone: 'Clone a voice' },
+  back: 'Voices',
+  eyebrow: 'Your own voice',
+  title: 'Clone a voice',
+  description:
+    'Create a voice for your videos from a sample. Only with the consent of the person speaking.',
+  consent: 'Consent',
+  allowance: 'Cloned voices: {{used}} of {{max}} ({{plan}} plan)',
+  submit: 'Clone voice',
+  submitHint: 'Pressing it uploads the sample, records your consent and starts the analysis.',
+  cancel: 'Cancel',
+  sample: {
+    title: 'Voice sample',
+    rule: 'Between {{min}} and {{max}} of a single person speaking.',
+    drop: 'Drop an audio file or click to choose one',
+    formats: 'MP3, WAV, M4A, OGG, FLAC or WebM.',
+    recordingFile: 'voice-recording.wav',
+    unknownLength: 'Unknown length',
+    change: 'Change sample',
+    listen: 'Listen to the sample',
+    tipsTitle: 'For a good sample',
+    tips: {
+      alone: 'A single voice, no music and nobody else.',
+      quiet: 'A quiet place and the microphone close.',
+      natural: 'Speak the way you would in your videos.',
+      length: '30 to 60 seconds is enough.',
+    },
+    readTitle: 'Not sure what to say? Read this',
+    readText:
+      'Hello, this is my voice. I am recording it calmly, in a quiet place, to use it in my videos. I speak at a natural pace, not too fast and not too slow, and I say every sentence clearly, as if I were telling it to someone in front of me.',
+    private:
+      'The sample does not leave your browser until you accept the declaration and press "Clone voice". It is then stored as the source of the voice and deleted with it.',
+  },
+  record: {
+    start: 'Record with the microphone',
+    hint: 'The browser will ask for permission. It is recorded here and converted to WAV.',
+    unsupported: 'This browser cannot record here. Upload a file.',
+    requesting: 'Waiting for microphone permission…',
+    recording: 'Recording',
+    encoding: 'Preparing the recording…',
+    keepGoing: 'keep going until at least {{min}}',
+    stop: 'Finish',
+    cancel: 'Discard',
+    deniedTitle: 'No access to the microphone',
+    deniedText:
+      'The browser blocked the microphone. Allow it for this page in the address bar or upload an audio file.',
+    missingTitle: 'No microphone found',
+    missingText:
+      'The browser cannot see a microphone on this device. Connect one and try again, or upload an audio file.',
+    errorTitle: 'Recording failed',
+    errorText:
+      'The microphone failed or the recording could not be processed. Try again or upload a file.',
+  },
+  problem: {
+    nameRequired: 'Give the voice a name.',
+    nameTooLong: 'The name is too long.',
+    sampleRequired: 'Upload or record a sample to continue.',
+    tooShort: 'The sample is too short: at least {{min}} is needed.',
+    tooLong: 'The sample is too long: the maximum is {{max}}.',
+  },
+  details: {
+    title: 'Voice details',
+    name: 'Name',
+    nameHint: 'This is how it shows in the voice library.',
+    language: 'Language of the sample',
+    languageHint: 'The language the person speaks.',
+    gender: 'Gender',
+    genderHint: 'In basic mode it decides which local voice is used as the base.',
+  },
+  gender: { female: 'Female', male: 'Male', neutral: 'Neutral' },
+  step: {
+    idle: 'Waiting',
+    uploading: 'Uploading the sample…',
+    consent: 'Recording the consent…',
+    creating: 'Queuing the job…',
+  },
+  mode: {
+    title: 'How cloning works here',
+    checking: 'Checking…',
+    unknown: 'The active cloning provider could not be read.',
+    does: 'Yes:',
+    doesNot: 'No:',
+    basic: {
+      name: 'Local basic mode',
+      text: 'Neither the local voice engine nor an external cloning service is active. Your sample is analysed on this machine and a local synthetic voice is adjusted to get close to yours.',
+      points: {
+        pitch:
+          'Measures the mean pitch of your voice, picks the closest local voice (a neural one, when installed) and applies that pitch to it.',
+        pace: 'Estimates how fast you speak and imitates it.',
+        offline: 'Works with no keys and offline; the sample never leaves this server.',
+        timbre: 'It does not reproduce your timbre: it will sound synthetic, not like you.',
+        accent: 'It does not copy your accent or your intonation.',
+      },
+      upgrade:
+        'For cloning that does reproduce the timbre, whoever runs the server can start the local voice engine (pnpm voice-engine; Spanish from Spain) or configure an external provider (ELEVENLABS_API_KEY). This page will say so when it is active.',
+    },
+    neural: {
+      name: 'Local neural cloning',
+      text: 'Cloning is done by {{name}} on this machine: an open model (MIT licence) that reproduces the timbre of the voice from the sample.',
+      points: {
+        timbre: 'Reproduces the timbre and intonation of the sample.',
+        accent: 'Speaks Spanish with an accent from Spain.',
+        local:
+          'The sample never leaves this machine. Only the voice features extracted from it are kept, and they are deleted with the voice or when the consent is revoked.',
+        watermark:
+          'All the audio it generates carries an inaudible watermark (Perth) that identifies it as AI-generated.',
+        languages: 'It clones Spanish voices only; other languages use the basic mode.',
+      },
+    },
+    premium: {
+      name: 'External cloning',
+      text: 'Cloning is done by {{name}}, a high-quality external service.',
+      points: {
+        timbre: 'Reproduces the timbre and intonation of the sample.',
+        languages: 'The resulting voice can speak several languages.',
+        leaves: 'The sample is sent to that service to create the voice.',
+      },
+    },
+  },
+  job: {
+    back: 'Back to the form',
+    eyebrow: 'Cloned voice · {{language}}',
+    working: 'Analysing the sample',
+    elapsed: 'Elapsed time: {{time}}',
+    progressLabel: 'Cloning of {{name}}',
+    explain: {
+      basic:
+        'The pitch and pace of the sample are measured and the closest local voice is chosen as the base.',
+      neural: '{{name}} is extracting the timbre of the sample on this machine.',
+      premium: '{{name}} is creating the voice from the sample.',
+    },
+    noEta: 'This job reports no percentage and no time remaining.',
+    leave: 'You can leave this page: the job goes on and the voice will show up in the library.',
+    readyToast: 'The voice {{name}} is ready',
+    failedToast: '{{name}} could not be cloned',
+    readyTitle: 'Voice ready',
+    readyText: 'You can now pick it in the Studio and in the voice library.',
+    listen: 'Listen to the voice',
+    stop: 'Stop',
+    neuralTitle: 'Cloned on this machine',
+    neuralText:
+      'The voice reproduces the timbre of the sample (Chatterbox, Spanish from Spain). Everything it says carries an inaudible watermark that identifies it as AI-generated.',
+    basicTitle: 'Cloned in basic mode',
+    basicText:
+      'It is the local voice closest to yours (a neural one, when installed) adjusted to the pitch and pace measured in your sample. It does not reproduce your timbre.',
+    profile: {
+      f0: 'Mean pitch measured',
+      unknown: 'Not detected',
+      pitch: 'Pitch adjustment',
+      speed: 'Speed adjustment',
+      base: 'Base voice',
+    },
+    use: 'Use in a video',
+    open: 'See in Voices',
+    another: 'Clone another',
+    videoTitle: 'Video with the voice of {{name}}',
+    videoCreated: 'Draft created with this voice',
+    videoFailed: 'The video could not be created',
+    failedTitle: 'The voice could not be cloned',
+    failedUnknown: 'The job did not finish.',
+    refunded: 'The credits were refunded.',
+    retry: 'Try again',
+    discard: 'Discard',
+    deleteFailed: 'It could not be discarded',
+  },
+  queue: { title: 'In progress' },
+};
+
+export const translations = { es, en };

@@ -1,0 +1,27 @@
+{
+  "name": "@parlante/providers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run",
+    "dictation:setup": "tsx src/scripts/dictation-setup.ts",
+    "voices:setup": "tsx src/scripts/voices-setup.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@aws-sdk/client-s3": "^3.1169.0",
+    "@aws-sdk/s3-request-presigner": "^3.1169.0",
+    "@echogarden/espeak-ng-emscripten": "^0.3.5",
+    "@huggingface/transformers": "4.3.2",
+    "@parlante/shared": "workspace:*",
+    "onnxruntime-node": "1.30.0",
+    "zod": "^4.6.7"
+  }
+}

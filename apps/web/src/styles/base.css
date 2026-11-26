@@ -1,0 +1,125 @@
+/* Global element styles and a few brand utilities. Component styles live in the components. */
+
+@layer base {
+  html {
+    font-family: var(--font-sans-stack);
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
+  }
+
+  #root {
+    min-height: 100dvh;
+    isolation: isolate;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display-stack);
+    font-stretch: 88%;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+
+  /* One focus treatment everywhere: a 2px ring separated from the control by the page colour. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  button,
+  [role='button'],
+  a,
+  summary,
+  label[for] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary {
+    cursor: pointer;
+  }
+
+  /* Thin, tinted scrollbars that follow the theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Display type: condensed Bricolage. `font-display` alone only sets the family. */
+@utility display {
+  font-family: var(--font-display-stack);
+  font-stretch: 84%;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+}
+
+/* Small caps label used for section titles and table headers. */
+@utility eyebrow {
+  font-family: var(--font-sans-stack);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Tabular figures for timecodes, credits and counters. */
+@utility nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Brand texture: a faint dot grid, like the perforated wall of a sound booth. The dots take
+ * the current text colour, so the texture works on paper and on ink. */
+@utility booth-grid {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, currentColor 16%, transparent) 1px,
+    transparent 0
+  );
+  background-size: 18px 18px;
+}
+
+/* Skeleton shimmer surface. */
+@utility shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface-3) 0%,
+    var(--surface-2) 40%,
+    var(--surface-3) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
